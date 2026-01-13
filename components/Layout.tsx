@@ -18,11 +18,11 @@ import {
   Sun,
   Moon,
   X,
-  Monitor,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  FileText
+  FileText,
+  Receipt
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { useAppConfig } from '../contexts/AppConfigContext';
@@ -36,7 +36,6 @@ interface LayoutProps {
   onLogout: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
-  onActivateScreenSaver: () => void;
   notificationCount?: number;
   onOpenNotifications?: () => void;
 }
@@ -50,7 +49,6 @@ const Layout: React.FC<LayoutProps> = ({
   onLogout,
   theme,
   toggleTheme,
-  onActivateScreenSaver,
   notificationCount = 0,
   onOpenNotifications
 }) => {
@@ -102,22 +100,34 @@ const Layout: React.FC<LayoutProps> = ({
   };
 
   const handleSwitchRole = () => {
+    // Moradores não podem alternar de role
+    if (role === 'MORADOR') return;
     const nextRole = role === 'PORTEIRO' ? 'SINDICO' : 'PORTEIRO';
     setRole(nextRole);
     setActiveTab('dashboard');
   };
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['PORTEIRO', 'SINDICO'] },
-    { id: 'packages', label: 'Encomendas', icon: Package, roles: ['PORTEIRO'] },
-    { id: 'reservations', label: 'Reservas', icon: Calendar, roles: ['PORTEIRO', 'SINDICO'] },
-    { id: 'notices', label: 'Mural de Avisos', icon: Bell, roles: ['PORTEIRO', 'SINDICO'] },
+    // Acesso para todos
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    { id: 'notices', label: 'Mural de Avisos', icon: Bell, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    { id: 'boletos', label: 'Boletos', icon: Receipt, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    { id: 'reservations', label: 'Reservas', icon: Calendar, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    
+    // Apenas Porteiro e Síndico
     { id: 'residents', label: 'Moradores', icon: Users, roles: ['PORTEIRO', 'SINDICO'] },
     { id: 'occurrences', label: 'Ocorrências', icon: AlertCircle, roles: ['PORTEIRO', 'SINDICO'] },
-    { id: 'staff', label: 'Funcionários', icon: ClipboardList, roles: ['SINDICO'] },
+    
+    // Apenas Porteiro
+    { id: 'packages', label: 'Encomendas', icon: Package, roles: ['PORTEIRO'] },
     { id: 'visitors', label: 'Visitantes', icon: UserCircle, roles: ['PORTEIRO'] },
     { id: 'notes', label: 'Bloco de Notas', icon: MessageSquare, roles: ['PORTEIRO'] },
+    
+    // Apenas Síndico
+    { id: 'staff', label: 'Funcionários', icon: ClipboardList, roles: ['SINDICO'] },
     { id: 'reports', label: 'Relatórios IA', icon: FileText, roles: ['SINDICO'] },
+    
+    // Porteiro e Síndico
     { id: 'ai', label: 'Inteligência IA', icon: BrainCircuit, roles: ['PORTEIRO', 'SINDICO'] },
     { id: 'settings', label: 'Configurações', icon: Settings, roles: ['PORTEIRO', 'SINDICO'] },
   ];
@@ -190,16 +200,20 @@ const Layout: React.FC<LayoutProps> = ({
           </div>
           {!isDesktopCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-black truncate uppercase tracking-tight" style={{ color: 'var(--text-primary)' }}>{role === 'SINDICO' ? 'Admin' : 'Portaria'}</p>
-              <button 
-                onClick={handleSwitchRole}
-                className="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 flex items-center gap-1 mt-0.5 transition-all active:scale-95"
-              >
-                <RefreshCw className="w-2.5 h-2.5" /> Alternar
-              </button>
+              <p className="text-xs font-black truncate uppercase tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                {role === 'SINDICO' ? 'Admin' : role === 'MORADOR' ? 'Morador' : 'Portaria'}
+              </p>
+              {role !== 'MORADOR' && (
+                <button 
+                  onClick={handleSwitchRole}
+                  className="text-[9px] font-black uppercase tracking-widest opacity-40 hover:opacity-100 flex items-center gap-1 mt-0.5 transition-all active:scale-95"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" /> Alternar
+                </button>
+              )}
             </div>
           )}
-          {isDesktopCollapsed && (
+          {isDesktopCollapsed && role !== 'MORADOR' && (
             <button onClick={handleSwitchRole} className="p-1 opacity-40 hover:opacity-100" title="Alternar Perfil">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -274,13 +288,6 @@ const Layout: React.FC<LayoutProps> = ({
                         {notificationCount}
                       </span>
                     )}
-                 </button>
-                 <button 
-                    onClick={onActivateScreenSaver}
-                    className="p-3 rounded-2xl border transition-all hover:scale-110 active:scale-95 flex items-center justify-center group"
-                    style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                 >
-                    <Monitor className="w-5 h-5 opacity-40 group-hover:opacity-100 transition-opacity" />
                  </button>
                </div>
              )}

@@ -41,9 +41,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     if (role === 'PORTEIRO') {
       setUsername('portaria');
       setPassword('123456');
-    } else {
+    } else if (role === 'SINDICO') {
       setUsername('admin');
       setPassword('admin123');
+    } else if (role === 'MORADOR') {
+      setUsername('morador');
+      setPassword('morador123');
     }
   };
 
@@ -78,10 +81,21 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <div className="bg-white/5 p-1 rounded-2xl mb-8 flex relative border border-white/5">
               <div 
-                className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-xl transition-all duration-500 shadow-xl ${
-                  selectedRole === 'SINDICO' ? 'translate-x-[calc(100%+0px)]' : 'translate-x-0'
+                className={`absolute top-1 bottom-1 w-[calc(33.333%-4px)] bg-white rounded-xl transition-all duration-500 shadow-xl ${
+                  selectedRole === 'SINDICO' ? 'translate-x-[calc(200%+0px)]' : 
+                  selectedRole === 'MORADOR' ? 'translate-x-[calc(100%+0px)]' : 
+                  'translate-x-0'
                 }`}
               />
+              <button 
+                type="button"
+                onClick={() => handleRoleChange('MORADOR')}
+                className={`relative z-10 flex-1 py-3 text-[10px] font-black uppercase transition-colors ${
+                  selectedRole === 'MORADOR' ? 'text-black' : 'text-zinc-500'
+                }`}
+              >
+                Morador
+              </button>
               <button 
                 type="button"
                 onClick={() => handleRoleChange('PORTEIRO')}

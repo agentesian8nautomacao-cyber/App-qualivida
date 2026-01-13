@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, UserPlus, Edit2, Trash2, MessageCircle, Mail, UserCircle } from 'lucide-react';
+import { Search, UserPlus, Edit2, Trash2, MessageCircle, Mail, UserCircle, Upload } from 'lucide-react';
 import { Resident, Package, VisitorLog } from '../../types';
 
 interface ResidentsViewProps {
@@ -12,6 +12,7 @@ interface ResidentsViewProps {
   handleDeleteResident: (id: string) => void;
   allPackages: Package[];
   visitorLogs: VisitorLog[];
+  onImportClick?: () => void;
 }
 
 const ResidentsView: React.FC<ResidentsViewProps> = ({
@@ -22,7 +23,8 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
   setSelectedResidentProfile,
   handleDeleteResident,
   allPackages,
-  visitorLogs
+  visitorLogs,
+  onImportClick
 }) => {
   const displayResidents = allResidents.filter(r => 
     r.name.toLowerCase().includes(residentSearch.toLowerCase()) || 
@@ -47,6 +49,14 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                 className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
              />
           </div>
+          {onImportClick && (
+            <button 
+              onClick={onImportClick} 
+              className="px-6 py-3 bg-white/10 border border-white/20 text-white rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-white/20"
+            >
+              <Upload className="w-4 h-4" /> Importar
+            </button>
+          )}
           <button 
             onClick={() => handleOpenResidentModal()} 
             className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"

@@ -8,9 +8,16 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3007,
         host: '0.0.0.0',
+        watch: {
+          ignored: ['**/.env*', '**/node_modules/**']
+        }
       },
       plugins: [react()],
       publicDir: 'public',
+      optimizeDeps: {
+        disabled: false,
+        entries: ['index.html']
+      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)

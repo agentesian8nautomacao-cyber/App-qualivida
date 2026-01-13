@@ -5,7 +5,7 @@ import Layout from './components/Layout';
 import Login from './components/Login';
 import ScreenSaver from './components/ScreenSaver';
 import VideoIntro from './components/VideoIntro';
-import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff } from './types';
+import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto } from './types';
 
 // Components
 import RecentEventsBar from './components/RecentEventsBar';
@@ -26,6 +26,8 @@ import AiView from './components/views/AiView';
 import StaffView from './components/views/StaffView';
 import AiReportsView from './components/views/AiReportsView';
 import SettingsView from './components/views/SettingsView';
+import BoletosView from './components/views/BoletosView';
+import MoradorDashboardView from './components/views/MoradorDashboardView';
 
 // Contexts
 import { useAppConfig } from './contexts/AppConfigContext';
@@ -34,6 +36,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 // Modals
 import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
+import ImportResidentsModal from './components/modals/ImportResidentsModal';
 
 // Helper para calcular permanência
 const calculatePermanence = (receivedAt: string) => {
@@ -63,6 +66,7 @@ const App: React.FC = () => {
   });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [role, setRole] = useState<UserRole>('PORTEIRO');
+  const [currentResident, setCurrentResident] = useState<Resident | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
@@ -128,6 +132,54 @@ const App: React.FC = () => {
     { id: '3', title: 'Festa Julina', content: 'A festa do condomínio será dia 25/07. Avisar moradores sobre barulho.', author: 'Comissão', authorRole: 'SINDICO', date: new Date(Date.now() - 172800000).toISOString(), category: 'Social', priority: 'normal', pinned: false, read: true },
     { id: '4', title: 'Mudança Unidade 404', content: 'Agendada para hoje à tarde. Liberar entrada do caminhão.', author: 'Portaria 1', authorRole: 'PORTEIRO', date: new Date().toISOString(), category: 'Institucional', priority: 'normal', pinned: false, read: false },
   ]);
+
+  const [allBoletos, setAllBoletos] = useState<Boleto[]>([
+    { 
+      id: '1', 
+      residentName: 'João Silva', 
+      unit: '102A', 
+      referenceMonth: '01/2025', 
+      dueDate: '2025-01-10', 
+      amount: 450.00, 
+      status: 'Pendente',
+      barcode: '34191090000012345678901234567890123456789012',
+      description: 'Taxa de condomínio - Janeiro/2025'
+    },
+    { 
+      id: '2', 
+      residentName: 'Maria Santos', 
+      unit: '405B', 
+      referenceMonth: '01/2025', 
+      dueDate: '2025-01-10', 
+      amount: 450.00, 
+      status: 'Pago',
+      paidDate: '2025-01-05',
+      description: 'Taxa de condomínio - Janeiro/2025'
+    },
+    { 
+      id: '3', 
+      residentName: 'Ana Oliveira', 
+      unit: '201C', 
+      referenceMonth: '12/2024', 
+      dueDate: '2024-12-10', 
+      amount: 450.00, 
+      status: 'Vencido',
+      barcode: '34191090000012345678901234567890123456789013',
+      description: 'Taxa de condomínio - Dezembro/2024'
+    },
+    { 
+      id: '4', 
+      residentName: 'Ricardo Almeida', 
+      unit: '202', 
+      referenceMonth: '01/2025', 
+      dueDate: '2025-01-10', 
+      amount: 450.00, 
+      status: 'Pendente',
+      barcode: '34191090000012345678901234567890123456789014',
+      description: 'Taxa de condomínio - Janeiro/2025'
+    },
+  ]);
+  const [boletoSearch, setBoletoSearch] = useState('');
 
   const [allStaff, setAllStaff] = useState<Staff[]>([
     { id: '1', name: 'José Carlos', role: 'Zelador', status: 'Ativo', shift: 'Comercial', phone: '11999991234', email: 'zelador@qualivida.com' },
@@ -276,6 +328,7 @@ const App: React.FC = () => {
   const [selectedPackageForDetail, setSelectedPackageForDetail] = useState<Package | null>(null);
   const [selectedOccurrenceForDetail, setSelectedOccurrenceForDetail] = useState<Occurrence | null>(null);
   const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
+  const [isImportResidentsModalOpen, setIsImportResidentsModalOpen] = useState(false);
   const [residentFormData, setResidentFormData] = useState({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' });
   const [selectedResidentProfile, setSelectedResidentProfile] = useState<Resident | null>(null);
 
@@ -352,6 +405,7 @@ const App: React.FC = () => {
   const handleOpenResidentModal = (resident?: Resident) => { if (resident) { setResidentFormData(resident); } else { setResidentFormData({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' }); } setIsResidentModalOpen(true); };
   const handleSaveResident = () => { if (!residentFormData.name || !residentFormData.unit) return; if (residentFormData.id) { setAllResidents(prev => prev.map(r => r.id === residentFormData.id ? residentFormData : r)); } else { const newResident = { ...residentFormData, id: Date.now().toString() }; setAllResidents(prev => [newResident, ...prev]); } setIsResidentModalOpen(false); };
   const handleDeleteResident = (id: string) => { if (window.confirm("Tem certeza que deseja remover este morador?")) { setAllResidents(prev => prev.filter(r => r.id !== id)); if (selectedResidentProfile?.id === id) setSelectedResidentProfile(null); } };
+  const handleImportResidents = (residents: Resident[]) => { setAllResidents(prev => [...residents, ...prev]); };
   const handleSaveNoticeChanges = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.map(n => n.id === selectedNoticeForEdit.id ? selectedNoticeForEdit : n)); setSelectedNoticeForEdit(null); };
   const handleDeleteNotice = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.filter(n => n.id !== selectedNoticeForEdit.id)); setSelectedNoticeForEdit(null); };
 
@@ -369,8 +423,24 @@ const App: React.FC = () => {
   const [occurrenceDescription, setOccurrenceDescription] = useState('');
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  const handleLogin = (selectedRole: UserRole) => { setRole(selectedRole); setIsAuthenticated(true); };
-  const handleLogout = () => { setIsAuthenticated(false); setActiveTab('dashboard'); };
+  const handleLogin = (selectedRole: UserRole) => { 
+    setRole(selectedRole);
+    // Se for morador, identificar o morador logado
+    if (selectedRole === 'MORADOR') {
+      // Buscar morador pelo primeiro da lista (em produção, seria por autenticação)
+      const resident = allResidents[0] || null;
+      setCurrentResident(resident);
+    } else {
+      setCurrentResident(null);
+    }
+    setIsAuthenticated(true);
+    setActiveTab('dashboard');
+  };
+  const handleLogout = () => { 
+    setIsAuthenticated(false); 
+    setCurrentResident(null);
+    setActiveTab('dashboard'); 
+  };
 
   const handleSaveNote = () => {
     if (!newNoteContent.trim()) return;
@@ -442,9 +512,43 @@ const App: React.FC = () => {
     switch (activeTab) {
       case 'notices': const filteredNotices = allNotices.filter(n => { if (noticeFilter === 'urgent') return n.category === 'Urgente'; if (noticeFilter === 'unread') return !n.read; return true; }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return <NoticesView filteredNotices={filteredNotices} setNoticeFilter={setNoticeFilter} noticeFilter={noticeFilter} activeNoticeTab={activeNoticeTab} setActiveNoticeTab={setActiveNoticeTab} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} chatMessages={chatMessages} role={role} chatInput={chatInput} setChatInput={setChatInput} handleSendChatMessage={handleSendChatMessage} chatEndRef={chatEndRef} handleAcknowledgeNotice={handleAcknowledgeNotice} />;
       case 'reservations': return <ReservationsView dayReservations={dayReservations} reservationFilter={reservationFilter} setReservationFilter={setReservationFilter} setIsReservationModalOpen={setIsReservationModalOpen} areasStatus={areasStatus} handleReservationAction={handleReservationAction} />;
-      case 'residents': return <ResidentsView allResidents={allResidents} residentSearch={residentSearch} setResidentSearch={setResidentSearch} handleOpenResidentModal={handleOpenResidentModal} setSelectedResidentProfile={setSelectedResidentProfile} handleDeleteResident={handleDeleteResident} allPackages={allPackages} visitorLogs={visitorLogs} />;
-      case 'visitors': return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />;
+      case 'residents': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro e Síndico.
+              </p>
+            </div>
+          );
+        }
+        return <ResidentsView allResidents={allResidents} residentSearch={residentSearch} setResidentSearch={setResidentSearch} handleOpenResidentModal={handleOpenResidentModal} setSelectedResidentProfile={setSelectedResidentProfile} handleDeleteResident={handleDeleteResident} allPackages={allPackages} visitorLogs={visitorLogs} onImportClick={() => setIsImportResidentsModalOpen(true)} />;
+      case 'boletos': 
+        if (role === 'MORADOR' && currentResident) {
+          const myBoletos = allBoletos.filter(b => b.unit === currentResident.unit);
+          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} />;
+        }
+        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} />;
+      case 'visitors': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro.
+              </p>
+            </div>
+          );
+        }
+        return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />;
       case 'packages': 
+        if (role === 'MORADOR' && currentResident) {
+          const myPackages = allPackages.filter(p => p.unit === currentResident.unit);
+          return <PackagesView allPackages={myPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} />;
+        }
         if (role === 'SINDICO') {
           return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -457,10 +561,57 @@ const App: React.FC = () => {
           );
         }
         return <PackagesView allPackages={allPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} />;
-      case 'settings': return <SettingsView />;
-      case 'occurrences': return <OccurrencesView allOccurrences={allOccurrences} occurrenceSearch={occurrenceSearch} setOccurrenceSearch={setOccurrenceSearch} setIsOccurrenceModalOpen={setIsOccurrenceModalOpen} handleResolveOccurrence={handleResolveOccurrence} />;
-      case 'notes': return <NotesView allNotes={allNotes} setEditingNoteId={setEditingNoteId} setNewNoteContent={setNewNoteContent} setIsNewNoteModalOpen={setIsNewNoteModalOpen} setAllNotes={setAllNotes} />;
+      case 'settings': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro e Síndico.
+              </p>
+            </div>
+          );
+        }
+        return <SettingsView />;
+      case 'occurrences': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro e Síndico.
+              </p>
+            </div>
+          );
+        }
+        return <OccurrencesView allOccurrences={allOccurrences} occurrenceSearch={occurrenceSearch} setOccurrenceSearch={setOccurrenceSearch} setIsOccurrenceModalOpen={setIsOccurrenceModalOpen} handleResolveOccurrence={handleResolveOccurrence} />;
+      case 'notes': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro.
+              </p>
+            </div>
+          );
+        }
+        return <NotesView allNotes={allNotes} setEditingNoteId={setEditingNoteId} setNewNoteContent={setNewNoteContent} setIsNewNoteModalOpen={setIsNewNoteModalOpen} setAllNotes={setAllNotes} />;
       case 'ai': 
+        if (role === 'MORADOR') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Porteiro e Síndico.
+              </p>
+            </div>
+          );
+        }
         return (
           <AiView 
             allPackages={allPackages} 
@@ -474,6 +625,17 @@ const App: React.FC = () => {
           />
         );
       case 'staff':
+        if (role === 'MORADOR' || role === 'PORTEIRO') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Síndico.
+              </p>
+            </div>
+          );
+        }
         return (
            <StaffView 
               allStaff={allStaff}
@@ -485,6 +647,17 @@ const App: React.FC = () => {
            />
         );
       case 'reports':
+        if (role === 'MORADOR' || role === 'PORTEIRO') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Síndico.
+              </p>
+            </div>
+          );
+        }
         return (
           <AiReportsView 
             allPackages={allPackages} 
@@ -515,7 +688,7 @@ const App: React.FC = () => {
 
   return (
     <>
-      <Layout activeTab={activeTab} setActiveTab={setActiveTab} role={role} setRole={setRole} onLogout={handleLogout} theme={theme} toggleTheme={toggleTheme} onActivateScreenSaver={() => setIsScreenSaverActive(true)}>
+      <Layout activeTab={activeTab} setActiveTab={setActiveTab} role={role} setRole={setRole} onLogout={handleLogout} theme={theme} toggleTheme={toggleTheme}>
         {renderContent()}
       </Layout>
       {role === 'PORTEIRO' && <DraggableFab onClick={() => { setEditingNoteId(null); setNewNoteContent(''); setIsNewNoteModalOpen(true); }} />}
@@ -544,6 +717,7 @@ const App: React.FC = () => {
       <VisitorDetailModal visitor={selectedVisitorForDetail} onClose={() => setSelectedVisitorForDetail(null)} onCheckout={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />
       <OccurrenceDetailModal occurrence={selectedOccurrenceForDetail} onClose={() => setSelectedOccurrenceForDetail(null)} onSave={handleSaveOccurrenceDetails} setOccurrence={setSelectedOccurrenceForDetail} />
       <ResidentFormModal isOpen={isResidentModalOpen} onClose={() => setIsResidentModalOpen(false)} data={residentFormData} setData={setResidentFormData} onSave={handleSaveResident} />
+      <ImportResidentsModal isOpen={isImportResidentsModalOpen} onClose={() => setIsImportResidentsModalOpen(false)} onImport={handleImportResidents} existingResidents={allResidents} />
       <NewOccurrenceModal isOpen={isOccurrenceModalOpen} onClose={() => setIsOccurrenceModalOpen(false)} description={occurrenceDescription} setDescription={setOccurrenceDescription} onSave={() => setIsOccurrenceModalOpen(false)} />
       <NoticeEditModal notice={selectedNoticeForEdit} onClose={() => setSelectedNoticeForEdit(null)} onChange={setSelectedNoticeForEdit} onSave={handleSaveNoticeChanges} onDelete={handleDeleteNotice} />
     </>

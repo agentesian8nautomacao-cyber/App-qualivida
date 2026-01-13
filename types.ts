@@ -1,5 +1,5 @@
 
-export type UserRole = 'PORTEIRO' | 'SINDICO';
+export type UserRole = 'MORADOR' | 'PORTEIRO' | 'SINDICO';
 export type QuickViewCategory = 'packages' | 'visitors' | 'occurrences' | 'reservations' | 'notes' | 'notices' | null;
 
 export interface PackageItem {
@@ -64,7 +64,7 @@ export interface Notice {
   title: string;
   content: string;
   author: string;
-  authorRole: 'SINDICO' | 'PORTEIRO'; // Nova diferenciação visual
+  authorRole: 'MORADOR' | 'SINDICO' | 'PORTEIRO'; // Nova diferenciação visual
   date: string;
   category?: 'Urgente' | 'Manutenção' | 'Social' | 'Institucional';
   priority?: 'high' | 'normal';
@@ -75,7 +75,7 @@ export interface Notice {
 export interface ChatMessage {
   id: string;
   text: string;
-  senderRole: 'SINDICO' | 'PORTEIRO';
+  senderRole: 'MORADOR' | 'SINDICO' | 'PORTEIRO';
   timestamp: string;
   read: boolean;
 }
@@ -125,4 +125,18 @@ export interface CrmIssue {
   status: ConflictStatus;
   description: string;
   updatedAt: string;
+}
+
+export interface Boleto {
+  id: string;
+  residentName: string;
+  unit: string;
+  referenceMonth: string; // Ex: "01/2025"
+  dueDate: string; // Data de vencimento
+  amount: number; // Valor em reais
+  status: 'Pendente' | 'Pago' | 'Vencido';
+  barcode?: string; // Código de barras do boleto
+  pdfUrl?: string; // URL para download do PDF
+  paidDate?: string; // Data de pagamento
+  description?: string; // Descrição adicional
 }
