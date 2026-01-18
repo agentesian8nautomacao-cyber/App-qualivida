@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     token VARCHAR(255) UNIQUE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     used BOOLEAN DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT unique_active_token UNIQUE(user_id, token) WHERE used = false
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Índices
@@ -19,6 +18,11 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_toke
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires ON password_reset_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_used ON password_reset_tokens(used);
+
+-- Índice único parcial para garantir que um usuário não tenha múltiplos tokens ativos
+CREATE UNIQUE INDEX IF NOT EXISTS idx_password_reset_tokens_unique_active 
+ON password_reset_tokens(user_id, token) 
+WHERE used = false;
 
 -- Função para limpar tokens expirados automaticamente (opcional)
 CREATE OR REPLACE FUNCTION cleanup_expired_tokens()
