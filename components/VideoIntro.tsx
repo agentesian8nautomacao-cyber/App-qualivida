@@ -126,7 +126,6 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
           width: '100vw',
           height: '100vh',
           backgroundImage: backgroundImage || 'none',
-          backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
           position: 'absolute',
@@ -178,45 +177,41 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
           }
         }
 
-        /* Todas as telas: usar cover para preencher completamente sem faixas pretas */
-        .splash-screen-container {
-          background-size: cover !important;
-        }
-
-        /* Garantir que sempre preencha toda a área em desktop */
+        /* Desktop: usar cover para preencher completamente sem faixas pretas */
         @media (min-width: 1024px) {
           .splash-screen-container {
             background-size: cover !important;
           }
         }
 
-        /* Garantir que sempre preencha toda a área em mobile */
+        /* Mobile: usar contain para não cortar conteúdo importante (texto e elementos) */
         @media (max-width: 1023px) {
           .splash-screen-container {
-            background-size: cover !important;
+            background-size: contain !important;
+            background-position: center center;
           }
         }
 
-        /* Ajustes específicos para telas muito pequenas */
+        /* Ajustes específicos para telas muito pequenas - sempre contain */
         @media (max-width: 480px) {
           .splash-screen-container {
-            background-size: cover !important;
+            background-size: contain !important;
             background-position: center center;
           }
         }
 
-        /* Ajustes para orientação paisagem em mobile */
+        /* Ajustes para orientação paisagem em mobile - contain para ver tudo */
         @media (orientation: landscape) and (max-height: 500px) {
           .splash-screen-container {
-            background-size: cover !important;
+            background-size: contain !important;
             background-position: center center;
           }
         }
 
-        /* Ajustes para orientação retrato em mobile */
+        /* Ajustes para orientação retrato em mobile - contain para ver tudo */
         @media (orientation: portrait) and (max-width: 768px) {
           .splash-screen-container {
-            background-size: cover !important;
+            background-size: contain !important;
             background-position: center center;
           }
         }
