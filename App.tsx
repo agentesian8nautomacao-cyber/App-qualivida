@@ -5,7 +5,6 @@ import Layout from './components/Layout';
 import Login from './components/Login';
 import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
-import VideoIntro from './components/VideoIntro';
 import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto } from './types';
 
 // Components
@@ -65,11 +64,6 @@ const calculatePermanence = (receivedAt: string) => {
 
 const App: React.FC = () => {
   const { config } = useAppConfig();
-  // Vídeo de apresentação - verifica se já foi exibido
-  const [showVideoIntro, setShowVideoIntro] = useState(() => {
-    const hasSeenIntro = sessionStorage.getItem('hasSeenVideoIntro');
-    return hasSeenIntro !== 'true';
-  });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [role, setRole] = useState<UserRole>('PORTEIRO');
   const [currentResident, setCurrentResident] = useState<Resident | null>(null);
@@ -790,20 +784,6 @@ const App: React.FC = () => {
       default: return <div className="p-10 text-center opacity-40 font-black uppercase">{activeTab}</div>;
     }
   };
-
-  // Tela de apresentação (mostra apenas na primeira vez) - deve ser a única coisa renderizada
-  if (showVideoIntro) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 99999 }}>
-        <VideoIntro 
-          onComplete={() => {
-            sessionStorage.setItem('hasSeenVideoIntro', 'true');
-            setShowVideoIntro(false);
-          }} 
-        />
-      </div>
-    );
-  }
 
   if (isScreenSaverActive) return <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
   
