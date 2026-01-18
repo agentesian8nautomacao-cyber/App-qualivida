@@ -167,7 +167,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
               />
               <button 
                 type="button"
-                onClick={() => handleRoleChange('MORADOR')}
+                onClick={() => {
+                  handleRoleChange('MORADOR');
+                  // Redirecionar para cadastro de morador ao selecionar
+                  window.location.href = window.location.pathname + '?resident=true';
+                }}
                 className={`relative z-10 flex-1 py-3 text-[10px] font-black uppercase transition-colors duration-200 ${
                   selectedRole === 'MORADOR' 
                     ? (theme === 'light' ? 'text-gray-900' : 'text-black')

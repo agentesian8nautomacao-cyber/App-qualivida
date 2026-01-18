@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import Layout from './components/Layout';
 import Login from './components/Login';
+import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
 import VideoIntro from './components/VideoIntro';
 import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto } from './types';
@@ -40,6 +41,9 @@ import ImportResidentsModal from './components/modals/ImportResidentsModal';
 import ImportBoletosModal from './components/modals/ImportBoletosModal';
 import CameraScanModal from './components/modals/CameraScanModal';
 
+// Services
+import { registerResident, loginResident } from './services/residentAuth';
+
 // Helper para calcular permanência
 const calculatePermanence = (receivedAt: string) => {
   const start = new Date(receivedAt).getTime();
@@ -72,6 +76,16 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
+  const [showResidentRegister, setShowResidentRegister] = useState(false);
+  
+  // Verificar se deve mostrar cadastro de morador baseado na URL ou query param
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isResidentLink = urlParams.get('resident') === 'true' || urlParams.get('morador') === 'true';
+    if (isResidentLink) {
+      setShowResidentRegister(true);
+    }
+  }, []);
 
   // Atalhos de teclado
   useKeyboardShortcuts({ onNavigate: setActiveTab });
@@ -221,8 +235,6 @@ const App: React.FC = () => {
   const [areasStatus, setAreasStatus] = useState([
     { id: '1', name: 'SALÃO DE FESTAS CRYSTAL', capacity: 80, today: '1 HOJE', rules: 'Fechar às 23h • Proibido som externo' },
     { id: '2', name: 'ESPAÇO GOURMET', capacity: 30, today: '0 HOJE', rules: 'Limpeza inclusa na taxa' },
-    { id: '3', name: 'CHURRASQUEIRA ROOFTOP', capacity: 20, today: '0 HOJE', rules: 'Máximo 20 pessoas' },
-    { id: '4', name: 'ACADEMIA', capacity: 15, today: '0 HOJE', rules: 'Apenas moradores' },
   ]);
 
   const [dayReservations, setDayReservations] = useState([
@@ -466,23 +478,84 @@ const App: React.FC = () => {
   const [occurrenceDescription, setOccurrenceDescription] = useState('');
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  
+  // Função para registrar morador (já cadastrado no Supabase pelo ResidentRegister)
+  const handleResidentRegister = (resident: Resident, password: string) => {
+    // Morador já foi cadastrado no Supabase pelo componente ResidentRegister
+    // Apenas atualizar estado local e adicionar à lista se não existir
+    if (!allResidents.find(r => r.id === resident.id || r.unit === resident.unit)) {
+      setAllResidents(prev => [...prev, resident]);
+    }
+    
+    // Salvar sessão
+    sessionStorage.setItem('currentResident', JSON.stringify(resident));
+    sessionStorage.setItem('residentRole', 'MORADOR');
+    
+    setCurrentResident(resident);
+    setRole('MORADOR');
+    setIsAuthenticated(true);
+    setShowResidentRegister(false);
+    setActiveTab('dashboard');
+  };
+
+  // Função para login de morador (autenticação via Supabase)
+  const handleResidentLogin = async (unit: string, password: string) => {
+    try {
+      const result = await loginResident(unit, password);
+      
+      if (!result.success || !result.resident) {
+        throw new Error(result.error || 'Unidade ou senha incorretos');
+      }
+
+      // Atualizar lista de moradores
+      const existingIndex = allResidents.findIndex(r => r.id === result.resident!.id);
+      if (existingIndex >= 0) {
+        setAllResidents(prev => prev.map((r, idx) => idx === existingIndex ? result.resident! : r));
+      } else {
+        setAllResidents(prev => [...prev, result.resident!]);
+      }
+
+      // Salvar sessão
+      sessionStorage.setItem('currentResident', JSON.stringify(result.resident));
+      sessionStorage.setItem('residentRole', 'MORADOR');
+      
+      setCurrentResident(result.resident);
+      setRole('MORADOR');
+      setIsAuthenticated(true);
+      setShowResidentRegister(false);
+      setActiveTab('dashboard');
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
   const handleLogin = (selectedRole: UserRole) => { 
+    // Se for morador e está no modo registro, não fazer nada (o ResidentRegister cuida disso)
+    if (selectedRole === 'MORADOR' && showResidentRegister) {
+      return;
+    }
+    
     setRole(selectedRole);
-    // Se for morador, identificar o morador logado
+    // Se for morador via login antigo (deprecated)
     if (selectedRole === 'MORADOR') {
-      // Buscar morador pelo primeiro da lista (em produção, seria por autenticação)
-      const resident = allResidents[0] || null;
-      setCurrentResident(resident);
+      // Redirecionar para cadastro/registro
+      setShowResidentRegister(true);
+      return;
     } else {
       setCurrentResident(null);
     }
     setIsAuthenticated(true);
     setActiveTab('dashboard');
   };
+  
   const handleLogout = () => { 
     setIsAuthenticated(false); 
     setCurrentResident(null);
-    setActiveTab('dashboard'); 
+    setShowResidentRegister(false);
+    setActiveTab('dashboard');
+    // Limpar dados do morador da sessão
+    sessionStorage.removeItem('currentResident');
+    sessionStorage.removeItem('residentRole');
   };
 
   const handleSaveNote = () => {
@@ -728,6 +801,20 @@ const App: React.FC = () => {
   }
 
   if (isScreenSaverActive) return <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
+  
+  // Se for link de morador ou modo registro, mostrar cadastro/login de morador
+  if (!isAuthenticated && showResidentRegister) {
+    return (
+      <ResidentRegister 
+        onRegister={handleResidentRegister}
+        onLogin={handleResidentLogin}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        existingResidents={allResidents}
+      />
+    );
+  }
+  
   if (!isAuthenticated) return <Login onLogin={handleLogin} theme={theme} toggleTheme={toggleTheme} />;
 
   return (

@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_active ON users(is_active);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
 
 -- ============================================
 -- TABELA: residents (Moradores)
@@ -40,15 +40,16 @@ CREATE TABLE IF NOT EXISTS residents (
     email VARCHAR(255),
     phone VARCHAR(20),
     whatsapp VARCHAR(20),
+    password_hash VARCHAR(255), -- Hash da senha para autenticação de moradores
     extra_data JSONB, -- Campos adicionais do arquivo de importação
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT unique_unit_name UNIQUE(unit, name)
 );
 
-CREATE INDEX idx_residents_unit ON residents(unit);
-CREATE INDEX idx_residents_name ON residents(name);
-CREATE INDEX idx_residents_email ON residents(email);
+CREATE INDEX IF NOT EXISTS idx_residents_unit ON residents(unit);
+CREATE INDEX IF NOT EXISTS idx_residents_name ON residents(name);
+CREATE INDEX IF NOT EXISTS idx_residents_email ON residents(email);
 
 -- ============================================
 -- TABELA: areas (Áreas Comuns)
@@ -63,7 +64,7 @@ CREATE TABLE IF NOT EXISTS areas (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_areas_active ON areas(is_active);
+CREATE INDEX IF NOT EXISTS idx_areas_active ON areas(is_active);
 
 -- ============================================
 -- TABELA: reservations (Reservas)
@@ -82,11 +83,11 @@ CREATE TABLE IF NOT EXISTS reservations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_reservations_area ON reservations(area_id);
-CREATE INDEX idx_reservations_date ON reservations(date);
-CREATE INDEX idx_reservations_resident ON reservations(resident_id);
-CREATE INDEX idx_reservations_status ON reservations(status);
-CREATE INDEX idx_reservations_date_area ON reservations(date, area_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_area ON reservations(area_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_date ON reservations(date);
+CREATE INDEX IF NOT EXISTS idx_reservations_resident ON reservations(resident_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
+CREATE INDEX IF NOT EXISTS idx_reservations_date_area ON reservations(date, area_id);
 
 -- ============================================
 -- TABELA: packages (Encomendas)
@@ -110,11 +111,11 @@ CREATE TABLE IF NOT EXISTS packages (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_packages_recipient ON packages(recipient_id);
-CREATE INDEX idx_packages_status ON packages(status);
-CREATE INDEX idx_packages_received_at ON packages(received_at);
-CREATE INDEX idx_packages_unit ON packages(unit);
-CREATE INDEX idx_packages_type ON packages(type);
+CREATE INDEX IF NOT EXISTS idx_packages_recipient ON packages(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_packages_status ON packages(status);
+CREATE INDEX IF NOT EXISTS idx_packages_received_at ON packages(received_at);
+CREATE INDEX IF NOT EXISTS idx_packages_unit ON packages(unit);
+CREATE INDEX IF NOT EXISTS idx_packages_type ON packages(type);
 
 -- ============================================
 -- TABELA: package_items (Itens das Encomendas)
@@ -127,7 +128,7 @@ CREATE TABLE IF NOT EXISTS package_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_package_items_package ON package_items(package_id);
+CREATE INDEX IF NOT EXISTS idx_package_items_package ON package_items(package_id);
 
 -- ============================================
 -- TABELA: visitors (Visitantes)
@@ -151,11 +152,11 @@ CREATE TABLE IF NOT EXISTS visitors (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_visitors_resident ON visitors(resident_id);
-CREATE INDEX idx_visitors_status ON visitors(status);
-CREATE INDEX idx_visitors_entry_time ON visitors(entry_time);
-CREATE INDEX idx_visitors_unit ON visitors(unit);
-CREATE INDEX idx_visitors_type ON visitors(type);
+CREATE INDEX IF NOT EXISTS idx_visitors_resident ON visitors(resident_id);
+CREATE INDEX IF NOT EXISTS idx_visitors_status ON visitors(status);
+CREATE INDEX IF NOT EXISTS idx_visitors_entry_time ON visitors(entry_time);
+CREATE INDEX IF NOT EXISTS idx_visitors_unit ON visitors(unit);
+CREATE INDEX IF NOT EXISTS idx_visitors_type ON visitors(type);
 
 -- ============================================
 -- TABELA: occurrences (Ocorrências)
@@ -176,10 +177,10 @@ CREATE TABLE IF NOT EXISTS occurrences (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_occurrences_resident ON occurrences(resident_id);
-CREATE INDEX idx_occurrences_status ON occurrences(status);
-CREATE INDEX idx_occurrences_date ON occurrences(date);
-CREATE INDEX idx_occurrences_unit ON occurrences(unit);
+CREATE INDEX IF NOT EXISTS idx_occurrences_resident ON occurrences(resident_id);
+CREATE INDEX IF NOT EXISTS idx_occurrences_status ON occurrences(status);
+CREATE INDEX IF NOT EXISTS idx_occurrences_date ON occurrences(date);
+CREATE INDEX IF NOT EXISTS idx_occurrences_unit ON occurrences(unit);
 
 -- ============================================
 -- TABELA: notices (Avisos)
@@ -199,11 +200,11 @@ CREATE TABLE IF NOT EXISTS notices (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_notices_date ON notices(date);
-CREATE INDEX idx_notices_pinned ON notices(pinned);
-CREATE INDEX idx_notices_category ON notices(category);
-CREATE INDEX idx_notices_author_role ON notices(author_role);
-CREATE INDEX idx_notices_priority ON notices(priority);
+CREATE INDEX IF NOT EXISTS idx_notices_date ON notices(date);
+CREATE INDEX IF NOT EXISTS idx_notices_pinned ON notices(pinned);
+CREATE INDEX IF NOT EXISTS idx_notices_category ON notices(category);
+CREATE INDEX IF NOT EXISTS idx_notices_author_role ON notices(author_role);
+CREATE INDEX IF NOT EXISTS idx_notices_priority ON notices(priority);
 
 -- ============================================
 -- TABELA: notice_reads (Leitura de Avisos por Moradores)
@@ -215,8 +216,8 @@ CREATE TABLE IF NOT EXISTS notice_reads (
     PRIMARY KEY (notice_id, resident_id)
 );
 
-CREATE INDEX idx_notice_reads_notice ON notice_reads(notice_id);
-CREATE INDEX idx_notice_reads_resident ON notice_reads(resident_id);
+CREATE INDEX IF NOT EXISTS idx_notice_reads_notice ON notice_reads(notice_id);
+CREATE INDEX IF NOT EXISTS idx_notice_reads_resident ON notice_reads(resident_id);
 
 -- ============================================
 -- TABELA: chat_messages (Mensagens do Chat)
@@ -232,9 +233,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_chat_messages_timestamp ON chat_messages(timestamp);
-CREATE INDEX idx_chat_messages_read ON chat_messages(read);
-CREATE INDEX idx_chat_messages_sender_role ON chat_messages(sender_role);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_read ON chat_messages(read);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_role ON chat_messages(sender_role);
 
 -- ============================================
 -- TABELA: notes (Notas)
@@ -251,11 +252,11 @@ CREATE TABLE IF NOT EXISTS notes (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_notes_completed ON notes(completed);
-CREATE INDEX idx_notes_category ON notes(category);
-CREATE INDEX idx_notes_scheduled ON notes(scheduled);
-CREATE INDEX idx_notes_date ON notes(date);
-CREATE INDEX idx_notes_created_by ON notes(created_by);
+CREATE INDEX IF NOT EXISTS idx_notes_completed ON notes(completed);
+CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category);
+CREATE INDEX IF NOT EXISTS idx_notes_scheduled ON notes(scheduled);
+CREATE INDEX IF NOT EXISTS idx_notes_date ON notes(date);
+CREATE INDEX IF NOT EXISTS idx_notes_created_by ON notes(created_by);
 
 -- ============================================
 -- TABELA: staff (Funcionários)
@@ -272,9 +273,9 @@ CREATE TABLE IF NOT EXISTS staff (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_staff_status ON staff(status);
-CREATE INDEX idx_staff_role ON staff(role);
-CREATE INDEX idx_staff_shift ON staff(shift);
+CREATE INDEX IF NOT EXISTS idx_staff_status ON staff(status);
+CREATE INDEX IF NOT EXISTS idx_staff_role ON staff(role);
+CREATE INDEX IF NOT EXISTS idx_staff_shift ON staff(shift);
 
 -- ============================================
 -- TABELA: boletos (Boletos)
@@ -297,11 +298,11 @@ CREATE TABLE IF NOT EXISTS boletos (
     CONSTRAINT unique_unit_month UNIQUE(unit, reference_month)
 );
 
-CREATE INDEX idx_boletos_resident ON boletos(resident_id);
-CREATE INDEX idx_boletos_unit ON boletos(unit);
-CREATE INDEX idx_boletos_status ON boletos(status);
-CREATE INDEX idx_boletos_due_date ON boletos(due_date);
-CREATE INDEX idx_boletos_reference_month ON boletos(reference_month);
+CREATE INDEX IF NOT EXISTS idx_boletos_resident ON boletos(resident_id);
+CREATE INDEX IF NOT EXISTS idx_boletos_unit ON boletos(unit);
+CREATE INDEX IF NOT EXISTS idx_boletos_status ON boletos(status);
+CREATE INDEX IF NOT EXISTS idx_boletos_due_date ON boletos(due_date);
+CREATE INDEX IF NOT EXISTS idx_boletos_reference_month ON boletos(reference_month);
 
 -- ============================================
 -- TABELA: crm_units (Unidades do CRM)
@@ -320,10 +321,10 @@ CREATE TABLE IF NOT EXISTS crm_units (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_crm_units_unit ON crm_units(unit);
-CREATE INDEX idx_crm_units_status ON crm_units(status);
-CREATE INDEX idx_crm_units_resident ON crm_units(resident_id);
-CREATE INDEX idx_crm_units_tags ON crm_units USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_crm_units_unit ON crm_units(unit);
+CREATE INDEX IF NOT EXISTS idx_crm_units_status ON crm_units(status);
+CREATE INDEX IF NOT EXISTS idx_crm_units_resident ON crm_units(resident_id);
+CREATE INDEX IF NOT EXISTS idx_crm_units_tags ON crm_units USING GIN(tags);
 
 -- ============================================
 -- TABELA: crm_issues (Problemas do CRM)
@@ -339,10 +340,10 @@ CREATE TABLE IF NOT EXISTS crm_issues (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_crm_issues_status ON crm_issues(status);
-CREATE INDEX idx_crm_issues_severity ON crm_issues(severity);
-CREATE INDEX idx_crm_issues_updated_at ON crm_issues(updated_at);
-CREATE INDEX idx_crm_issues_involved_units ON crm_issues USING GIN(involved_units);
+CREATE INDEX IF NOT EXISTS idx_crm_issues_status ON crm_issues(status);
+CREATE INDEX IF NOT EXISTS idx_crm_issues_severity ON crm_issues(severity);
+CREATE INDEX IF NOT EXISTS idx_crm_issues_updated_at ON crm_issues(updated_at);
+CREATE INDEX IF NOT EXISTS idx_crm_issues_involved_units ON crm_issues USING GIN(involved_units);
 
 -- ============================================
 -- TABELA: app_config (Configurações do App)
