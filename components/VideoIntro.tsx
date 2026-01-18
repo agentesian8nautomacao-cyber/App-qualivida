@@ -14,12 +14,25 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   
   // Cache busting para garantir que a imagem atualizada seja sempre carregada
   // O timestamp é gerado apenas uma vez na montagem do componente
+  // Usar nome sem espaços para compatibilidade com Vercel/produção
   const imageSrc = useMemo(() => {
-    // O Vite/Vite dev server lida com espaços automaticamente, mas vamos codificar para garantir
-    const fileName = 'gestão Qualivida Residence.png';
-    // Substituir espaços por %20 manualmente para compatibilidade
-    const encodedFileName = fileName.replace(/ /g, '%20');
-    return `/${encodedFileName}?t=${Date.now()}`;
+    // Tentar primeiro com nome sem espaços (compatível com produção)
+    const fileNameWithoutSpaces = 'gestao-qualivida-residence.png';
+    // Fallback para nome original caso o arquivo sem espaços não exista
+    const fileNameWithSpaces = 'gestão Qualivida Residence.png';
+    
+    // Verificar se está em produção
+    const isProd = (import.meta as any).env?.MODE === 'production' || 
+                   (import.meta as any).env?.PROD === true ||
+                   window.location.hostname !== 'localhost';
+    
+    // Em produção (Vercel), usar nome sem espaços
+    if (isProd) {
+      return `/${fileNameWithoutSpaces}?t=${Date.now()}`;
+    }
+    
+    // Em desenvolvimento, tentar nome original primeiro
+    return `/${fileNameWithSpaces.replace(/ /g, '%20')}?t=${Date.now()}`;
   }, []);
 
   useEffect(() => {
