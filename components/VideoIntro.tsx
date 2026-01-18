@@ -66,7 +66,7 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
 
   return (
     <div 
-      className="fixed inset-0 z-[10000] overflow-hidden splash-screen"
+      className="fixed inset-0 overflow-hidden splash-screen"
       onClick={handleScreenClick}
       style={{ 
         width: '100vw', 
@@ -77,7 +77,8 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
         left: 0,
         right: 0,
         bottom: 0,
-        cursor: showSkip ? 'pointer' : 'default'
+        cursor: showSkip ? 'pointer' : 'default',
+        zIndex: 99999
       }}
     >
       {/* Background com imagem do condomínio */}
