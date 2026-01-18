@@ -126,7 +126,7 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
           ) : (
             <div className="space-y-2">
               {pendingBoletos.slice(0, 3).map(boleto => (
-                <div key={boleto.id} className="flex justify-between items-center p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all group">
+                <div key={boleto.id} className="flex justify-between items-center p-3 bg-[var(--glass-bg)] rounded-xl hover:bg-[var(--border-color)] transition-all group border border-[var(--border-color)]">
                   <div className="flex-1">
                     <p className="text-xs font-bold">{boleto.referenceMonth}</p>
                     <p className={`text-xs ${boleto.status === 'Vencido' ? 'text-red-400' : 'opacity-40'}`}>
@@ -142,7 +142,8 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
                         {onViewBoleto && (
                           <button
                             onClick={(e) => { e.stopPropagation(); onViewBoleto(boleto); }}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-all"
+                            className="p-1.5 rounded-lg bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all"
+                            style={{ color: 'var(--text-primary)' }}
                             title="Visualizar"
                           >
                             <Eye className="w-3.5 h-3.5" />
@@ -151,7 +152,8 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
                         {onDownloadBoleto && (
                           <button
                             onClick={(e) => { e.stopPropagation(); onDownloadBoleto(boleto); }}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-all"
+                            className="p-1.5 rounded-lg bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all"
+                            style={{ color: 'var(--text-primary)' }}
                             title="Baixar"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -183,7 +185,7 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
               {myPackages.filter(p => p.status === 'Pendente').slice(0, 3).map(pkg => (
                 <div 
                   key={pkg.id} 
-                  className="flex justify-between items-center p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-all cursor-pointer group"
+                  className="flex justify-between items-center p-3 bg-[var(--glass-bg)] rounded-xl hover:bg-[var(--border-color)] transition-all cursor-pointer group border border-[var(--border-color)]"
                   onClick={() => onViewPackage && onViewPackage(pkg)}
                 >
                   <div className="flex-1">
@@ -216,7 +218,7 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
               <div 
                 key={notice.id} 
                 className={`p-3 rounded-xl transition-all cursor-pointer group ${
-                  notice.read ? 'bg-white/5' : 'bg-white/10 border border-white/20'
+                  notice.read ? 'bg-[var(--glass-bg)]' : 'bg-[var(--border-color)] border border-[var(--border-color)]'
                 } hover:bg-white/15`}
                 onClick={() => onViewNotice && onViewNotice(notice)}
               >

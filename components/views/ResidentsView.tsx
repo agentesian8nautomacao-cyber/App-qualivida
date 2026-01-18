@@ -46,20 +46,21 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                 placeholder="Buscar por Nome ou Unidade..." 
                 value={residentSearch}
                 onChange={e => setResidentSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
+                className="w-full pl-10 pr-4 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-xs font-bold outline-none focus:border-[var(--text-primary)]/50 transition-all placeholder:opacity-40"
+                style={{ color: 'var(--text-primary)' }}
              />
           </div>
           {onImportClick && (
             <button 
               onClick={onImportClick} 
-              className="px-6 py-3 bg-white/10 border border-white/20 text-white rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-white/20"
+              className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
             >
               <Upload className="w-4 h-4" /> Importar
             </button>
           )}
           <button 
             onClick={() => handleOpenResidentModal()} 
-            className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+            className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> Novo Morador
           </button>
@@ -75,7 +76,7 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
             <div 
               key={resident.id} 
               onClick={() => setSelectedResidentProfile(resident)}
-              className="premium-glass p-6 rounded-[32px] group relative overflow-hidden transition-all hover:scale-[1.01] hover:shadow-2xl hover:bg-white/5 cursor-pointer"
+              className="premium-glass p-6 rounded-[32px] group relative overflow-hidden transition-all hover:scale-[1.01] hover:shadow-2xl hover:bg-[var(--border-color)] cursor-pointer"
             >
               <div className="flex items-start justify-between mb-6">
                  <div className="relative">
@@ -92,14 +93,15 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                  <div className="flex gap-2">
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleOpenResidentModal(resident); }}
-                      className="p-2 bg-white/5 rounded-xl hover:bg-white text-white hover:text-black transition-all" 
+                      className="p-2 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl hover:bg-[var(--text-primary)] hover:text-[var(--bg-color)] transition-all" 
+                      style={{ color: 'var(--text-primary)' }}
                       title="Editar"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleDeleteResident(resident.id); }}
-                      className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all" 
+                      className="p-2 bg-red-500/10 text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500 hover:text-white transition-all" 
                       title="Remover"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -108,7 +110,7 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
               </div>
 
               <div>
-                 <span className="px-3 py-1 rounded-lg bg-white/5 text-[9px] font-black uppercase tracking-widest border border-white/5">Unidade {resident.unit}</span>
+                 <span className="px-3 py-1 rounded-lg bg-[var(--glass-bg)] text-[9px] font-black uppercase tracking-widest border border-[var(--border-color)]" style={{ color: 'var(--text-primary)' }}>Unidade {resident.unit}</span>
                  <h4 className="text-xl font-black uppercase mt-3 leading-tight truncate group-hover:text-blue-400 transition-colors">{resident.name}</h4>
               </div>
 
@@ -124,7 +126,8 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                  {resident.email && (
                    <button 
                      onClick={(e) => { e.stopPropagation(); window.open(`mailto:${resident.email}`, '_blank'); }}
-                     className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white hover:text-black transition-all text-[10px] font-black uppercase flex items-center justify-center gap-2"
+                     className="flex-1 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--text-primary)] hover:text-[var(--bg-color)] transition-all text-[10px] font-black uppercase flex items-center justify-center gap-2"
+                     style={{ color: 'var(--text-primary)' }}
                    >
                      <Mail className="w-3 h-3" /> Email
                    </button>

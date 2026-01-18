@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Camera } from 'lucide-react';
 import { Package } from '../../types';
 
 interface PackagesViewProps {
@@ -9,6 +9,7 @@ interface PackagesViewProps {
   setPackageSearch: (val: string) => void;
   setIsNewPackageModalOpen: (val: boolean) => void;
   setSelectedPackageForDetail: (pkg: Package) => void;
+  onCameraScan?: () => void;
 }
 
 const PackagesView: React.FC<PackagesViewProps> = ({
@@ -16,7 +17,8 @@ const PackagesView: React.FC<PackagesViewProps> = ({
   packageSearch,
   setPackageSearch,
   setIsNewPackageModalOpen,
-  setSelectedPackageForDetail
+  setSelectedPackageForDetail,
+  onCameraScan
 }) => {
   const displayPackages = allPackages.filter(p => 
     p.recipient.toLowerCase().includes(packageSearch.toLowerCase()) ||
@@ -38,10 +40,24 @@ const PackagesView: React.FC<PackagesViewProps> = ({
                 placeholder="Pesquisar Encomenda..." 
                 value={packageSearch}
                 onChange={e => setPackageSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
+                className="w-full pl-10 pr-4 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-xs font-bold outline-none focus:border-[var(--text-primary)]/50 transition-all placeholder:opacity-40"
+                style={{ color: 'var(--text-primary)' }}
              />
           </div>
-          <button onClick={() => setIsNewPackageModalOpen(true)} className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap"><Plus className="w-4 h-4 inline mr-2" /> Novo Registro</button>
+          {onCameraScan && (
+            <button 
+              onClick={onCameraScan} 
+              className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
+            >
+              <Camera className="w-4 h-4" /> Escanear
+            </button>
+          )}
+          <button 
+            onClick={() => setIsNewPackageModalOpen(true)} 
+            className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Novo Registro
+          </button>
         </div>
       </header>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

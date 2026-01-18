@@ -104,53 +104,46 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
           )}
           
           <div className="relative z-10">
-            <header className="flex items-center justify-center mb-12">
-              <div className="flex items-center gap-4">
-                {/* Logo do Condomínio */}
-                <div className="relative flex-shrink-0">
-                  <div className={`absolute inset-0 rounded-2xl blur-xl transition-all ${
-                    theme === 'light' ? 'bg-gray-200' : 'bg-white/10'
-                  }`} />
-                  <div className={`relative z-10 w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden transition-all ${
-                    theme === 'light' ? 'bg-white border border-gray-200' : 'bg-white'
-                  }`}>
-                    <img 
-                      src="/1024.png" 
-                      alt="Logo Qualivida"
-                      className="w-full h-full object-contain p-1.5"
-                      onError={(e) => {
-                        // Fallback para ícone ShieldCheck se a imagem não carregar
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('svg')) {
-                          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                          svg.setAttribute('class', `w-8 h-8 ${theme === 'light' ? 'text-gray-800' : 'text-black'}`);
-                          svg.setAttribute('fill', 'none');
-                          svg.setAttribute('viewBox', '0 0 24 24');
-                          svg.setAttribute('stroke', 'currentColor');
-                          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                          path.setAttribute('stroke-linecap', 'round');
-                          path.setAttribute('stroke-linejoin', 'round');
-                          path.setAttribute('stroke-width', '2');
-                          path.setAttribute('d', 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z');
-                          svg.appendChild(path);
-                          parent.appendChild(svg);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-                {/* Nome QUALIVIDA */}
-                <div className="flex flex-col">
-                  <h2 className={`text-2xl font-black tracking-tighter leading-tight ${
-                    theme === 'light' ? 'text-gray-900' : 'shimmer-text text-white'
-                  }`}>QUALIVIDA</h2>
-                  <p className={`text-[10px] uppercase tracking-[0.3em] font-black mt-0.5 ${
-                    theme === 'light' ? 'text-gray-500' : 'text-zinc-500'
-                  }`}>Acesso Restrito</p>
+            <header className="flex flex-col items-center justify-center mb-12">
+              {/* Logo do Condomínio */}
+              <div className="relative flex-shrink-0 mb-4">
+                <div className={`absolute inset-0 rounded-2xl blur-xl transition-all ${
+                  theme === 'light' ? 'bg-gray-200' : 'bg-white/10'
+                }`} />
+                <div className={`relative z-10 w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden transition-all ${
+                  theme === 'light' ? 'bg-white border border-gray-200' : 'bg-white'
+                }`}>
+                  <img 
+                    src="/1024.png" 
+                    alt="Logo Qualivida"
+                    className="w-full h-full object-contain p-1.5"
+                    onError={(e) => {
+                      // Fallback para ícone ShieldCheck se a imagem não carregar
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent && !parent.querySelector('svg')) {
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('class', `w-8 h-8 ${theme === 'light' ? 'text-gray-800' : 'text-black'}`);
+                        svg.setAttribute('fill', 'none');
+                        svg.setAttribute('viewBox', '0 0 24 24');
+                        svg.setAttribute('stroke', 'currentColor');
+                        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                        path.setAttribute('stroke-linecap', 'round');
+                        path.setAttribute('stroke-linejoin', 'round');
+                        path.setAttribute('stroke-width', '2');
+                        path.setAttribute('d', 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z');
+                        svg.appendChild(path);
+                        parent.appendChild(svg);
+                      }
+                    }}
+                  />
                 </div>
               </div>
+              {/* Texto Acesso Restrito */}
+              <p className={`text-[10px] uppercase tracking-[0.3em] font-black ${
+                theme === 'light' ? 'text-gray-500' : 'text-zinc-500'
+              }`}>ACESSO RESTRITO</p>
             </header>
 
             <div className={`p-1 rounded-2xl mb-8 flex relative border transition-all ${

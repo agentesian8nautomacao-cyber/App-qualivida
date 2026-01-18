@@ -37,6 +37,8 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
+import ImportBoletosModal from './components/modals/ImportBoletosModal';
+import CameraScanModal from './components/modals/CameraScanModal';
 
 // Helper para calcular permanência
 const calculatePermanence = (receivedAt: string) => {
@@ -329,6 +331,8 @@ const App: React.FC = () => {
   const [selectedOccurrenceForDetail, setSelectedOccurrenceForDetail] = useState<Occurrence | null>(null);
   const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
   const [isImportResidentsModalOpen, setIsImportResidentsModalOpen] = useState(false);
+  const [isImportBoletosModalOpen, setIsImportBoletosModalOpen] = useState(false);
+  const [isCameraScanModalOpen, setIsCameraScanModalOpen] = useState(false);
   const [residentFormData, setResidentFormData] = useState({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' });
   const [selectedResidentProfile, setSelectedResidentProfile] = useState<Resident | null>(null);
 
@@ -406,6 +410,45 @@ const App: React.FC = () => {
   const handleSaveResident = () => { if (!residentFormData.name || !residentFormData.unit) return; if (residentFormData.id) { setAllResidents(prev => prev.map(r => r.id === residentFormData.id ? residentFormData : r)); } else { const newResident = { ...residentFormData, id: Date.now().toString() }; setAllResidents(prev => [newResident, ...prev]); } setIsResidentModalOpen(false); };
   const handleDeleteResident = (id: string) => { if (window.confirm("Tem certeza que deseja remover este morador?")) { setAllResidents(prev => prev.filter(r => r.id !== id)); if (selectedResidentProfile?.id === id) setSelectedResidentProfile(null); } };
   const handleImportResidents = (residents: Resident[]) => { setAllResidents(prev => [...residents, ...prev]); };
+  const handleImportBoletos = (boletos: Boleto[]) => { setAllBoletos(prev => [...boletos, ...prev]); };
+  const handleDeleteBoleto = (boleto: Boleto) => { setAllBoletos(prev => prev.filter(b => b.id !== boleto.id)); };
+  const handleCameraScanSuccess = (data: { resident?: Resident; qrData?: string; image?: string }) => {
+    if (data.resident) {
+      // Se encontrou o morador automaticamente, criar encomenda diretamente
+      const newPkg: Package = {
+        id: Date.now().toString(),
+        recipient: data.resident.name,
+        unit: data.resident.unit,
+        type: 'QR Code',
+        receivedAt: new Date().toISOString(),
+        displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'Pendente',
+        deadlineMinutes: 45,
+        residentPhone: data.resident.phone,
+        items: data.qrData ? [{ id: '1', name: 'Encomenda via QR Code', description: data.qrData }] : undefined
+      };
+      setAllPackages([newPkg, ...allPackages]);
+      setIsCameraScanModalOpen(false);
+      setActiveTab('packages');
+    } else if (data.qrData || data.image) {
+      // Se não encontrou automaticamente, abrir modal de novo pacote pré-preenchido
+      setIsCameraScanModalOpen(false);
+      setIsNewPackageModalOpen(true);
+      setPackageStep(1);
+      // Tentar encontrar morador pelos dados do QR
+      if (data.qrData) {
+        const foundResident = allResidents.find(r => 
+          data.qrData?.includes(r.unit) || 
+          data.qrData?.includes(r.name) ||
+          r.unit === data.qrData
+        );
+        if (foundResident) {
+          setSelectedResident(foundResident);
+          setSearchResident(foundResident.name);
+        }
+      }
+    }
+  };
   const handleSaveNoticeChanges = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.map(n => n.id === selectedNoticeForEdit.id ? selectedNoticeForEdit : n)); setSelectedNoticeForEdit(null); };
   const handleDeleteNotice = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.filter(n => n.id !== selectedNoticeForEdit.id)); setSelectedNoticeForEdit(null); };
 
@@ -528,9 +571,9 @@ const App: React.FC = () => {
       case 'boletos': 
         if (role === 'MORADOR' && currentResident) {
           const myBoletos = allBoletos.filter(b => b.unit === currentResident.unit);
-          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} />;
+          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} showImportButton={false} />;
         }
-        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} />;
+        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} onDeleteBoleto={handleDeleteBoleto} onImportClick={() => setIsImportBoletosModalOpen(true)} showImportButton={true} />;
       case 'visitors': 
         if (role === 'MORADOR') {
           return (
@@ -547,7 +590,7 @@ const App: React.FC = () => {
       case 'packages': 
         if (role === 'MORADOR' && currentResident) {
           const myPackages = allPackages.filter(p => p.unit === currentResident.unit);
-          return <PackagesView allPackages={myPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} />;
+          return <PackagesView allPackages={myPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} onCameraScan={undefined} />;
         }
         if (role === 'SINDICO') {
           return (
@@ -560,7 +603,7 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <PackagesView allPackages={allPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} />;
+        return <PackagesView allPackages={allPackages} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={setIsNewPackageModalOpen} setSelectedPackageForDetail={setSelectedPackageForDetail} onCameraScan={() => setIsCameraScanModalOpen(true)} />;
       case 'settings': 
         if (role === 'MORADOR') {
           return (
@@ -719,6 +762,8 @@ const App: React.FC = () => {
       <OccurrenceDetailModal occurrence={selectedOccurrenceForDetail} onClose={() => setSelectedOccurrenceForDetail(null)} onSave={handleSaveOccurrenceDetails} setOccurrence={setSelectedOccurrenceForDetail} />
       <ResidentFormModal isOpen={isResidentModalOpen} onClose={() => setIsResidentModalOpen(false)} data={residentFormData} setData={setResidentFormData} onSave={handleSaveResident} />
       <ImportResidentsModal isOpen={isImportResidentsModalOpen} onClose={() => setIsImportResidentsModalOpen(false)} onImport={handleImportResidents} existingResidents={allResidents} />
+      <ImportBoletosModal isOpen={isImportBoletosModalOpen} onClose={() => setIsImportBoletosModalOpen(false)} onImport={handleImportBoletos} existingBoletos={allBoletos} allResidents={allResidents} />
+      <CameraScanModal isOpen={isCameraScanModalOpen} onClose={() => setIsCameraScanModalOpen(false)} onScanSuccess={handleCameraScanSuccess} allResidents={allResidents} />
       <NewOccurrenceModal isOpen={isOccurrenceModalOpen} onClose={() => setIsOccurrenceModalOpen(false)} description={occurrenceDescription} setDescription={setOccurrenceDescription} onSave={() => setIsOccurrenceModalOpen(false)} />
       <NoticeEditModal notice={selectedNoticeForEdit} onClose={() => setSelectedNoticeForEdit(null)} onChange={setSelectedNoticeForEdit} onSave={handleSaveNoticeChanges} onDelete={handleDeleteNotice} />
     </>

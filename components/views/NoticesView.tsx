@@ -63,21 +63,26 @@ const NoticesView: React.FC<NoticesViewProps> = ({
       <div className="flex-1 flex flex-col min-h-0 relative">
          {/* Overlay Escuro para Mobile quando Chat está Aberto */}
          <div 
-            className={`absolute inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-500 md:hidden ${isChatOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            className={`absolute inset-0 backdrop-blur-sm z-40 transition-opacity duration-500 md:hidden ${isChatOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
             onClick={() => setIsChatOpen(false)}
          />
 
-         <div className="flex justify-between items-end mb-6 pb-6 border-b border-white/5 flex-shrink-0">
+         <div className="flex justify-between items-end mb-6 pb-6 border-b border-[var(--border-color)] flex-shrink-0">
             <div>
-               <h3 className="text-3xl font-black uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-500">Mural Digital</h3>
-               <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-500 mt-1">Avisos & Comunicados</p>
+               <h3 className="text-3xl font-black uppercase tracking-tighter" style={{ color: 'var(--text-primary)' }}>Mural Digital</h3>
+               <p className="text-[10px] font-bold uppercase tracking-[0.3em] mt-1" style={{ color: 'var(--text-secondary)' }}>Avisos & Comunicados</p>
             </div>
             <div className="flex gap-2">
                {['all', 'urgent', 'unread'].map(f => (
                   <button
                      key={f}
                      onClick={() => setNoticeFilter(f as any)}
-                     className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${noticeFilter === f ? 'bg-white text-black border-white' : 'bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-600'}`}
+                     className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${
+                        noticeFilter === f 
+                           ? 'bg-[var(--text-primary)] text-[var(--bg-color)] border-[var(--text-primary)]' 
+                           : 'bg-[var(--glass-bg)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-[var(--text-primary)]/50'
+                     }`}
                   >
                      {f === 'all' ? 'Todos' : f === 'urgent' ? 'Urgentes' : 'Não Lidos'}
                   </button>
@@ -95,17 +100,18 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                         key={notice.id}
                         className={`break-inside-avoid relative overflow-hidden rounded-[32px] border backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 shadow-2xl group ${
                            isSindico 
-                              ? 'bg-amber-950/10 border-amber-500/20 shadow-amber-500/5' 
-                              : 'bg-cyan-950/10 border-cyan-500/20 shadow-cyan-500/5'
+                              ? 'bg-amber-500/10 dark:bg-amber-950/10 border-amber-500/40 dark:border-amber-500/20 shadow-amber-500/10 dark:shadow-amber-500/5' 
+                              : 'bg-cyan-500/10 dark:bg-cyan-950/10 border-cyan-500/40 dark:border-cyan-500/20 shadow-cyan-500/10 dark:shadow-cyan-500/5'
                         } ${notice.read ? 'opacity-60 grayscale-[0.3]' : 'opacity-100'}`}
+                        style={{ backgroundColor: isSindico ? 'rgba(245, 158, 11, 0.1)' : 'rgba(6, 182, 212, 0.1)' }}
                      >
                         {/* Role Indicator Stripe */}
                         <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${isSindico ? 'from-amber-400 via-yellow-200 to-amber-600' : 'from-cyan-400 via-blue-200 to-cyan-600'} opacity-80`} />
 
                         {/* Pinned Icon */}
                         {notice.pinned && (
-                           <div className="absolute top-4 right-4 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] rotate-45 z-10">
-                              <Pin className="w-5 h-5 fill-white" />
+                           <div className="absolute top-4 right-4 rotate-45 z-10" style={{ color: 'var(--text-primary)' }}>
+                              <Pin className="w-5 h-5" style={{ fill: 'currentColor' }} />
                            </div>
                         )}
 
@@ -115,24 +121,25 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                                  {isSindico ? <Crown className="w-4 h-4" /> : <BadgeInfo className="w-4 h-4" />}
                               </div>
                               <div>
-                                 <span className={`text-[9px] font-black uppercase tracking-widest block ${isSindico ? 'text-amber-500' : 'text-cyan-500'}`}>
+                                 <span className={`text-[9px] font-black uppercase tracking-widest block ${isSindico ? 'text-amber-600 dark:text-amber-500' : 'text-cyan-600 dark:text-cyan-500'}`}>
                                     {isSindico ? 'Administração' : 'Operacional'}
                                  </span>
-                                 <span className="text-[10px] font-bold text-zinc-500 uppercase">{notice.author} • {new Date(notice.date).toLocaleDateString()}</span>
+                                 <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{notice.author} • {new Date(notice.date).toLocaleDateString()}</span>
                               </div>
                            </div>
 
-                           <h4 className="text-2xl font-black uppercase leading-tight mb-4 text-white">{notice.title}</h4>
-                           <p className="text-sm font-medium text-zinc-400 leading-relaxed mb-8">{notice.content}</p>
+                           <h4 className="text-2xl font-black uppercase leading-tight mb-4" style={{ color: 'var(--text-primary)' }}>{notice.title}</h4>
+                           <p className="text-sm font-medium leading-relaxed mb-8" style={{ color: 'var(--text-secondary)' }}>{notice.content}</p>
 
                            <button 
                               onClick={() => handleAcknowledgeNotice(notice.id)}
                               disabled={notice.read}
                               className={`w-full py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${
                                  notice.read 
-                                 ? 'bg-zinc-900/50 text-zinc-600 cursor-default border border-white/5' 
-                                 : `hover:scale-[1.02] active:scale-95 shadow-lg ${isSindico ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-cyan-500 text-black hover:bg-cyan-400'}`
+                                    ? 'bg-[var(--glass-bg)] cursor-default border border-[var(--border-color)]' 
+                                    : `hover:scale-[1.02] active:scale-95 shadow-lg ${isSindico ? 'bg-amber-500 text-white hover:bg-amber-400 dark:text-black dark:hover:bg-amber-400' : 'bg-cyan-500 text-white hover:bg-cyan-400 dark:text-black dark:hover:bg-cyan-400'}`
                               }`}
+                              style={notice.read ? { color: 'var(--text-secondary)' } : {}}
                            >
                               {notice.read ? (
                                  <>Lido <CheckCheck className="w-4 h-4" /></>
@@ -151,19 +158,32 @@ const NoticesView: React.FC<NoticesViewProps> = ({
       {/* COLUNA DIREITA (DESKTOP) / BOTTOM SHEET (MOBILE): CHAT "LINHA DIRETA" */}
       <div 
          className={`
-            flex flex-col flex-shrink-0 bg-zinc-950/60 backdrop-blur-2xl border-white/5 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-            md:relative md:h-auto md:w-[380px] lg:w-[420px] md:rounded-l-[40px] md:border-l md:bg-zinc-950/50
+            flex flex-col flex-shrink-0 backdrop-blur-2xl border-[var(--border-color)] transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+            md:relative md:h-auto md:w-[380px] lg:w-[420px] md:rounded-l-[40px] md:border-l
             absolute left-0 right-0 z-50 md:z-0
             ${isChatOpen 
                ? 'bottom-0 h-[85%] rounded-t-[32px] border-t shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.5)]' 
-               : 'bottom-0 h-[80px] md:h-auto rounded-t-[32px] md:rounded-none border-t md:border-t-0 hover:bg-zinc-900/80 cursor-pointer md:cursor-default'
+               : 'bottom-0 h-[80px] md:h-auto rounded-t-[32px] md:rounded-none border-t md:border-t-0 cursor-pointer md:cursor-default'
             }
          `}
+         style={{ 
+            backgroundColor: 'var(--sidebar-bg)'
+         }}
+         onMouseEnter={(e) => {
+            if (!isChatOpen && window.innerWidth >= 768) {
+               e.currentTarget.style.backgroundColor = 'var(--border-color)';
+            }
+         }}
+         onMouseLeave={(e) => {
+            if (!isChatOpen && window.innerWidth >= 768) {
+               e.currentTarget.style.backgroundColor = 'var(--sidebar-bg)';
+            }
+         }}
          onClick={() => !isChatOpen && window.innerWidth < 768 && setIsChatOpen(true)}
       >
          {/* Mobile Handle */}
          <div className="md:hidden w-full flex justify-center pt-3 pb-1" onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen); }}>
-            <div className="w-12 h-1.5 bg-white/20 rounded-full" />
+            <div className="w-12 h-1.5 rounded-full" style={{ backgroundColor: 'var(--border-color)' }} />
          </div>
 
          {/* Mobile Minimized Header (Peeking Bar Content) */}
@@ -173,35 +193,36 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center text-white shadow-lg">
                      <MessageSquareText className="w-5 h-5" />
                   </div>
-                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-black animate-pulse" />
+                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 animate-pulse" style={{ borderColor: 'var(--bg-color)' }} />
                </div>
                <div className="flex-1 min-w-0">
-                  <h4 className="text-xs font-black uppercase text-white">Linha Direta</h4>
-                  <p className="text-[10px] font-medium text-zinc-400 truncate">{lastMessage ? lastMessage.text : 'Nenhuma mensagem'}</p>
+                  <h4 className="text-xs font-black uppercase" style={{ color: 'var(--text-primary)' }}>Linha Direta</h4>
+                  <p className="text-[10px] font-medium truncate" style={{ color: 'var(--text-secondary)' }}>{lastMessage ? lastMessage.text : 'Nenhuma mensagem'}</p>
                </div>
                <div className="animate-pulse">
-                  <ChevronUp className="w-5 h-5 text-zinc-500" />
+                  <ChevronUp className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                </div>
             </div>
          </div>
 
          {/* Desktop Header / Expanded Mobile Header */}
-         <div className={`p-6 border-b border-white/5 flex items-center justify-between bg-zinc-900/50 md:rounded-tl-[40px] transition-all duration-300 ${!isChatOpen ? 'hidden md:flex' : 'flex'}`}>
+         <div className={`p-6 border-b border-[var(--border-color)] flex items-center justify-between md:rounded-tl-[40px] transition-all duration-300 ${!isChatOpen ? 'hidden md:flex' : 'flex'}`} style={{ backgroundColor: 'var(--glass-bg)' }}>
             <div className="flex items-center gap-4">
                <div className="relative">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center text-white shadow-lg">
                      <MessageSquareText className="w-6 h-6" />
                   </div>
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-black animate-pulse" />
+                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 animate-pulse" style={{ borderColor: 'var(--bg-color)' }} />
                </div>
                <div>
-                  <h4 className="text-sm font-black uppercase text-white">Linha Direta</h4>
+                  <h4 className="text-sm font-black uppercase" style={{ color: 'var(--text-primary)' }}>Linha Direta</h4>
                   <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest">Online Agora</p>
                </div>
             </div>
             {/* Mobile Close Button */}
             <button 
-               className="md:hidden p-2 bg-white/10 rounded-full text-white/50"
+               className="md:hidden p-2 rounded-full"
+               style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-secondary)' }}
                onClick={(e) => { e.stopPropagation(); setIsChatOpen(false); }}
             >
                <X className="w-5 h-5" />
@@ -214,11 +235,17 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                const isMe = msg.senderRole === role;
                return (
                   <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                     <div className={`max-w-[85%] p-4 relative group transition-all hover:scale-[1.01] ${
+                     <div className={`max-w-[85%] p-4 relative group transition-all hover:scale-[1.01] rounded-2xl ${
                         isMe 
-                           ? 'bg-gradient-to-br from-emerald-600 to-emerald-800 text-white rounded-2xl rounded-tr-sm shadow-lg shadow-emerald-900/20' 
-                           : 'bg-white/10 backdrop-blur-md text-zinc-200 rounded-2xl rounded-tl-sm border border-white/5'
-                     }`}>
+                           ? 'bg-gradient-to-br from-emerald-600 to-emerald-800 text-white rounded-tr-sm shadow-lg shadow-emerald-900/20' 
+                           : 'backdrop-blur-md rounded-tl-sm border'
+                     }`}
+                     style={!isMe ? {
+                        backgroundColor: 'var(--glass-bg)',
+                        color: 'var(--text-primary)',
+                        borderColor: 'var(--border-color)'
+                     } : {}}
+                     >
                         <p className="text-xs font-bold leading-relaxed">{msg.text}</p>
                         <div className="flex items-center justify-end gap-1 mt-2 opacity-50">
                            <span className="text-[9px] font-black uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
@@ -232,9 +259,9 @@ const NoticesView: React.FC<NoticesViewProps> = ({
          </div>
 
          {/* Input Area */}
-         <div className={`p-4 bg-zinc-900/80 border-t border-white/5 md:rounded-bl-[40px] ${!isChatOpen ? 'hidden md:block' : 'block'}`}>
+         <div className={`p-4 border-t border-[var(--border-color)] md:rounded-bl-[40px] ${!isChatOpen ? 'hidden md:block' : 'block'}`} style={{ backgroundColor: 'var(--glass-bg)' }}>
             <div className="relative flex items-center gap-2">
-               <button className="p-3 text-zinc-500 hover:text-white transition-colors rounded-full hover:bg-white/5">
+               <button className="p-3 transition-colors rounded-full hover:bg-[var(--border-color)]" style={{ color: 'var(--text-secondary)' }}>
                   <Paperclip className="w-5 h-5" />
                </button>
                <div className="flex-1 relative">
@@ -245,7 +272,12 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                      onKeyDown={(e) => e.key === 'Enter' && handleSendChatMessage()}
                      onFocus={() => { if(window.innerWidth < 768) setIsChatOpen(true); }}
                      placeholder="Digite sua mensagem..."
-                     className="w-full bg-black/40 border border-white/10 rounded-full pl-5 pr-12 py-3 text-sm font-medium text-white outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-600"
+                     className="w-full rounded-full pl-5 pr-12 py-3 text-sm font-medium outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 transition-all"
+                     style={{
+                        backgroundColor: 'var(--bg-color)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-primary)'
+                     }}
                   />
                   <button 
                      onClick={handleSendChatMessage}
@@ -253,8 +285,12 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                      className={`absolute right-1 top-1 p-2 rounded-full transition-all ${
                         chatInput.trim() 
                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 hover:scale-105 active:scale-95' 
-                           : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                           : 'cursor-not-allowed'
                      }`}
+                     style={!chatInput.trim() ? {
+                        backgroundColor: 'var(--glass-bg)',
+                        color: 'var(--text-secondary)'
+                     } : {}}
                   >
                      <SendHorizontal className="w-4 h-4" />
                   </button>

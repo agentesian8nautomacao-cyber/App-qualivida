@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Search, Download, Eye, CheckCircle2, Clock, AlertCircle, FileText, Calendar, DollarSign } from 'lucide-react';
+import { Search, Download, Eye, CheckCircle2, Clock, AlertCircle, FileText, Calendar, DollarSign, Upload, Trash2 } from 'lucide-react';
 import { Boleto, Resident } from '../../types';
 
 interface BoletosViewProps {
@@ -10,6 +10,9 @@ interface BoletosViewProps {
   allResidents: Resident[];
   onViewBoleto?: (boleto: Boleto) => void;
   onDownloadBoleto?: (boleto: Boleto) => void;
+  onDeleteBoleto?: (boleto: Boleto) => void;
+  onImportClick?: () => void;
+  showImportButton?: boolean;
 }
 
 const BoletosView: React.FC<BoletosViewProps> = ({
@@ -18,7 +21,10 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   setBoletoSearch,
   allResidents,
   onViewBoleto,
-  onDownloadBoleto
+  onDownloadBoleto,
+  onDeleteBoleto,
+  onImportClick,
+  showImportButton = true
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'Pendente' | 'Pago' | 'Vencido'>('all');
 
@@ -109,6 +115,14 @@ const BoletosView: React.FC<BoletosViewProps> = ({
           <h3 className="text-3xl font-black uppercase tracking-tighter">Boletos</h3>
           <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">Taxa de Condomínio</p>
         </div>
+        {showImportButton && onImportClick && (
+          <button 
+            onClick={onImportClick} 
+            className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
+          >
+            <Upload className="w-4 h-4" /> Importar Boletos
+          </button>
+        )}
       </header>
 
       {/* Estatísticas */}
@@ -152,7 +166,8 @@ const BoletosView: React.FC<BoletosViewProps> = ({
             placeholder="Buscar por Morador, Unidade ou Mês/Ano..." 
             value={boletoSearch}
             onChange={e => setBoletoSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
+            className="w-full pl-10 pr-4 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-xs font-bold outline-none focus:border-[var(--text-primary)]/50 transition-all placeholder:opacity-40"
+            style={{ color: 'var(--text-primary)' }}
           />
         </div>
         <div className="flex gap-2">
@@ -160,10 +175,10 @@ const BoletosView: React.FC<BoletosViewProps> = ({
             <button
               key={filter}
               onClick={() => setStatusFilter(filter)}
-              className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all ${
+              className={`px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider transition-all border ${
                 statusFilter === filter
-                  ? 'bg-[var(--text-primary)] text-[var(--bg-color)]'
-                  : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                  ? 'bg-[var(--text-primary)] text-[var(--bg-color)] border-[var(--text-primary)]'
+                  : 'bg-[var(--glass-bg)] border-[var(--border-color)] hover:bg-[var(--border-color)] text-[var(--text-primary)]'
               }`}
             >
               {filter === 'all' ? 'Todos' : filter}
@@ -250,7 +265,8 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                           {onViewBoleto && (
                             <button
                               onClick={() => onViewBoleto(boleto)}
-                              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group-hover:border-white/30"
+                              className="p-2 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50"
+                              style={{ color: 'var(--text-primary)' }}
                               title="Visualizar Boleto"
                             >
                               <Eye className="w-4 h-4" />
@@ -259,13 +275,27 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                           {onDownloadBoleto && (
                             <button
                               onClick={() => onDownloadBoleto(boleto)}
-                              className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group-hover:border-white/30"
+                              className="p-2 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50"
+                              style={{ color: 'var(--text-primary)' }}
                               title="Baixar PDF"
                             >
                               <Download className="w-4 h-4" />
                             </button>
                           )}
                         </>
+                      )}
+                      {onDeleteBoleto && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Tem certeza que deseja excluir o boleto de ${boleto.residentName} - ${boleto.referenceMonth}?`)) {
+                              onDeleteBoleto(boleto);
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition-all group-hover:border-red-500/50"
+                          title="Excluir Boleto"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </button>
                       )}
                     </div>
                   </div>
