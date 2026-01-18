@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, ArrowRight, User, Lock, Eye, EyeOff, Sun, Moon } from 'lucide-react';
 import { UserRole } from '../types';
 import { loginUser, saveUserSession } from '../services/userAuth';
+import ForgotPassword from './ForgotPassword';
 
 interface LoginProps {
   onLogin: (role: UserRole) => void;
@@ -19,6 +20,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
   const [showIntro, setShowIntro] = useState(false);
   const [showForm, setShowForm] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   // Intro removida - o vídeo já foi exibido antes
   // useEffect(() => {
@@ -89,24 +91,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
     setLoading(true);
     
     try {
-      // Validar credenciais no Supabase
-      const user = await loginUser(username.trim(), password);
+      // Validar credenciais no Supabase (agora retorna objeto com mais informações)
+      const result = await loginUser(username.trim(), password);
       
-      if (!user) {
-        setError('Usuário ou senha inválidos');
+      if (!result.user) {
+        // Verificar se está bloqueado
+        if (result.blocked) {
+          setError(result.error || 'Conta bloqueada');
+          setLoading(false);
+          return;
+        }
+        
+        // Mostrar erro e informações de tentativas
+        setError(result.error || 'Usuário ou senha inválidos');
         setLoading(false);
         return;
       }
 
       // Verificar se o role do usuário corresponde ao selecionado
-      if (user.role !== selectedRole) {
-        setError(`Este usuário é ${user.role === 'PORTEIRO' ? 'Porteiro' : 'Síndico'}. Selecione o papel correto.`);
+      if (result.user.role !== selectedRole) {
+        setError(`Este usuário é ${result.user.role === 'PORTEIRO' ? 'Porteiro' : 'Síndico'}. Selecione o papel correto.`);
         setLoading(false);
         return;
       }
 
       // Salvar sessão
-      saveUserSession(user);
+      saveUserSession(result.user);
       
       // Delay para feedback visual
       setTimeout(() => {
@@ -118,6 +128,17 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
       setLoading(false);
     }
   };
+
+  // Se mostrar recuperação de senha
+  if (showForgotPassword && selectedRole !== 'MORADOR') {
+    return (
+      <div className={`relative min-h-screen w-full flex items-center justify-center overflow-hidden transition-colors duration-500 ${
+        theme === 'light' ? 'bg-gray-50' : 'bg-[#050505]'
+      }`}>
+        <ForgotPassword onBack={() => setShowForgotPassword(false)} theme={theme} />
+      </div>
+    );
+  }
 
   return (
     <div className={`relative min-h-screen w-full flex items-center justify-center overflow-hidden transition-colors duration-500 ${
@@ -336,6 +357,19 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
                   </>
                 )}
               </button>
+
+              {/* Link "Esqueci minha senha" */}
+              {selectedRole !== 'MORADOR' && (
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className={`w-full text-sm text-center underline transition-colors mt-4 ${
+                    theme === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  Esqueci minha senha
+                </button>
+              )}
             </form>
           </div>
         </div>
