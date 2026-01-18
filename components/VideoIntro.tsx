@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppConfig } from '../contexts/AppConfigContext';
 
 interface VideoIntroProps {
@@ -15,25 +15,24 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   // Cache busting para garantir que a imagem atualizada seja sempre carregada
   // O timestamp é gerado apenas uma vez na montagem do componente
   // Usar nome sem espaços para compatibilidade com Vercel/produção
-  const imageSrc = useMemo(() => {
-    // Tentar primeiro com nome sem espaços (compatível com produção)
+  const [imageSrc, setImageSrc] = useState(() => {
+    // Verificar se está em produção (Vercel)
+    const isProd = typeof window !== 'undefined' && 
+                   (window.location.hostname !== 'localhost' && 
+                    window.location.hostname !== '127.0.0.1');
+    
+    // Em produção, usar nome sem espaços; em dev, tentar ambos
     const fileNameWithoutSpaces = 'gestao-qualivida-residence.png';
-    // Fallback para nome original caso o arquivo sem espaços não exista
     const fileNameWithSpaces = 'gestão Qualivida Residence.png';
     
-    // Verificar se está em produção
-    const isProd = (import.meta as any).env?.MODE === 'production' || 
-                   (import.meta as any).env?.PROD === true ||
-                   window.location.hostname !== 'localhost';
-    
-    // Em produção (Vercel), usar nome sem espaços
+    // Sempre tentar sem espaços primeiro (mais compatível)
     if (isProd) {
       return `/${fileNameWithoutSpaces}?t=${Date.now()}`;
     }
     
-    // Em desenvolvimento, tentar nome original primeiro
+    // Em desenvolvimento, tentar com espaços codificados primeiro
     return `/${fileNameWithSpaces.replace(/ /g, '%20')}?t=${Date.now()}`;
-  }, []);
+  });
 
   useEffect(() => {
     // Mostrar botão de pular após 2 segundos
@@ -46,16 +45,36 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
       onComplete();
     }, 5000);
 
-    // Verificar se a imagem foi carregada
+    // Verificar se a imagem foi carregada com fallback
     const img = new Image();
     img.onload = () => {
       setIsLoading(false);
       setImageLoaded(true);
     };
     img.onerror = () => {
-      console.error('Erro ao carregar imagem:', imageSrc);
-      setHasError(true);
-      setIsLoading(false);
+      // Tentar fallback se falhar
+      const currentSrc = imageSrc;
+      if (currentSrc.includes('gestao-qualivida-residence')) {
+        // Se falhou sem espaços, tentar com espaços
+        const fallbackSrc = `/gestão%20Qualivida%20Residence.png?t=${Date.now()}`;
+        console.warn('Imagem sem espaços não encontrada, tentando com espaços:', fallbackSrc);
+        setImageSrc(fallbackSrc);
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => {
+          setIsLoading(false);
+          setImageLoaded(true);
+        };
+        fallbackImg.onerror = () => {
+          console.error('Erro ao carregar imagem (tentativas esgotadas):', currentSrc);
+          setHasError(true);
+          setIsLoading(false);
+        };
+        fallbackImg.src = fallbackSrc;
+      } else {
+        console.error('Erro ao carregar imagem:', currentSrc);
+        setHasError(true);
+        setIsLoading(false);
+      }
     };
     img.src = imageSrc;
 
