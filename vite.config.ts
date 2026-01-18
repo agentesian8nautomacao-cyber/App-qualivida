@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
         }
       },
       plugins: [react()],
-      publicDir: 'Public',
+      publicDir: 'public',
       optimizeDeps: {
         disabled: false,
         entries: ['index.html']
