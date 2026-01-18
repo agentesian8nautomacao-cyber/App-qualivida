@@ -1,7 +1,7 @@
 ﻿{
-  "name": "Qualivida Gestão",
+  "name": "Qualivida Gestao",
   "short_name": "Qualivida",
-  "description": "Sistema premium de gestão condominial focado em encomendas, reservas e comunicação interna para portaria e administração.",
+  "description": "Sistema premium de gestao condominial focado em encomendas, reservas e comunicacao interna para portaria e administracao.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0c1a13",

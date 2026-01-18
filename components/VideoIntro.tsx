@@ -14,11 +14,11 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   
   // Cache busting para garantir que a imagem atualizada seja sempre carregada
   // O timestamp é gerado apenas uma vez na montagem do componente
-  // Codificar espaços no nome do arquivo para evitar problemas na URL
   const imageSrc = useMemo(() => {
+    // O Vite/Vite dev server lida com espaços automaticamente, mas vamos codificar para garantir
     const fileName = 'gestão Qualivida Residence.png';
-    // Codificar apenas os espaços e caracteres especiais, mantendo a barra
-    const encodedFileName = fileName.replace(/\s/g, '%20');
+    // Substituir espaços por %20 manualmente para compatibilidade
+    const encodedFileName = fileName.replace(/ /g, '%20');
     return `/${encodedFileName}?t=${Date.now()}`;
   }, []);
 

@@ -40,6 +40,18 @@
     <meta name="application-name" content="Qualivida Gestão" />
     <!-- Tailwind CDN - AVISO: Para produção, instale Tailwind como PostCSS plugin: https://tailwindcss.com/docs/installation -->
     <!-- TODO: Instalar Tailwind CSS localmente para produção -->
+    <script>
+      // Suprimir aviso do Tailwind CDN em desenvolvimento
+      if (typeof window !== 'undefined') {
+        const originalWarn = console.warn;
+        console.warn = function(...args) {
+          if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
+            return; // Suprimir aviso do Tailwind CDN
+          }
+          originalWarn.apply(console, args);
+        };
+      }
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
