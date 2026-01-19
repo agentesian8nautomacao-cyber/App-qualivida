@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 interface VideoIntroProps {
   onComplete: () => void;
@@ -6,58 +6,82 @@ interface VideoIntroProps {
 
 const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  const [hasError, setHasError] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Callback estável para completar
+  const handleComplete = useCallback(() => {
+    onComplete();
+  }, [onComplete]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    let isCleanedUp = false;
+
     // Quando o vídeo terminar, completar automaticamente
     const handleVideoEnd = () => {
-      onComplete();
-    };
-
-    // Quando o vídeo estiver pronto para reproduzir
-    const handleCanPlay = () => {
-      setIsVideoReady(true);
+      if (!isCleanedUp) {
+        handleComplete();
+      }
     };
 
     // Tentar reproduzir o vídeo
     const playVideo = async () => {
+      if (isCleanedUp || !video) return;
+      
       try {
-        video.load(); // Recarregar o vídeo para garantir
-        await video.play();
+        // Não recarregar se já estiver carregado
+        if (video.readyState < 2) {
+          video.load();
+        }
+        
+        // Aguardar um pouco antes de tentar reproduzir
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        if (!isCleanedUp && video) {
+          await video.play();
+        }
       } catch (error) {
         // Se falhar (autoplay bloqueado), aguardar interação do usuário
         console.log('Autoplay bloqueado, aguardando interação do usuário');
       }
     };
 
-    video.addEventListener('ended', handleVideoEnd);
-    video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('loadeddata', () => {
-      playVideo();
-    });
+    // Adicionar listeners
+    video.addEventListener('ended', handleVideoEnd, { once: true });
+    
+    // Tentar reproduzir quando o vídeo estiver pronto
+    const handleCanPlay = () => {
+      if (!isCleanedUp) {
+        playVideo();
+      }
+    };
+    
+    video.addEventListener('canplay', handleCanPlay, { once: true });
+    video.addEventListener('loadeddata', handleCanPlay, { once: true });
 
-    // Tentar reproduzir quando o vídeo estiver carregado
+    // Se o vídeo já estiver pronto, tentar reproduzir imediatamente
     if (video.readyState >= 2) {
       playVideo();
     }
 
     return () => {
+      isCleanedUp = true;
       video.removeEventListener('ended', handleVideoEnd);
       video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('loadeddata', handleCanPlay);
     };
-  }, [onComplete]);
+  }, [handleComplete]);
 
   // Permitir pular ao toque/clique na tela inteira
-  const handleScreenClick = () => {
-    onComplete();
-  };
+  const handleScreenClick = useCallback(() => {
+    handleComplete();
+  }, [handleComplete]);
 
   return (
     <div 
+      ref={containerRef}
       className="video-intro-container"
       onClick={handleScreenClick}
       style={{ 
@@ -74,7 +98,11 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
         backgroundColor: '#000000',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        willChange: 'contents',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden'
       }}
     >
       <video
@@ -85,38 +113,27 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
         playsInline
         preload="auto"
         style={{
-          width: '100%',
-          height: '100%',
+          width: '100vw',
+          height: '100vh',
+          minWidth: '100%',
+          minHeight: '100%',
           objectFit: 'cover',
+          objectPosition: 'center',
           pointerEvents: 'none',
-          opacity: isVideoReady ? 1 : 0,
-          transition: 'opacity 0.3s ease-in'
+          willChange: 'auto',
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          WebkitTransform: 'translateZ(0)'
         }}
         onError={(e) => {
           console.error('Erro ao carregar vídeo:', e);
-          setHasError(true);
           // Se o vídeo falhar ao carregar, completar após 2 segundos
           setTimeout(() => {
-            onComplete();
+            handleComplete();
           }, 2000);
         }}
-        onLoadedData={() => {
-          setIsVideoReady(true);
-        }}
       />
-      {hasError && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          color: '#fff',
-          textAlign: 'center',
-          padding: '2rem'
-        }}>
-          <p>Erro ao carregar vídeo. Continuando...</p>
-        </div>
-      )}
     </div>
   );
 };
