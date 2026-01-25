@@ -159,15 +159,22 @@ export const loginUser = async (
     // Verificar senha
     let isValidPassword = false;
     
+    // Se o password_hash começar com "plain:", comparar diretamente (senha em texto plano)
+    if (data.password_hash && data.password_hash.startsWith('plain:')) {
+      const plainPassword = data.password_hash.substring(6); // Remove "plain:"
+      isValidPassword = plainPassword === password;
+    }
     // Se o password_hash for placeholder, aceitar senhas padrão conhecidas
-    if (data.password_hash === '$2a$10$placeholder_hash_here') {
+    else if (data.password_hash === '$2a$10$placeholder_hash_here') {
       const defaultPasswords: Record<string, string> = {
         'portaria': '123456',
         'admin': 'admin123',
         'desenvolvedor': 'dev'
       };
       isValidPassword = defaultPasswords[normalizedUsername] === password;
-    } else {
+    } 
+    // Caso contrário, comparar com hash SHA-256
+    else {
       isValidPassword = data.password_hash === hashedPassword;
     }
 
