@@ -97,6 +97,32 @@ export const updatePackage = async (pkg: Package): Promise<{ success: boolean; e
 // SERVIÇOS PARA MORADORES
 // ============================================
 
+export const getResidents = async (): Promise<Resident[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('residents')
+      .select('id, name, unit, email, phone, whatsapp')
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar moradores:', error);
+      return [];
+    }
+
+    return (data || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      unit: r.unit,
+      email: r.email || '',
+      phone: r.phone || '',
+      whatsapp: r.whatsapp || ''
+    }));
+  } catch (err: any) {
+    console.error('Erro ao buscar moradores:', err);
+    return [];
+  }
+};
+
 export const saveResident = async (resident: Resident): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     if (resident.id && resident.id.startsWith('temp-')) {

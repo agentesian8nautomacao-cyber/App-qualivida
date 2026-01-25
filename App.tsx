@@ -38,7 +38,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { normalizeUnit } from './utils/unitFormatter';
 
 // Services
-import { savePackage, updatePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
+import { getResidents, savePackage, updatePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
 
 // Modals
 import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
@@ -92,6 +92,12 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Carregar moradores do Supabase quando staff estiver autenticado
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getResidents().then((list) => setAllResidents(list));
+  }, [isAuthenticated]);
+
   // Atalhos de teclado
   useKeyboardShortcuts({ onNavigate: setActiveTab });
   
@@ -118,12 +124,7 @@ const App: React.FC = () => {
     residentName: ''
   });
 
-  const [allResidents, setAllResidents] = useState<Resident[]>([
-    { id: '1', name: 'João Silva', unit: '102A', email: 'joao@email.com', phone: '5511999999999', whatsapp: '5511999999999' },
-    { id: '2', name: 'Maria Santos', unit: '405B', email: 'maria@email.com', phone: '5511888888888', whatsapp: '5511888888888' },
-    { id: '3', name: 'Ana Oliveira', unit: '201C', email: 'ana@email.com', phone: '5511777777777', whatsapp: '5511777777777' },
-    { id: '4', name: 'Ricardo Almeida', unit: '202', email: 'ricardo@email.com', phone: '5511666666666', whatsapp: '5511666666666' },
-  ]);
+  const [allResidents, setAllResidents] = useState<Resident[]>([]);
 
   const [allPackages, setAllPackages] = useState<Package[]>([
     { id: '1', recipient: 'João Silva', unit: '102A', type: 'Amazon', receivedAt: new Date(Date.now() - 2 * 60 * 60000).toISOString(), displayTime: '08:30', status: 'Pendente', deadlineMinutes: 60, residentPhone: '5511999999999' },
@@ -513,18 +514,20 @@ const App: React.FC = () => {
       whatsapp: normalizedData.whatsapp || ''
     };
     
+    const isNew = resident.id.startsWith('temp-');
+    
     // Salvar no Supabase
     const result = await saveResident(resident);
     if (result.success) {
       if (result.id) {
         resident.id = result.id;
       }
-      if (resident.id && !resident.id.startsWith('temp-')) {
-        // Atualizar existente
-        setAllResidents(prev => prev.map(r => r.id === resident.id ? resident : r));
-      } else {
-        // Novo morador
+      if (isNew) {
+        // Novo morador: adicionar à lista
         setAllResidents(prev => [resident, ...prev]);
+      } else {
+        // Morador existente: atualizar na lista
+        setAllResidents(prev => prev.map(r => r.id === resident.id ? resident : r));
       }
       setIsResidentModalOpen(false);
     } else {
