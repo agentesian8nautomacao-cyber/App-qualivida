@@ -111,7 +111,7 @@ const Layout: React.FC<LayoutProps> = ({
     // Acesso para todos
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
     { id: 'notices', label: 'Mural de Avisos', icon: Bell, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
-    { id: 'boletos', label: 'Boletos', icon: Receipt, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    { id: 'boletos', label: 'Boletos', icon: Receipt, roles: ['MORADOR', 'SINDICO'] },
     { id: 'reservations', label: 'Reservas', icon: Calendar, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
     
     // Apenas Porteiro e Síndico
