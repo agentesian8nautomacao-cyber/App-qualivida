@@ -1,13 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Obter variáveis de ambiente
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+let supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+// Garantir que a URL tenha https://
+if (supabaseUrl && !supabaseUrl.startsWith('http://') && !supabaseUrl.startsWith('https://')) {
+  supabaseUrl = `https://${supabaseUrl}`;
+}
 
 // Debug: Log das variáveis (apenas em desenvolvimento)
 if (import.meta.env.DEV) {
   console.log('🔍 Debug - Variáveis de ambiente:');
-  console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✅ Configurada' : '❌ Não configurada');
+  console.log('VITE_SUPABASE_URL:', supabaseUrl ? `✅ ${supabaseUrl}` : '❌ Não configurada');
   console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Configurada' : '❌ Não configurada');
 }
 
@@ -22,6 +27,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   if (import.meta.env.PROD) {
     console.error('URL:', supabaseUrl || 'VAZIO');
     console.error('KEY:', supabaseAnonKey ? 'Configurada (oculta)' : 'VAZIO');
+    console.error('URL original:', import.meta.env.VITE_SUPABASE_URL || 'NÃO DEFINIDA');
   }
 }
 
