@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import Layout from './components/Layout';
 import Login from './components/Login';
+import LogoSplash from './components/LogoSplash';
 import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
 import VideoIntro from './components/VideoIntro';
@@ -78,6 +79,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
   const [showResidentRegister, setShowResidentRegister] = useState(false);
+  const [showLogoSplash, setShowLogoSplash] = useState(true);
   const [showVideoIntro, setShowVideoIntro] = useState(() => {
     const hasSeenIntro = sessionStorage.getItem('hasSeenVideoIntro');
     return hasSeenIntro !== 'true';
@@ -733,6 +735,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false); 
     setCurrentResident(null);
     setShowResidentRegister(false);
+    setShowLogoSplash(true);
     setActiveTab('dashboard');
     // Limpar dados do morador da sessão
     sessionStorage.removeItem('currentResident');
@@ -975,6 +978,15 @@ const App: React.FC = () => {
   if (isScreenSaverActive) return <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
   
   // Mostrar tela de apresentação apenas no primeiro acesso
+  if (!isAuthenticated && showLogoSplash) {
+    return (
+      <LogoSplash
+        onComplete={() => setShowLogoSplash(false)}
+        durationMs={2200}
+      />
+    );
+  }
+
   if (showVideoIntro) {
     return (
       <VideoIntro 
