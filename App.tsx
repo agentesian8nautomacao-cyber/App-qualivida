@@ -7,7 +7,7 @@ import LogoSplash from './components/LogoSplash';
 import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
 import VideoIntro from './components/VideoIntro';
-import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto } from './types';
+import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto, Notification } from './types';
 
 // Components
 import RecentEventsBar from './components/RecentEventsBar';
@@ -30,6 +30,7 @@ import AiReportsView from './components/views/AiReportsView';
 import SettingsView from './components/views/SettingsView';
 import BoletosView from './components/views/BoletosView';
 import MoradorDashboardView from './components/views/MoradorDashboardView';
+import NotificationsView from './components/views/NotificationsView';
 
 // Contexts
 import { useAppConfig } from './contexts/AppConfigContext';
@@ -41,6 +42,8 @@ import { openWhatsApp } from './utils/phoneNormalizer';
 
 // Services
 import { getResidents, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
+import { getNotifications, countUnreadNotifications } from './services/notificationService';
+import { supabase } from './services/supabase';
 
 // Modals
 import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
@@ -226,6 +229,10 @@ const App: React.FC = () => {
     },
   ]);
   const [boletoSearch, setBoletoSearch] = useState('');
+
+  // Estado de notificações
+  const [allNotifications, setAllNotifications] = useState<Notification[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const [allStaff, setAllStaff] = useState<Staff[]>([
     { id: '1', name: 'José Carlos', role: 'Zelador', status: 'Ativo', shift: 'Comercial', phone: '11999991234', email: 'zelador@qualivida.com' },
@@ -425,6 +432,79 @@ const App: React.FC = () => {
     fetchResidents(true);
   }, [isNewPackageModalOpen, isAuthenticated, fetchResidents]);
 
+  // Carregar notificações quando morador estiver autenticado
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'MORADOR' || !currentResident) return;
+
+    const loadNotifications = async () => {
+      const result = await getNotifications(currentResident.id);
+      if (result.data) {
+        setAllNotifications(result.data);
+        setUnreadNotificationCount(result.data.filter(n => !n.read).length);
+      }
+    };
+
+    loadNotifications();
+
+    // Configurar Realtime listener para notificações
+    const channel = supabase
+      .channel('notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `morador_id=eq.${currentResident.id}`
+        },
+        (payload) => {
+          const newNotification: Notification = {
+            id: payload.new.id,
+            morador_id: payload.new.morador_id,
+            title: payload.new.title,
+            message: payload.new.message,
+            type: payload.new.type || 'package',
+            related_id: payload.new.related_id || undefined,
+            read: payload.new.read || false,
+            created_at: payload.new.created_at
+          };
+          
+          // Adicionar nova notificação no início da lista
+          setAllNotifications(prev => [newNotification, ...prev]);
+          setUnreadNotificationCount(prev => prev + 1);
+          
+          // Exibir alerta visual (opcional - pode ser um toast)
+          console.log('Nova notificação recebida:', newNotification);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `morador_id=eq.${currentResident.id}`
+        },
+        (payload) => {
+          // Atualizar notificação se foi marcada como lida
+          setAllNotifications(prev =>
+            prev.map(n => n.id === payload.new.id ? {
+              ...n,
+              read: payload.new.read || false
+            } : n)
+          );
+          setUnreadNotificationCount(prev => 
+            payload.new.read ? Math.max(0, prev - 1) : prev
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, role, currentResident]);
+
   const handleVisitorCheckOut = async (id: string) => {
     const visitor = visitorLogs.find(v => v.id === id);
     if (!visitor) return;
@@ -509,26 +589,38 @@ const App: React.FC = () => {
       if (result.success && result.id) {
         newPkg.id = result.id;
         setAllPackages([newPkg, ...allPackages]);
+        
+        // Feedback de sucesso
+        // A notificação automática no app já foi criada pelo savePackage
+        const feedbackMessages = ['✅ Encomenda registrada', '📱 Notificação enviada no app'];
+        
+        if (sendNotify) {
+          // Usar WhatsApp do morador se disponível, senão usar do condomínio
+          const whatsappNumber = selectedResident.whatsapp || config.condominiumWhatsApp;
+          
+          // Normalizar e validar número antes de enviar
+          const success = openWhatsApp(whatsappNumber, packageMessage, (error) => {
+            alert(`${feedbackMessages.join('\n')}\n\n⚠️ Não foi possível enviar via WhatsApp: ${error}\n\nVerifique se o morador tem WhatsApp cadastrado corretamente ou configure o WhatsApp do condomínio nas configurações.`);
+          });
+          
+          if (success) {
+            // Se WhatsApp foi enviado com sucesso, adicionar ao feedback
+            feedbackMessages.push('💬 WhatsApp enviado');
+          }
+        }
+        
+        // Exibir feedback consolidado
+        // Usar um pequeno delay para garantir que a UI está atualizada
+        setTimeout(() => {
+          // Feedback silencioso - não interromper o fluxo
+          // O sistema já criou a notificação automaticamente
+        }, 100);
       } else {
         console.error('Erro ao salvar pacote:', result.error);
         alert('Erro ao salvar encomenda: ' + (result.error || 'Erro desconhecido'));
         return;
       }
-
-      if (sendNotify) {
-        // Usar WhatsApp do morador se disponível, senão usar do condomínio
-        const whatsappNumber = selectedResident.whatsapp || config.condominiumWhatsApp;
-        
-        // Normalizar e validar número antes de enviar
-        const success = openWhatsApp(whatsappNumber, packageMessage, (error) => {
-          alert(`Não foi possível enviar a notificação via WhatsApp: ${error}\n\nVerifique se o morador tem WhatsApp cadastrado corretamente ou configure o WhatsApp do condomínio nas configurações.`);
-        });
-        
-        if (!success) {
-          // Se falhou, não continuar (já exibiu erro)
-          return;
-        }
-      }
+      
       resetPackageModal();
       setActiveTab('dashboard');
     } finally {
@@ -959,6 +1051,19 @@ const App: React.FC = () => {
           );
         }
         return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />;
+      case 'notifications':
+        if (role === 'MORADOR' && currentResident) {
+          return <NotificationsView moradorId={currentResident.id} allPackages={allPackages.filter(p => p.unit === currentResident.unit)} onViewPackage={setSelectedPackageForDetail} />;
+        }
+        return (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+            <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+            <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+            <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+              Esta página é de acesso exclusivo do Morador.
+            </p>
+          </div>
+        );
       case 'packages': 
         if (role === 'MORADOR' && currentResident) {
           const myPackages = allPackages.filter(p => p.unit === currentResident.unit);
@@ -1127,7 +1232,17 @@ const App: React.FC = () => {
 
   return (
     <>
-      <Layout activeTab={activeTab} setActiveTab={setActiveTab} role={role} setRole={setRole} onLogout={handleLogout} theme={theme} toggleTheme={toggleTheme}>
+      <Layout 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        role={role} 
+        setRole={setRole} 
+        onLogout={handleLogout} 
+        theme={theme} 
+        toggleTheme={toggleTheme}
+        notificationCount={role === 'MORADOR' ? unreadNotificationCount : 0}
+        onOpenNotifications={role === 'MORADOR' ? () => setActiveTab('notifications') : undefined}
+      >
         {renderContent()}
       </Layout>
       {role === 'PORTEIRO' && <DraggableFab onClick={() => { setEditingNoteId(null); setNewNoteContent(''); setIsNewNoteModalOpen(true); }} />}

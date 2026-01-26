@@ -111,6 +111,7 @@ const Layout: React.FC<LayoutProps> = ({
     // Acesso para todos
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
     { id: 'notices', label: 'Mural de Avisos', icon: Bell, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
+    { id: 'notifications', label: 'Notificações', icon: Bell, roles: ['MORADOR'] },
     { id: 'boletos', label: 'Boletos', icon: Receipt, roles: ['MORADOR', 'SINDICO'] },
     { id: 'reservations', label: 'Reservas', icon: Calendar, roles: ['MORADOR', 'PORTEIRO', 'SINDICO'] },
     
@@ -275,10 +276,10 @@ const Layout: React.FC<LayoutProps> = ({
             </h2>
           </div>
           <div className="flex items-center gap-4 md:gap-6">
-             {role === 'PORTEIRO' && (
+             {(role === 'PORTEIRO' || role === 'MORADOR') && (
                <div className="flex items-center gap-2">
                  <button 
-                    onClick={onOpenNotifications}
+                    onClick={onOpenNotifications || (() => setActiveTab('notifications'))}
                     className="relative p-3 rounded-2xl border transition-all hover:scale-110 active:scale-95 flex items-center justify-center group"
                     style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                  >

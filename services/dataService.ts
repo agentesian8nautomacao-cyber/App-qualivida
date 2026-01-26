@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem } from '../types';
+import { createNotification } from './notificationService';
 
 // ============================================
 // SERVIÇOS PARA PACOTES (ENCOMENDAS)
@@ -91,6 +92,23 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       if (itemsError) {
         console.error('Erro ao salvar itens do pacote:', itemsError);
         // Não falha o salvamento do pacote se os itens falharem
+      }
+    }
+
+    // Criar notificação automática no app (independente do WhatsApp)
+    // Isso acontece automaticamente sempre que uma encomenda é registrada
+    if (recipientId && data) {
+      const notificationResult = await createNotification(
+        recipientId,
+        '📦 Nova encomenda na portaria',
+        'Uma encomenda foi recebida e está disponível para retirada.',
+        'package',
+        data.id
+      );
+
+      if (!notificationResult.success) {
+        // Log do erro mas não falha o salvamento da encomenda
+        console.warn('Erro ao criar notificação automática:', notificationResult.error);
       }
     }
 

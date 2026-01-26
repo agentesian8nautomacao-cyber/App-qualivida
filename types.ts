@@ -147,3 +147,14 @@ export interface Boleto {
   paidDate?: string; // Data de pagamento
   description?: string; // Descrição adicional
 }
+
+export interface Notification {
+  id: string;
+  morador_id: string;
+  title: string;
+  message: string;
+  type: 'package' | 'visitor' | 'occurrence' | 'other';
+  related_id?: string; // ID do registro relacionado (ex: package.id)
+  read: boolean;
+  created_at: string;
+}
