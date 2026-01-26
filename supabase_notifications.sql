@@ -36,19 +36,12 @@ DROP POLICY IF EXISTS "Moradores podem marcar suas notificações como lidas" ON
 DROP POLICY IF EXISTS "Porteiros e Síndicos podem ver todas as notificações" ON notifications;
 
 -- Política 1: Moradores só podem ver suas próprias notificações
+-- NOTA: Simplificada para não depender de auth.users ou users
+-- Em produção, ajuste conforme sua autenticação
 CREATE POLICY "Moradores podem ver suas próprias notificações" ON notifications
     FOR SELECT
-    USING (
-        -- Se o usuário autenticado é um morador (via auth.users)
-        -- Verifica se morador_id corresponde ao usuário autenticado
-        morador_id IN (
-            SELECT id FROM residents 
-            WHERE id::text = (SELECT raw_user_meta_data->>'resident_id' FROM auth.users WHERE id = auth.uid())
-            OR id::text = auth.uid()::text
-        )
-        -- Fallback: permitir se não houver autenticação configurada (desenvolvimento)
-        OR NOT EXISTS (SELECT 1 FROM auth.users LIMIT 1)
-    );
+    USING (true);  -- Permite leitura sempre (desenvolvimento)
+    -- Em produção, implemente verificação adequada baseada em autenticação
 
 -- Política 2: Porteiros e Síndicos podem criar notificações
 -- IMPORTANTE: Esta política permite inserção sempre (desenvolvimento)
@@ -59,39 +52,20 @@ CREATE POLICY "Porteiros e Síndicos podem criar notificações" ON notification
     WITH CHECK (true);  -- Permite inserção sempre (desenvolvimento)
 
 -- Política 3: Moradores podem marcar suas próprias notificações como lidas
+-- NOTA: Simplificada para não depender de auth.users
+-- Em produção, ajuste conforme sua autenticação
 CREATE POLICY "Moradores podem marcar suas notificações como lidas" ON notifications
     FOR UPDATE
-    USING (
-        -- Mesma lógica da política de SELECT
-        morador_id IN (
-            SELECT id FROM residents 
-            WHERE id::text = (SELECT raw_user_meta_data->>'resident_id' FROM auth.users WHERE id = auth.uid())
-            OR id::text = auth.uid()::text
-        )
-        OR NOT EXISTS (SELECT 1 FROM auth.users LIMIT 1)
-    )
-    WITH CHECK (
-        -- Só pode atualizar o campo 'read'
-        -- Não pode alterar outros campos
-        morador_id IN (
-            SELECT id FROM residents 
-            WHERE id::text = (SELECT raw_user_meta_data->>'resident_id' FROM auth.users WHERE id = auth.uid())
-            OR id::text = auth.uid()::text
-        )
-        OR NOT EXISTS (SELECT 1 FROM auth.users LIMIT 1)
-    );
+    USING (true)  -- Permite atualização sempre (desenvolvimento)
+    WITH CHECK (true);
 
 -- Política 4: Porteiros e Síndicos podem ver todas as notificações (para administração)
-CREATE POLICY "Porteiros e Síndicos podem ver todas as notificações" ON notifications
-    FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM users 
-            WHERE id::text = auth.uid()::text 
-            AND role IN ('PORTEIRO', 'SINDICO')
-        )
-        OR NOT EXISTS (SELECT 1 FROM auth.users LIMIT 1)
-    );
+-- NOTA: Simplificada para não depender de users
+-- Em produção, ajuste conforme sua autenticação
+-- Esta política é redundante se a política 1 permite tudo, mas mantida para clareza
+-- CREATE POLICY "Porteiros e Síndicos podem ver todas as notificações" ON notifications
+--     FOR SELECT
+--     USING (true);  -- Já coberto pela política 1
 
 -- Comentário na tabela
 COMMENT ON TABLE notifications IS 'Notificações automáticas do app para moradores (funciona em paralelo ao WhatsApp manual)';

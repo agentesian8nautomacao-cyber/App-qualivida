@@ -10,6 +10,8 @@ import { Notification } from '../types';
  */
 export const getNotifications = async (moradorId: string): Promise<{ data: Notification[]; error?: string }> => {
   try {
+    console.log('[getNotifications] Buscando notificações para morador:', moradorId);
+    
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
@@ -17,7 +19,7 @@ export const getNotifications = async (moradorId: string): Promise<{ data: Notif
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Erro ao buscar notificações:', error);
+      console.error('[getNotifications] ❌ Erro ao buscar notificações:', error);
       return { data: [], error: error.message };
     }
 
@@ -32,9 +34,10 @@ export const getNotifications = async (moradorId: string): Promise<{ data: Notif
       created_at: n.created_at
     }));
 
+    console.log('[getNotifications] ✅ Notificações encontradas:', notifications.length);
     return { data: notifications };
   } catch (err: any) {
-    console.error('Erro ao buscar notificações:', err);
+    console.error('[getNotifications] ❌ Erro inesperado:', err);
     return { data: [], error: err?.message ?? 'Erro ao carregar notificações' };
   }
 };

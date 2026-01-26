@@ -448,8 +448,10 @@ const App: React.FC = () => {
     loadNotifications();
 
     // Configurar Realtime listener para notificações
+    console.log('[Realtime] Configurando listener para morador:', currentResident.id);
+    
     const channel = supabase
-      .channel('notifications')
+      .channel(`notifications-${currentResident.id}`) // Canal único por morador
       .on(
         'postgres_changes',
         {
@@ -459,6 +461,8 @@ const App: React.FC = () => {
           filter: `morador_id=eq.${currentResident.id}`
         },
         (payload) => {
+          console.log('[Realtime] ✅ Nova notificação recebida via Realtime:', payload);
+          
           const newNotification: Notification = {
             id: payload.new.id,
             morador_id: payload.new.morador_id,
@@ -471,11 +475,19 @@ const App: React.FC = () => {
           };
           
           // Adicionar nova notificação no início da lista
-          setAllNotifications(prev => [newNotification, ...prev]);
+          setAllNotifications(prev => {
+            // Evitar duplicatas
+            const exists = prev.find(n => n.id === newNotification.id);
+            if (exists) {
+              console.log('[Realtime] Notificação já existe, ignorando duplicata');
+              return prev;
+            }
+            return [newNotification, ...prev];
+          });
           setUnreadNotificationCount(prev => prev + 1);
           
           // Exibir alerta visual (opcional - pode ser um toast)
-          console.log('Nova notificação recebida:', newNotification);
+          console.log('[Realtime] ✅ Notificação adicionada à lista:', newNotification);
         }
       )
       .on(
@@ -499,9 +511,17 @@ const App: React.FC = () => {
           );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Realtime] Status da conexão:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] ✅ Conectado ao Realtime com sucesso');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[Realtime] ❌ Erro ao conectar ao Realtime');
+        }
+      });
 
     return () => {
+      console.log('[Realtime] Removendo listener de notificações');
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated, role, currentResident]);

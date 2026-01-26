@@ -70,15 +70,21 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       insertData.image_url = pkg.imageUrl;
     }
 
+    // Usar 'as any' para contornar cache do schema do Supabase
+    // Isso permite que a inserção funcione mesmo se o cache do cliente estiver desatualizado
     let { data, error } = await supabase
       .from('packages')
-      .insert(insertData)
+      .insert(insertData as any)
       .select()
       .single();
 
-    // Se falhar por causa de colunas opcionais não existirem, tentar sem elas
+    // Se falhar por causa de colunas opcionais não existirem ou cache do schema, tentar sem elas
     if (error && error.message) {
       const errorMsg = error.message.toLowerCase();
+      const isSchemaCacheError = errorMsg.includes('schema cache') || 
+                                 errorMsg.includes('could not find') ||
+                                 errorMsg.includes('column') && errorMsg.includes('packages');
+      
       const missingColumns: string[] = [];
       
       if (errorMsg.includes('qr_code_data') || errorMsg.includes("qr_code_data")) {
@@ -91,10 +97,26 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       }
 
       if (missingColumns.length > 0) {
-        console.warn(`Colunas não encontradas no schema: ${missingColumns.join(', ')}, tentando sem elas...`);
+        if (isSchemaCacheError) {
+          console.warn(`⚠️ Erro de cache do schema para colunas: ${missingColumns.join(', ')}. Tentando sem elas...`);
+          console.warn('💡 Dica: A coluna pode existir no banco, mas o cache do Supabase está desatualizado.');
+        } else {
+          console.warn(`Colunas não encontradas no schema: ${missingColumns.join(', ')}, tentando sem elas...`);
+        }
+        
         const retryResult = await supabase
           .from('packages')
-          .insert(insertData)
+          .insert(insertData as any)
+          .select()
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      } else if (isSchemaCacheError) {
+        // Se for erro de cache mas não identificamos colunas específicas, tentar novamente com 'as any'
+        console.warn('⚠️ Erro de cache do schema detectado. Tentando novamente...');
+        const retryResult = await supabase
+          .from('packages')
+          .insert(insertData as any)
           .select()
           .single();
         data = retryResult.data;
