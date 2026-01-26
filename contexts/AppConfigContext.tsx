@@ -22,6 +22,7 @@ export interface AIConfig {
 
 export interface AppConfig {
   condominiumName: string;
+  condominiumWhatsApp: string;
   whatsappTemplates: WhatsAppTemplate;
   keyboardShortcuts: KeyboardShortcut[];
   aiConfig: AIConfig;
@@ -30,6 +31,7 @@ export interface AppConfig {
 
 const defaultConfig: AppConfig = {
   condominiumName: 'Qualivida',
+  condominiumWhatsApp: '',
   whatsappTemplates: {
     packageReceived: 'Olá, {residentName}! Recebemos um volume para você ({packageType}) na portaria do {condominiumName}. Favor retirar assim que possível.',
     packageReminder: 'Olá, {residentName}! Temos um volume ({packageType}) aguardando por você na portaria do {condominiumName} há {permanence}. Favor retirar assim que possível.',
@@ -142,4 +144,3 @@ export const useAppConfig = () => {
   }
   return context;
 };
-

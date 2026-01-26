@@ -1,6 +1,7 @@
 import React from 'react';
 import { Settings as SettingsIcon, Building2, MessageSquare, Keyboard, Brain, Save } from 'lucide-react';
 import CondominiumNameSection from '../settings/CondominiumNameSection';
+import CondominiumWhatsAppSection from '../settings/CondominiumWhatsAppSection';
 import WhatsAppTemplatesSection from '../settings/WhatsAppTemplatesSection';
 import KeyboardShortcutsSection from '../settings/KeyboardShortcutsSection';
 import AIPersonalitySection from '../settings/AIPersonalitySection';
@@ -23,6 +24,7 @@ const SettingsView: React.FC = () => {
 
       <div className="space-y-6">
         <CondominiumNameSection />
+        <CondominiumWhatsAppSection />
         <ThemeSelectionSection />
         <WhatsAppTemplatesSection />
         <KeyboardShortcutsSection />
@@ -33,4 +35,3 @@ const SettingsView: React.FC = () => {
 };
 
 export default SettingsView;
-
