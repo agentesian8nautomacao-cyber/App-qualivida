@@ -3,45 +3,56 @@ import { Camera, X, QrCode, Image as ImageIcon, CheckCircle2, AlertCircle, Rotat
 import { Resident } from '../../types';
 import { isMobile } from '../../utils/deviceDetection';
 import { useCamera } from '../../hooks/useCamera';
+import { normalizeUnit, compareUnits } from '../../utils/unitFormatter';
+
+export interface CameraScanSuccessData {
+  resident?: Resident;
+  qrData?: string;
+  image?: string;
+  fromMode?: 'qr' | 'photo';
+}
 
 interface CameraScanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onScanSuccess: (data: { resident?: Resident; qrData?: string; image?: string }) => void;
+  onScanSuccess: (data: CameraScanSuccessData) => void;
   allResidents: Resident[];
 }
 
-// jsQR: npm package ou CDN
-async function loadJsQR(): Promise<typeof import('jsqr')> {
+type JsQRFn = (data: Uint8ClampedArray, width: number, height: number, opts?: { inversionAttempts?: string }) => { data: string } | null;
+
+async function loadJsQR(): Promise<JsQRFn> {
   try {
     const m = await import('jsqr');
-    return m.default;
+    return m.default as JsQRFn;
   } catch {
     return new Promise((resolve, reject) => {
-      if ((window as unknown as { jsQR?: typeof import('jsqr') }).jsQR) {
-        resolve((window as unknown as { jsQR: typeof import('jsqr') }).jsQR);
+      const w = window as unknown as { jsQR?: JsQRFn };
+      if (w.jsQR) {
+        resolve(w.jsQR);
         return;
       }
       const script = document.createElement('script');
       script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
-      script.onload = () => {
-        const fn = (window as unknown as { jsQR: typeof import('jsqr') }).jsQR;
-        fn ? resolve(fn) : reject(new Error('jsQR não carregou'));
-      };
+      script.onload = () => (w.jsQR ? resolve(w.jsQR) : reject(new Error('jsQR não carregou')));
       script.onerror = () => reject(new Error('Erro ao carregar jsQR'));
       document.head.appendChild(script);
     });
   }
 }
 
-async function detectQRFromImageData(
-  imageData: ImageData
-): Promise<string | null> {
-  const jsQR = await loadJsQR();
-  const result = jsQR(imageData.data, imageData.width, imageData.height, {
-    inversionAttempts: 'dontInvert',
-  });
-  return result?.data ?? null;
+async function detectQRFromImageData(imageData: ImageData): Promise<string | null> {
+  if (!imageData.data.length || imageData.width < 50 || imageData.height < 50) return null;
+  try {
+    const jsQR = await loadJsQR();
+    let result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+    if (!result) {
+      result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+    }
+    return result?.data ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const CameraScanModal: React.FC<CameraScanModalProps> = ({
@@ -58,6 +69,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
   const [mode, setMode] = useState<'qr' | 'photo'>('qr');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [scannedData, setScannedData] = useState<string | null>(null);
+  const [qrDetecting, setQrDetecting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -70,26 +82,34 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
 
   const findResidentByQR = useCallback(
     (qrData: string): Resident | undefined => {
+      const raw = (qrData || '').trim();
+      if (!raw) return undefined;
+      const qrNorm = normalizeUnit(raw);
       try {
-        const data = JSON.parse(qrData) as { unit?: string; id?: string };
+        const data = JSON.parse(raw) as { unit?: string; id?: string; name?: string };
         if (data.unit) {
-          return allResidents.find((r) => r.unit === data.unit || r.id === data.id);
+          const u = normalizeUnit(data.unit);
+          const byUnit = allResidents.find((r) => compareUnits(r.unit, u));
+          if (byUnit) return byUnit;
+          const byId = data.id ? allResidents.find((r) => r.id === data.id) : undefined;
+          if (byId) return byId;
         }
       } catch {
-        // ignore
+        /* não é JSON */
       }
-      return allResidents.find(
-        (r) =>
-          qrData.includes(r.unit) ||
-          qrData.includes(r.name) ||
-          r.unit === qrData
-      );
+      return allResidents.find((r) => {
+        if (compareUnits(r.unit, raw) || compareUnits(r.unit, qrNorm)) return true;
+        if (r.unit === raw || r.unit === qrNorm) return true;
+        if (raw.includes(r.unit) || qrNorm.includes(normalizeUnit(r.unit))) return true;
+        if (r.name && raw.toLowerCase().includes(r.name.toLowerCase())) return true;
+        return false;
+      });
     },
     [allResidents]
   );
 
   const handleSuccess = useCallback(
-    (data: { resident?: Resident; qrData?: string; image?: string }) => {
+    (data: CameraScanSuccessData) => {
       onScanSuccess(data);
       resetModal();
     },
@@ -104,6 +124,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     stop();
     setCapturedImage(null);
     setScannedData(null);
+    setQrDetecting(false);
     setLocalError(null);
     clearError();
     setMode('qr');
@@ -162,12 +183,15 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!video || !canvas || video.readyState < video.HAVE_ENOUGH_DATA) return;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h || w < 50 || h < 50) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const imageData = ctx.getImageData(0, 0, w, h);
       detectQRFromImageData(imageData).then((qrData) => {
         if (!qrData) return;
         if (scanIntervalRef.current) {
@@ -178,12 +202,12 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
         stop();
         const resident = findResidentByQR(qrData);
         if (resident) {
-          handleSuccess({ resident, qrData });
+          handleSuccess({ resident, qrData, fromMode: 'qr' });
         } else {
-          handleSuccess({ qrData });
+          handleSuccess({ qrData, fromMode: 'qr' });
         }
       });
-    }, 300);
+    }, 250);
     return () => {
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
@@ -203,6 +227,8 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
     setCapturedImage(imageDataUrl);
+    setScannedData(null);
+    setQrDetecting(true);
     if (scanIntervalRef.current) {
       clearInterval(scanIntervalRef.current);
       scanIntervalRef.current = null;
@@ -214,18 +240,20 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
       .then((qrData) => {
         if (qrData) setScannedData(qrData);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setQrDetecting(false));
   }, [stream, stop]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage) return;
     const resident = scannedData ? findResidentByQR(scannedData) : undefined;
+    const base = { image: capturedImage, fromMode: 'photo' as const };
     if (resident && scannedData) {
-      handleSuccess({ resident, qrData: scannedData, image: capturedImage });
+      handleSuccess({ ...base, resident, qrData: scannedData });
     } else if (scannedData) {
-      handleSuccess({ qrData: scannedData, image: capturedImage });
+      handleSuccess({ ...base, qrData: scannedData });
     } else {
-      handleSuccess({ image: capturedImage });
+      handleSuccess(base);
     }
   }, [capturedImage, scannedData, findResidentByQR, handleSuccess]);
 
@@ -245,16 +273,24 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
       }
       setLocalError(null);
       clearError();
+      setScannedData(null);
+      setQrDetecting(true);
       const reader = new FileReader();
-      reader.onload = async (ev) => {
+      reader.onload = (ev) => {
         const dataUrl = ev.target?.result as string;
         setCapturedImage(dataUrl);
         const img = new Image();
         img.onload = () => {
           const canvas = canvasRef.current;
-          if (!canvas) return;
+          if (!canvas) {
+            setQrDetecting(false);
+            return;
+          }
           const ctx = canvas.getContext('2d');
-          if (!ctx) return;
+          if (!ctx) {
+            setQrDetecting(false);
+            return;
+          }
           canvas.width = img.width;
           canvas.height = img.height;
           ctx.drawImage(img, 0, 0);
@@ -263,8 +299,10 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             .then((qr) => {
               if (qr) setScannedData(qr);
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => setQrDetecting(false));
         };
+        img.onerror = () => setQrDetecting(false);
         img.src = dataUrl;
       };
       reader.readAsDataURL(file);
@@ -449,7 +487,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                 <div className="absolute bottom-2 left-2 right-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { setCapturedImage(null); setScannedData(null); requestAccessSync(); }}
+                    onClick={() => { setCapturedImage(null); setScannedData(null); setQrDetecting(false); requestAccessSync(); }}
                     className="flex-1 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] text-xs font-black uppercase"
                     style={{ color: 'var(--text-primary)' }}
                   >
@@ -459,10 +497,11 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                   <button
                     type="button"
                     onClick={handleConfirmPhoto}
-                    className="flex-1 py-3 rounded-xl bg-green-500 text-white text-xs font-black uppercase flex items-center justify-center gap-2"
+                    disabled={qrDetecting}
+                    className="flex-1 py-3 rounded-xl bg-green-500 text-white text-xs font-black uppercase flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    Confirmar
+                    {qrDetecting ? 'Analisando QR…' : 'Confirmar'}
                   </button>
                 </div>
               </div>

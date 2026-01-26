@@ -35,7 +35,7 @@ import { useAppConfig } from './contexts/AppConfigContext';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 // Utils
-import { normalizeUnit } from './utils/unitFormatter';
+import { normalizeUnit, compareUnits } from './utils/unitFormatter';
 
 // Services
 import { getResidents, savePackage, updatePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
@@ -558,23 +558,59 @@ const App: React.FC = () => {
       alert('Erro ao remover boleto: ' + (result.error || 'Erro desconhecido'));
     }
   };
-  const handleCameraScanSuccess = async (data: { resident?: Resident; qrData?: string; image?: string }) => {
-    if (data.resident) {
-      // Se encontrou o morador automaticamente, criar encomenda diretamente
+  const findResidentByQRData = (qrData: string): Resident | undefined => {
+    const raw = (qrData || '').trim();
+    if (!raw) return undefined;
+    const qrNorm = normalizeUnit(raw);
+    try {
+      const parsed = JSON.parse(raw) as { unit?: string; id?: string };
+      if (parsed.unit) {
+        const u = normalizeUnit(parsed.unit);
+        const byUnit = allResidents.find((r) => compareUnits(r.unit, u));
+        if (byUnit) return byUnit;
+        if (parsed.id) {
+          const byId = allResidents.find((r) => r.id === parsed.id);
+          if (byId) return byId;
+        }
+      }
+    } catch {
+      /* não é JSON */
+    }
+    return allResidents.find((r) => {
+      if (compareUnits(r.unit, raw) || compareUnits(r.unit, qrNorm)) return true;
+      if (r.unit === raw || r.unit === qrNorm) return true;
+      if (raw.includes(r.unit) || qrNorm.includes(normalizeUnit(r.unit))) return true;
+      if (r.name && raw.toLowerCase().includes(r.name.toLowerCase())) return true;
+      return false;
+    });
+  };
+
+  const handleCameraScanSuccess = async (data: { resident?: Resident; qrData?: string; image?: string; fromMode?: 'qr' | 'photo' }) => {
+    const fromPhoto = data.fromMode === 'photo';
+    const pkgType = fromPhoto ? 'Foto' : 'QR Code';
+    const itemName = fromPhoto ? 'Encomenda via foto' : 'Encomenda via QR Code';
+
+    let resident = data.resident;
+    if (!resident && data.qrData) {
+      resident = findResidentByQRData(data.qrData);
+    }
+
+    if (resident) {
       const newPkg: Package = {
         id: `temp-${Date.now()}`,
-        recipient: data.resident.name,
-        unit: data.resident.unit,
-        type: 'QR Code',
+        recipient: resident.name,
+        unit: resident.unit,
+        type: pkgType,
         receivedAt: new Date().toISOString(),
         displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         status: 'Pendente',
         deadlineMinutes: 45,
-        residentPhone: data.resident.phone,
-        items: data.qrData ? [{ id: '1', name: 'Encomenda via QR Code', description: data.qrData }] : undefined
+        residentPhone: resident.phone,
+        items: data.qrData
+          ? [{ id: '1', name: itemName, description: data.qrData }]
+          : [{ id: '1', name: itemName, description: fromPhoto ? 'Registro por foto' : 'Registro por QR' }]
       };
-      
-      // Salvar no Supabase
+
       const result = await savePackage(newPkg);
       if (result.success && result.id) {
         newPkg.id = result.id;
@@ -585,26 +621,22 @@ const App: React.FC = () => {
         console.error('Erro ao salvar pacote:', result.error);
         alert('Erro ao salvar encomenda: ' + (result.error || 'Erro desconhecido'));
       }
-    } else if (data.qrData || data.image) {
-      // Se não encontrou automaticamente, abrir modal de novo pacote pré-preenchido
+      return;
+    }
+
+    if (data.qrData || data.image) {
       setIsCameraScanModalOpen(false);
-      // Resetar modal primeiro
       setPackageStep(1);
       setSelectedResident(null);
       setSearchResident('');
-      setPackageType('Amazon');
+      setPackageType(pkgType);
       setNumItems(1);
       setPackageItems([{ id: '1', name: '', description: '' }]);
-      // Tentar encontrar morador pelos dados do QR
       if (data.qrData) {
-        const foundResident = allResidents.find(r => 
-          data.qrData?.includes(r.unit) || 
-          data.qrData?.includes(r.name) ||
-          r.unit === data.qrData
-        );
-        if (foundResident) {
-          setSelectedResident(foundResident);
-          setSearchResident(foundResident.name);
+        const found = findResidentByQRData(data.qrData);
+        if (found) {
+          setSelectedResident(found);
+          setSearchResident(found.name);
         }
       }
       setIsNewPackageModalOpen(true);
