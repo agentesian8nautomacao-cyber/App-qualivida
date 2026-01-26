@@ -19,6 +19,12 @@ export interface Package {
   deadlineMinutes: number; // Prazo estipulado pelo porteiro
   residentPhone?: string;
   items?: PackageItem[]; // Lista de itens detalhados
+  /** ID do morador no Supabase (residents.id); garante vínculo encomenda → morador. */
+  recipientId?: string;
+  /** Base64 ou URL da foto da encomenda (captura). */
+  imageUrl?: string | null;
+  /** Dados lidos do QR Code (captura). */
+  qrCodeData?: string | null;
 }
 
 export interface Reservation {

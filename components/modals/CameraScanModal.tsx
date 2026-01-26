@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, X, QrCode, Image as ImageIcon, CheckCircle2, AlertCircle, RotateCcw, Upload } from 'lucide-react';
+import { Camera, X, QrCode, Image as ImageIcon, CheckCircle2, AlertCircle, RotateCcw, Upload, Loader2 } from 'lucide-react';
 import { Resident } from '../../types';
 import { isMobile } from '../../utils/deviceDetection';
 import { useCamera } from '../../hooks/useCamera';
@@ -70,7 +70,11 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [scannedData, setScannedData] = useState<string | null>(null);
   const [qrDetecting, setQrDetecting] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [qrJustRead, setQrJustRead] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const pendingQrSuccessRef = useRef<{ resident?: Resident; qrData: string } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -108,14 +112,6 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     [allResidents]
   );
 
-  const handleSuccess = useCallback(
-    (data: CameraScanSuccessData) => {
-      onScanSuccess(data);
-      resetModal();
-    },
-    [onScanSuccess]
-  );
-
   const resetModal = useCallback(() => {
     if (scanIntervalRef.current) {
       clearInterval(scanIntervalRef.current);
@@ -125,10 +121,23 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     setCapturedImage(null);
     setScannedData(null);
     setQrDetecting(false);
+    setCapturing(false);
+    setUploading(false);
+    setQrJustRead(false);
     setLocalError(null);
+    pendingQrSuccessRef.current = null;
     clearError();
     setMode('qr');
   }, [stop, clearError]);
+
+  const handleSuccess = useCallback(
+    (data: CameraScanSuccessData) => {
+      if (!data.qrData && !data.image) return;
+      onScanSuccess(data);
+      resetModal();
+    },
+    [onScanSuccess, resetModal]
+  );
 
   const handleClose = useCallback(() => {
     resetModal();
@@ -178,7 +187,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
 
   // QR scan loop (apenas quando stream pronto e modo qr)
   useEffect(() => {
-    if (status !== 'ready' || mode !== 'qr' || capturedImage || scannedData) return;
+    if (status !== 'ready' || mode !== 'qr' || capturedImage || scannedData || qrJustRead) return;
     scanIntervalRef.current = window.setInterval(() => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -201,11 +210,8 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
         setScannedData(qrData);
         stop();
         const resident = findResidentByQR(qrData);
-        if (resident) {
-          handleSuccess({ resident, qrData, fromMode: 'qr' });
-        } else {
-          handleSuccess({ qrData, fromMode: 'qr' });
-        }
+        pendingQrSuccessRef.current = { resident, qrData };
+        setQrJustRead(true);
       });
     }, 250);
     return () => {
@@ -214,7 +220,25 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
         scanIntervalRef.current = null;
       }
     };
-  }, [status, mode, capturedImage, scannedData, findResidentByQR, handleSuccess, stop]);
+  }, [status, mode, capturedImage, scannedData, qrJustRead, findResidentByQR, stop]);
+
+  // Feedback "QR lido" e redirecionamento
+  useEffect(() => {
+    if (!qrJustRead) return;
+    const t = window.setTimeout(() => {
+      const pending = pendingQrSuccessRef.current;
+      pendingQrSuccessRef.current = null;
+      setQrJustRead(false);
+      if (!pending) return;
+      const { resident, qrData } = pending;
+      if (resident) {
+        handleSuccess({ resident, qrData, fromMode: 'qr' });
+      } else {
+        handleSuccess({ qrData, fromMode: 'qr' });
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [qrJustRead, handleSuccess]);
 
   const capturePhoto = useCallback(() => {
     const video = videoRef.current;
@@ -222,6 +246,12 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     if (!video || !canvas || !stream) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    setCapturing(true);
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    stop();
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -229,11 +259,6 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     setCapturedImage(imageDataUrl);
     setScannedData(null);
     setQrDetecting(true);
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    stop();
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     detectQRFromImageData(imageData)
@@ -242,6 +267,8 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
       })
       .catch(() => {})
       .finally(() => setQrDetecting(false));
+
+    setTimeout(() => setCapturing(false), 400);
   }, [stream, stop]);
 
   const handleConfirmPhoto = useCallback(() => {
@@ -274,26 +301,30 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
       setLocalError(null);
       clearError();
       setScannedData(null);
+      setUploading(true);
       setQrDetecting(true);
       const reader = new FileReader();
       reader.onload = (ev) => {
         const dataUrl = ev.target?.result as string;
-        setCapturedImage(dataUrl);
         const img = new Image();
         img.onload = () => {
           const canvas = canvasRef.current;
           if (!canvas) {
             setQrDetecting(false);
+            setUploading(false);
             return;
           }
           const ctx = canvas.getContext('2d');
           if (!ctx) {
             setQrDetecting(false);
+            setUploading(false);
             return;
           }
           canvas.width = img.width;
           canvas.height = img.height;
           ctx.drawImage(img, 0, 0);
+          setCapturedImage(dataUrl);
+          setUploading(false);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           detectQRFromImageData(imageData)
             .then((qr) => {
@@ -302,8 +333,15 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             .catch(() => {})
             .finally(() => setQrDetecting(false));
         };
-        img.onerror = () => setQrDetecting(false);
+        img.onerror = () => {
+          setQrDetecting(false);
+          setUploading(false);
+        };
         img.src = dataUrl;
+      };
+      reader.onerror = () => {
+        setUploading(false);
+        setLocalError('Erro ao ler o arquivo.');
       };
       reader.readAsDataURL(file);
       e.target.value = '';
@@ -377,8 +415,9 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={status === 'requesting' || capturing || qrDetecting || uploading || qrJustRead}
               onClick={() => { setMode('qr'); setCapturedImage(null); setScannedData(null); setLocalError(null); }}
-              className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border ${
+              className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border disabled:opacity-50 disabled:cursor-not-allowed ${
                 mode === 'qr'
                   ? 'bg-[var(--text-primary)] text-[var(--bg-color)] border-[var(--text-primary)]'
                   : 'bg-[var(--glass-bg)] border-[var(--border-color)]'
@@ -390,8 +429,9 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={status === 'requesting' || capturing || qrDetecting || uploading || qrJustRead}
               onClick={() => { setMode('photo'); setScannedData(null); setLocalError(null); }}
-              className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border ${
+              className={`flex-1 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border disabled:opacity-50 disabled:cursor-not-allowed ${
                 mode === 'photo'
                   ? 'bg-[var(--text-primary)] text-[var(--bg-color)] border-[var(--text-primary)]'
                   : 'bg-[var(--glass-bg)] border-[var(--border-color)]'
@@ -424,10 +464,14 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                 >
                   {status === 'requesting' ? 'Solicitando…' : 'Tentar novamente'}
                 </button>
-                <label className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-[var(--text-primary)] rounded-xl cursor-pointer hover:opacity-90 transition-opacity">
-                  <Upload className="w-4 h-4" style={{ color: 'var(--bg-color)' }} />
+                <label className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-opacity ${uploading ? 'opacity-50 cursor-not-allowed bg-[var(--border-color)]' : 'bg-[var(--text-primary)] cursor-pointer hover:opacity-90'}`}>
+                  {uploading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--bg-color)' }} />
+                  ) : (
+                    <Upload className="w-4 h-4" style={{ color: 'var(--bg-color)' }} />
+                  )}
                   <span className="text-xs font-black uppercase" style={{ color: 'var(--bg-color)' }}>
-                    Enviar imagem
+                    {uploading ? 'Carregando…' : 'Enviar imagem'}
                   </span>
                   <input
                     ref={fileInputRef}
@@ -435,6 +479,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                     accept="image/*"
                     onChange={handleFileUpload}
                     className="hidden"
+                    disabled={uploading}
                   />
                 </label>
               </div>
@@ -446,7 +491,24 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             style={{ maxHeight: 'min(50vh, 400px)' }}
           >
             <canvas ref={canvasRef} className="hidden" />
-            {!stream && !capturedImage && status === 'idle' && !displayError ? (
+
+            {qrJustRead && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/95">
+                <CheckCircle2 className="w-14 h-14 text-green-400" />
+                <p className="text-sm font-bold text-white">QR Code lido!</p>
+                <p className="text-xs text-white/70">Redirecionando…</p>
+                <Loader2 className="w-6 h-6 animate-spin text-white/60" />
+              </div>
+            )}
+
+            {uploading && !capturedImage && (
+              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/90">
+                <Loader2 className="w-10 h-10 animate-spin text-white/80" />
+                <p className="text-sm font-bold text-white">Carregando imagem…</p>
+              </div>
+            )}
+
+            {!stream && !capturedImage && !uploading && status === 'idle' && !displayError ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
                 <p className="text-sm text-center text-white/80">
                   Toque em <strong>Ativar câmera</strong> para escanear QR Code ou tirar foto. O navegador vai pedir permissão.
@@ -474,6 +536,12 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
               </div>
             ) : capturedImage ? (
               <div className="relative w-full h-full flex flex-col">
+                {capturing && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80">
+                    <Loader2 className="w-10 h-10 animate-spin text-white/90" />
+                    <p className="text-sm font-bold text-white">Capturando…</p>
+                  </div>
+                )}
                 <img
                   src={capturedImage}
                   alt="Preview"
@@ -487,8 +555,9 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                 <div className="absolute bottom-2 left-2 right-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { setCapturedImage(null); setScannedData(null); setQrDetecting(false); requestAccessSync(); }}
-                    className="flex-1 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] text-xs font-black uppercase"
+                    disabled={qrDetecting || capturing}
+                    onClick={() => { setCapturedImage(null); setScannedData(null); setQrDetecting(false); setCapturing(false); requestAccessSync(); }}
+                    className="flex-1 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                     style={{ color: 'var(--text-primary)' }}
                   >
                     <RotateCcw className="w-4 h-4 inline mr-2" />
@@ -497,11 +566,20 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                   <button
                     type="button"
                     onClick={handleConfirmPhoto}
-                    disabled={qrDetecting}
-                    className="flex-1 py-3 rounded-xl bg-green-500 text-white text-xs font-black uppercase flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    disabled={qrDetecting || capturing}
+                    className="flex-1 py-3 rounded-xl bg-green-500 text-white text-xs font-black uppercase flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
-                    {qrDetecting ? 'Analisando QR…' : 'Confirmar'}
+                    {qrDetecting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Analisando QR…
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        Confirmar
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -547,11 +625,21 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             <div className="flex justify-center">
               <button
                 type="button"
+                disabled={capturing || qrJustRead}
                 onClick={capturePhoto}
-                className="px-8 py-4 bg-white text-black rounded-full text-sm font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-transform flex items-center gap-2"
+                className="px-8 py-4 bg-white text-black rounded-full text-sm font-black uppercase shadow-lg hover:scale-105 active:scale-95 transition-transform flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
-                <Camera className="w-5 h-5" />
-                Capturar foto
+                {capturing ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Capturando…
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-5 h-5" />
+                    Capturar foto
+                  </>
+                )}
               </button>
             </div>
           )}

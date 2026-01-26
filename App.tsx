@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import Layout from './components/Layout';
 import Login from './components/Login';
@@ -94,12 +94,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Carregar moradores do Supabase quando staff estiver autenticado
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    getResidents().then((list) => setAllResidents(list));
-  }, [isAuthenticated]);
-
   // Atalhos de teclado
   useKeyboardShortcuts({ onNavigate: setActiveTab });
   
@@ -127,6 +121,33 @@ const App: React.FC = () => {
   });
 
   const [allResidents, setAllResidents] = useState<Resident[]>([]);
+  const [residentsLoading, setResidentsLoading] = useState(false);
+  const [residentsError, setResidentsError] = useState<string | null>(null);
+
+  const fetchResidents = useCallback(async (silent = false) => {
+    if (!silent) {
+      setResidentsLoading(true);
+      setResidentsError(null);
+    }
+    const res = await getResidents();
+    setAllResidents(res.data);
+    setResidentsError(res.error ?? null);
+    if (!silent) setResidentsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setResidentsLoading(true);
+    setResidentsError(null);
+    getResidents().then((res) => {
+      if (cancelled) return;
+      setAllResidents(res.data);
+      setResidentsError(res.error ?? null);
+      setResidentsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   const [allPackages, setAllPackages] = useState<Package[]>([
     { id: '1', recipient: 'João Silva', unit: '102A', type: 'Amazon', receivedAt: new Date(Date.now() - 2 * 60 * 60000).toISOString(), displayTime: '08:30', status: 'Pendente', deadlineMinutes: 60, residentPhone: '5511999999999' },
@@ -355,12 +376,19 @@ const App: React.FC = () => {
   const [isCameraScanModalOpen, setIsCameraScanModalOpen] = useState(false);
   const [pendingPackageImage, setPendingPackageImage] = useState<string | null>(null);
   const [pendingPackageQrData, setPendingPackageQrData] = useState<string | null>(null);
+  const [packageSaving, setPackageSaving] = useState(false);
   const [residentFormData, setResidentFormData] = useState({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' });
   const [selectedResidentProfile, setSelectedResidentProfile] = useState<Resident | null>(null);
 
+  // Mesma lógica da página Moradores: busca por nome ou unidade; sem busca = todos.
   const filteredResidents = useMemo(() => {
-    if (!searchResident) return [];
-    return allResidents.filter(r => r.name.toLowerCase().includes(searchResident.toLowerCase()) || r.unit.toLowerCase().includes(searchResident.toLowerCase())).slice(0, 4);
+    const q = (searchResident || '').trim().toLowerCase();
+    if (!q) return allResidents;
+    return allResidents.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.unit.toLowerCase().includes(q)
+    );
   }, [searchResident, allResidents]);
 
   const globalResults = useMemo(() => {
@@ -390,6 +418,11 @@ const App: React.FC = () => {
       setPackageMessage(itemList ? `${template} ${itemList ? `Itens inclusos: ${itemList}.` : ''}` : template);
     }
   }, [packageStep, selectedResident, packageType, packageItems]);
+
+  useEffect(() => {
+    if (!isNewPackageModalOpen || !isAuthenticated) return;
+    fetchResidents(true);
+  }, [isNewPackageModalOpen, isAuthenticated, fetchResidents]);
 
   const handleVisitorCheckOut = async (id: string) => {
     const visitor = visitorLogs.find(v => v.id === id);
@@ -448,23 +481,48 @@ const App: React.FC = () => {
     setIsNewPackageModalOpen(true);
   };
   const handleRegisterPackageFinal = async (sendNotify: boolean) => {
-    if (!selectedResident) return;
-    const newPkg: Package = { id: `temp-${Date.now()}`, recipient: selectedResident.name, unit: selectedResident.unit, type: packageType, receivedAt: new Date().toISOString(), displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), status: 'Pendente', deadlineMinutes: 45, residentPhone: selectedResident.phone, items: packageItems.filter(it => it.name.trim() !== '') };
-    
-    // Salvar no Supabase
-    const result = await savePackage(newPkg);
-    if (result.success && result.id) {
-      // Atualizar com o ID real do Supabase
-      newPkg.id = result.id;
-      setAllPackages([newPkg, ...allPackages]);
-    } else {
-      console.error('Erro ao salvar pacote:', result.error);
-      alert('Erro ao salvar encomenda: ' + (result.error || 'Erro desconhecido'));
+    if (!selectedResident) {
+      alert('Selecione o morador que recebe a encomenda antes de finalizar.');
       return;
     }
-    
-    if (sendNotify && selectedResident.whatsapp) { const url = `https://wa.me/${selectedResident.whatsapp}?text=${encodeURIComponent(packageMessage)}`; window.open(url, '_blank'); }
-    resetPackageModal(); setActiveTab('dashboard');
+    if (packageSaving) return;
+    setPackageSaving(true);
+    try {
+      const newPkg: Package = {
+        id: `temp-${Date.now()}`,
+        recipient: selectedResident.name,
+        unit: selectedResident.unit,
+        type: packageType,
+        receivedAt: new Date().toISOString(),
+        displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'Pendente',
+        deadlineMinutes: 45,
+        residentPhone: selectedResident.phone,
+        items: packageItems.filter((it) => it.name.trim() !== ''),
+        recipientId: selectedResident.id,
+        imageUrl: pendingPackageImage ?? null,
+        qrCodeData: pendingPackageQrData ?? null
+      };
+
+      const result = await savePackage(newPkg);
+      if (result.success && result.id) {
+        newPkg.id = result.id;
+        setAllPackages([newPkg, ...allPackages]);
+      } else {
+        console.error('Erro ao salvar pacote:', result.error);
+        alert('Erro ao salvar encomenda: ' + (result.error || 'Erro desconhecido'));
+        return;
+      }
+
+      if (sendNotify && selectedResident.whatsapp) {
+        const url = `https://wa.me/${selectedResident.whatsapp}?text=${encodeURIComponent(packageMessage)}`;
+        window.open(url, '_blank');
+      }
+      resetPackageModal();
+      setActiveTab('dashboard');
+    } finally {
+      setPackageSaving(false);
+    }
   };
   const handleDeliverPackage = async (id: string) => {
     const pkg = allPackages.find(p => p.id === id);
@@ -609,65 +667,33 @@ const App: React.FC = () => {
     });
   };
 
-  const handleCameraScanSuccess = async (data: { resident?: Resident; qrData?: string; image?: string; fromMode?: 'qr' | 'photo' }) => {
+  const handleCameraScanSuccess = (data: { resident?: Resident; qrData?: string; image?: string; fromMode?: 'qr' | 'photo' }) => {
+    const hasCapture = Boolean(data.qrData || data.image);
+    if (!hasCapture) return;
+
     const fromPhoto = data.fromMode === 'photo';
     const pkgType = fromPhoto ? 'Foto' : 'QR Code';
     const itemName = fromPhoto ? 'Encomenda via foto' : 'Encomenda via QR Code';
 
-    let resident = data.resident;
-    if (!resident && data.qrData) {
-      resident = findResidentByQRData(data.qrData);
-    }
+    let resident = data.resident ?? (data.qrData ? findResidentByQRData(data.qrData) : undefined);
 
-    if (resident) {
-      const newPkg: Package = {
-        id: `temp-${Date.now()}`,
-        recipient: resident.name,
-        unit: resident.unit,
-        type: pkgType,
-        receivedAt: new Date().toISOString(),
-        displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        status: 'Pendente',
-        deadlineMinutes: 45,
-        residentPhone: resident.phone,
-        items: data.qrData
-          ? [{ id: '1', name: itemName, description: data.qrData }]
-          : [{ id: '1', name: itemName, description: fromPhoto ? 'Registro por foto' : 'Registro por QR' }]
-      };
-
-      const result = await savePackage(newPkg);
-      if (result.success && result.id) {
-        newPkg.id = result.id;
-        setAllPackages([newPkg, ...allPackages]);
-        setIsCameraScanModalOpen(false);
-        setActiveTab('packages');
-      } else {
-        console.error('Erro ao salvar pacote:', result.error);
-        alert('Erro ao salvar encomenda: ' + (result.error || 'Erro desconhecido'));
+    setIsCameraScanModalOpen(false);
+    setPackageStep(1);
+    setSelectedResident(resident ?? null);
+    setSearchResident(resident ? resident.name : '');
+    setPackageType(pkgType);
+    setNumItems(1);
+    setPackageItems([
+      {
+        id: '1',
+        name: itemName,
+        description: data.qrData ?? (fromPhoto ? 'Registro por foto' : 'Registro por QR')
       }
-      return;
-    }
-
-    if (data.qrData || data.image) {
-      setIsCameraScanModalOpen(false);
-      setPackageStep(1);
-      setSelectedResident(null);
-      setSearchResident('');
-      setPackageType(pkgType);
-      setNumItems(1);
-      setPackageItems([{ id: '1', name: '', description: '' }]);
-      setPendingPackageImage(data.image ?? null);
-      setPendingPackageQrData(data.qrData ?? null);
-      if (data.qrData) {
-        const found = findResidentByQRData(data.qrData);
-        if (found) {
-          setSelectedResident(found);
-          setSearchResident(found.name);
-        }
-      }
-      setActiveTab('packages');
-      setIsNewPackageModalOpen(true);
-    }
+    ]);
+    setPendingPackageImage(data.image ?? null);
+    setPendingPackageQrData(data.qrData ?? null);
+    setActiveTab('packages');
+    setIsNewPackageModalOpen(true);
   };
   const handleSaveNoticeChanges = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.map(n => n.id === selectedNoticeForEdit.id ? selectedNoticeForEdit : n)); setSelectedNoticeForEdit(null); };
   const handleDeleteNotice = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.filter(n => n.id !== selectedNoticeForEdit.id)); setSelectedNoticeForEdit(null); };
@@ -1060,7 +1086,7 @@ const App: React.FC = () => {
       {/* MODALS */}
       <NewReservationModal isOpen={isReservationModalOpen} onClose={() => setIsReservationModalOpen(false)} data={newReservationData} setData={setNewReservationData} areasStatus={areasStatus} searchQuery={reservationSearchQuery} setSearchQuery={setReservationSearchQuery} showSuggestions={showResSuggestions} setShowSuggestions={setShowResSuggestions} filteredResidents={filteredResForReservation} hasConflict={hasTimeConflict} onConfirm={handleCreateReservation} />
       <NewVisitorModal isOpen={isVisitorModalOpen} onClose={resetVisitorModal} step={newVisitorStep} setStep={setNewVisitorStep} data={newVisitorData} setData={setNewVisitorData} searchResident={searchResident} setSearchResident={setSearchResident} filteredResidents={filteredResidents} accessTypes={visitorAccessTypes} handleRemoveAccessType={handleRemoveAccessType} isAddingAccessType={isAddingAccessType} setIsAddingAccessType={setIsAddingAccessType} newAccessTypeInput={newAccessTypeInput} setNewAccessTypeInput={setNewAccessTypeInput} handleAddAccessType={handleAddAccessType} onConfirm={handleRegisterVisitor} />
-      <NewPackageModal isOpen={isNewPackageModalOpen} onClose={resetPackageModal} step={packageStep} setStep={setPackageStep} searchResident={searchResident} setSearchResident={setSearchResident} selectedResident={selectedResident} setSelectedResident={setSelectedResident} filteredResidents={filteredResidents} allResidents={allResidents} pendingImage={pendingPackageImage} pendingQrData={pendingPackageQrData} packageType={packageType} setPackageType={setPackageType} packageCategories={packageCategories} isAddingPkgCategory={isAddingPkgCategory} setIsAddingPkgCategory={setIsAddingPkgCategory} newPkgCatName={newPkgCatName} setNewPkgCatName={setNewPkgCatName} handleAddPkgCategory={handleAddPkgCategory} numItems={numItems} packageItems={packageItems} handleAddItemRow={handleAddItemRow} handleRemoveItemRow={handleRemoveItemRow} updateItem={updateItem} packageMessage={packageMessage} setPackageMessage={setPackageMessage} onConfirm={handleRegisterPackageFinal} />
+      <NewPackageModal isOpen={isNewPackageModalOpen} onClose={resetPackageModal} step={packageStep} setStep={setPackageStep} searchResident={searchResident} setSearchResident={setSearchResident} selectedResident={selectedResident} setSelectedResident={setSelectedResident} filteredResidents={filteredResidents} allResidents={allResidents} residentsLoading={residentsLoading} residentsError={residentsError} onRetryResidents={() => fetchResidents(false)} packageSaving={packageSaving} pendingImage={pendingPackageImage} pendingQrData={pendingPackageQrData} packageType={packageType} setPackageType={setPackageType} packageCategories={packageCategories} isAddingPkgCategory={isAddingPkgCategory} setIsAddingPkgCategory={setIsAddingPkgCategory} newPkgCatName={newPkgCatName} setNewPkgCatName={setNewPkgCatName} handleAddPkgCategory={handleAddPkgCategory} numItems={numItems} packageItems={packageItems} handleAddItemRow={handleAddItemRow} handleRemoveItemRow={handleRemoveItemRow} updateItem={updateItem} packageMessage={packageMessage} setPackageMessage={setPackageMessage} onConfirm={handleRegisterPackageFinal} />
       <NewNoteModal isOpen={isNewNoteModalOpen} onClose={() => { setIsNewNoteModalOpen(false); setEditingNoteId(null); setIsAddingCategory(false); setIsManagingCategories(false); }} editingId={editingNoteId} categories={noteCategories} newCategory={newNoteCategory} setNewCategory={setNewNoteCategory} isManaging={isManagingCategories} setIsManaging={setIsManagingCategories} removeCategory={handleRemoveCategory} isAdding={isAddingCategory} setIsAdding={setIsAddingCategory} newCatName={newCatName} setNewCatName={setNewCatName} addCategory={handleAddCategory} content={newNoteContent} setContent={setNewNoteContent} isScheduleOpen={isScheduleOpen} setIsScheduleOpen={setIsScheduleOpen} scheduled={newNoteScheduled} setScheduled={setNewNoteScheduled} allNotes={allNotes} setAllNotes={setAllNotes} onSave={handleSaveNote} />
       <StaffFormModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)} data={staffFormData} setData={setStaffFormData} onSave={handleSaveStaff} />
 

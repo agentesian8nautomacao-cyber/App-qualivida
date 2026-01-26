@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { X, Search, ChevronDown, AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, Plus, Check, Minus, Edit2, MessageCircle, Bell, Settings2, Clock, Save, Briefcase, User, Phone, Mail } from 'lucide-react';
+import { X, Search, ChevronDown, AlertTriangle, ArrowRight, CheckCircle2, ChevronLeft, Plus, Check, Minus, Edit2, MessageCircle, Bell, Settings2, Clock, Save, Briefcase, User, Phone, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { Resident, PackageItem, Staff } from '../../types';
 
 // --- MODAL NOVA RESERVA ---
@@ -386,136 +386,366 @@ export const NewNoteModal = ({
 };
 
 // --- MODAL NOVO PACOTE (WIZARD) ---
+const stepTitles = ['Quem recebe?', 'O que chegou?', 'Notificação'] as const;
+const stepLabels = ['Passo 01: Identificação', 'Passo 02: Detalhamento', 'Passo 03: Notificação'] as const;
+
 export const NewPackageModal = ({
   isOpen, onClose, step, setStep, searchResident, setSearchResident, selectedResident, setSelectedResident,
-  filteredResidents, allResidents = [], pendingImage, pendingQrData, packageType, setPackageType, packageCategories, isAddingPkgCategory, setIsAddingPkgCategory,
+  filteredResidents, allResidents = [], residentsLoading = false, residentsError = null, onRetryResidents,
+  packageSaving = false, pendingImage, pendingQrData, packageType, setPackageType, packageCategories, isAddingPkgCategory, setIsAddingPkgCategory,
   newPkgCatName, setNewPkgCatName, handleAddPkgCategory, numItems, packageItems, handleAddItemRow,
   handleRemoveItemRow, updateItem, packageMessage, setPackageMessage, onConfirm
 }: any) => {
   const fromCamera = Boolean(pendingImage || pendingQrData);
-  const displayResidents = fromCamera && !(searchResident || '').trim()
-    ? (allResidents || []).slice(0, 80)
-    : (filteredResidents || []);
+  const displayResidents = (filteredResidents || []).slice(0, 200);
+
+  const inputBase = 'w-full rounded-xl border bg-[var(--glass-bg)] px-4 py-3 text-sm font-semibold outline-none transition-all placeholder:opacity-50 focus:ring-2 focus:ring-[var(--text-primary)]/20 focus:border-[var(--text-primary)]/50 border-[var(--border-color)]';
+  const cardBase = 'rounded-2xl border border-[var(--border-color)] bg-[var(--glass-bg)] p-4';
+  const btnSecondary = 'p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] transition-all hover:bg-[var(--border-color)] focus:ring-2 focus:ring-[var(--text-primary)]/20 focus:border-[var(--text-primary)]/50';
 
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-4 overflow-auto">
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-xl" onClick={onClose} />
-      <div className="relative w-full max-w-full sm:max-w-2xl max-h-[95vh] bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl overflow-hidden animate-in zoom-in duration-500 my-auto">
-         <div className={`transition-all duration-700 ease-in-out flex ${step === 2 ? '-translate-x-1/3' : step === 3 ? '-translate-x-2/3' : 'translate-x-0'}`} style={{ width: '300%' }}>
-            
-            {/* STEP 1: RESIDENT */}
-            <div className="w-1/3 flex-shrink-0 p-4 sm:p-6 md:p-8 lg:p-14 max-h-[95vh] overflow-y-auto custom-scrollbar">
-               <header className="flex justify-between items-start mb-6 sm:mb-8 md:mb-12 gap-2">
-                  <div className="min-w-0 flex-1"><h4 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-tighter">Quem recebe?</h4><p className="text-[9px] sm:text-[10px] font-bold opacity-30 uppercase tracking-[0.3em] mt-1">Passo 01: Identificação</p></div>
-                  <button onClick={onClose} className="p-2 sm:p-3 md:p-4 bg-zinc-50 rounded-2xl sm:rounded-3xl hover:bg-zinc-100 transition-all flex-shrink-0"><X className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6"/></button>
-               </header>
-               <div className="space-y-6 sm:space-y-8 md:space-y-12">
-                  {pendingImage && (
-                    <div className="rounded-[24px] overflow-hidden border-2 border-black/5 bg-zinc-50">
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60 px-4 py-2 bg-white/80">Foto da encomenda — relate ao morador</p>
-                      <img src={pendingImage} alt="Encomenda" className="w-full h-auto max-h-48 object-contain" />
-                    </div>
-                  )}
-                  <div className="relative group">
-                     <Search className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 opacity-20 group-focus-within:opacity-100 transition-opacity" />
-                     <input type="text" placeholder="Buscar por nome ou unidade..." value={searchResident} onChange={e => { setSearchResident(e.target.value); setSelectedResident(null); }} className="w-full pl-10 sm:pl-12 md:pl-16 pr-4 sm:pr-6 py-3 sm:py-4 md:py-6 bg-zinc-50 rounded-[24px] sm:rounded-[32px] font-black text-sm sm:text-lg md:text-xl outline-none border-2 border-transparent focus:border-black/5 placeholder:opacity-20 shadow-inner" />
-                  </div>
-                  {fromCamera && !selectedResident && (
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-50">Selecione o morador que recebe esta encomenda</p>
-                  )}
-                  {!selectedResident && displayResidents.length > 0 && (
-                     <div className="bg-zinc-50 rounded-[32px] border border-black/5 p-4 space-y-2 animate-in slide-in-from-top-4 max-h-64 overflow-y-auto custom-scrollbar">
-                        {displayResidents.map((r: Resident) => (
-                          <button key={r.id} onClick={() => { setSelectedResident(r); setSearchResident(r.name); }} className="w-full p-6 bg-white rounded-[24px] flex items-center justify-between hover:scale-[1.02] active:scale-95 transition-all shadow-sm border border-transparent hover:border-black/5 group">
-                             <div className="text-left"><h6 className="font-black text-lg uppercase tracking-tight">{r.name}</h6><p className="text-[10px] opacity-40 font-black uppercase tracking-widest">Unidade {r.unit}</p></div>
-                             <div className="p-3 bg-zinc-50 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"><Plus className="w-4 h-4" /></div>
-                          </button>
-                        ))}
-                     </div>
-                  )}
-                  {!selectedResident && fromCamera && displayResidents.length === 0 && (allResidents || []).length === 0 && (
-                    <p className="text-xs font-bold uppercase tracking-wider opacity-40">Nenhum morador cadastrado. Cadastre em Moradores primeiro.</p>
-                  )}
-                  {!selectedResident && (searchResident || '').trim() && displayResidents.length === 0 && (
-                    <p className="text-xs font-bold uppercase tracking-wider opacity-40">Nenhum morador encontrado</p>
-                  )}
-                  {selectedResident && (
-                     <div className="p-6 sm:p-8 md:p-10 bg-black text-white rounded-[32px] sm:rounded-[40px] md:rounded-[48px] flex flex-col items-center text-center animate-in zoom-in duration-500 shadow-2xl relative overflow-hidden">
-                        <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-[24px] sm:rounded-[32px] bg-white/10 flex items-center justify-center mb-4 sm:mb-6 shadow-inner text-2xl sm:text-3xl font-black">{selectedResident.name.charAt(0)}</div>
-                        <h5 className="text-lg sm:text-xl md:text-2xl font-black uppercase leading-tight break-words">{selectedResident.name}</h5>
-                        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.4em] opacity-40 mt-2">Unidade {selectedResident.unit}</p>
-                     </div>
-                  )}
-                  <button disabled={!selectedResident} onClick={() => setStep(2)} className={`w-full py-4 sm:py-5 md:py-7 rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] md:text-[12px] tracking-widest transition-all flex items-center justify-center gap-2 sm:gap-3 shadow-2xl ${selectedResident ? 'bg-black text-white hover:scale-[1.02] active:scale-95' : 'bg-zinc-100 text-zinc-300 cursor-not-allowed'}`}>Próximo: Inventário <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" /></button>
-               </div>
-            </div>
+      <div className={`absolute inset-0 bg-black/80 backdrop-blur-xl ${packageSaving ? 'pointer-events-none' : ''}`} onClick={onClose} />
+      <div
+        className="relative w-full max-w-full sm:max-w-2xl max-h-[95vh] rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300 flex flex-col border border-[var(--border-color)]"
+        style={{ backgroundColor: 'var(--sidebar-bg)', color: 'var(--text-primary)' }}
+      >
+        {/* Stepper + close — sempre visível */}
+        <header className="flex-shrink-0 flex items-center justify-between gap-4 p-4 sm:p-5 border-b border-[var(--border-color)]">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            {([1, 2, 3] as const).map((s) => (
+              <React.Fragment key={s}>
+                <div
+                  aria-current={step === s ? 'step' : undefined}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg border transition-all ${
+                    step === s
+                      ? 'bg-[var(--text-primary)] border-[var(--text-primary)]'
+                      : 'border-[var(--border-color)] opacity-60'
+                  }`}
+                  style={step === s ? { color: 'var(--bg-color)' } : undefined}
+                >
+                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider">
+                    {stepLabels[s - 1].replace(/^Passo \d+:\s*/, '')}
+                  </span>
+                </div>
+                {s < 3 && <div className="w-4 h-px bg-[var(--border-color)] opacity-60" aria-hidden />}
+              </React.Fragment>
+            ))}
+          </div>
+          <button
+            onClick={onClose}
+            disabled={packageSaving}
+            className={btnSecondary + ' flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed'}
+            style={{ color: 'var(--text-primary)' }}
+            aria-label="Fechar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </header>
 
-            {/* STEP 2: DETAILS */}
-            <div className="w-1/3 flex-shrink-0 p-4 sm:p-6 md:p-8 lg:p-14 max-h-[95vh] overflow-y-auto custom-scrollbar">
-               <header className="flex justify-between items-start mb-6 sm:mb-8 md:mb-12 gap-2">
-                  <button onClick={() => setStep(1)} className="p-2 sm:p-3 md:p-4 bg-zinc-50 rounded-2xl sm:rounded-3xl hover:bg-zinc-100 transition-all flex-shrink-0"><ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6"/></button>
-                  <div className="text-right min-w-0 flex-1"><h4 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-tighter">O que chegou?</h4><p className="text-[9px] sm:text-[10px] font-bold opacity-30 uppercase tracking-[0.3em] mt-1">Passo 02: Detalhamento</p></div>
-               </header>
-               <div className="space-y-6 sm:space-y-8 md:space-y-12">
+        <div className={`flex flex-1 min-h-0 overflow-hidden transition-all duration-500 ease-out ${step === 2 ? '-translate-x-full' : step === 3 ? '-translate-x-[200%]' : 'translate-x-0'}`} style={{ width: '300%' }}>
+          {/* STEP 1: RESIDENT */}
+          <div className="w-1/3 flex-shrink-0 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <div className="space-y-5">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 mb-0.5" style={{ color: 'var(--text-secondary)' }}>Passo 1 de 3</p>
+                  <h2 className="text-lg sm:text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{stepTitles[0]}</h2>
+                  <p className="text-xs font-medium mt-0.5 opacity-60" style={{ color: 'var(--text-secondary)' }}>{stepLabels[0]}</p>
+                </div>
+
+                {pendingImage && (
+                  <div className={cardBase + ' overflow-hidden'}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70 mb-2" style={{ color: 'var(--text-secondary)' }}>Foto da encomenda — relate ao morador</p>
+                    <img src={pendingImage} alt="Encomenda" className="w-full h-auto max-h-40 object-contain rounded-xl" />
+                  </div>
+                )}
+
+                <section className={cardBase}>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 opacity-80" style={{ color: 'var(--text-secondary)' }}>
+                    Buscar morador
+                  </label>
+                  <div className="relative group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50 group-focus-within:opacity-100 transition-opacity" style={{ color: 'var(--text-secondary)' }} />
+                    <input
+                      type="text"
+                      placeholder="Nome ou unidade..."
+                      value={searchResident}
+                      onChange={e => { setSearchResident(e.target.value); setSelectedResident(null); }}
+                      className={inputBase + ' pl-10'}
+                    />
+                  </div>
+                </section>
+
+                {fromCamera && !selectedResident && (
+                  <p className="text-xs font-medium opacity-70" style={{ color: 'var(--text-secondary)' }}>Selecione o morador que recebe esta encomenda.</p>
+                )}
+
+                {!selectedResident && residentsLoading && (
+                  <section className={cardBase + ' flex flex-col items-center justify-center py-10 gap-3'}>
+                    <Loader2 className="w-8 h-8 animate-spin opacity-60" style={{ color: 'var(--text-secondary)' }} />
+                    <p className="text-xs font-medium opacity-70" style={{ color: 'var(--text-secondary)' }}>Carregando moradores…</p>
+                  </section>
+                )}
+
+                {!selectedResident && !residentsLoading && residentsError && (
+                  <section className={cardBase + ' flex flex-col items-center justify-center py-6 gap-3'}>
+                    <AlertCircle className="w-10 h-10 opacity-70" style={{ color: 'var(--text-secondary)' }} />
+                    <p className="text-xs font-medium text-center opacity-90" style={{ color: 'var(--text-secondary)' }}>Erro ao carregar moradores.</p>
+                    <p className="text-[10px] font-medium text-center opacity-60 max-w-[240px]" style={{ color: 'var(--text-secondary)' }}>{residentsError}</p>
+                    {typeof onRetryResidents === 'function' && (
+                      <button
+                        type="button"
+                        onClick={onRetryResidents}
+                        className="mt-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20"
+                        style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                      >
+                        Tentar novamente
+                      </button>
+                    )}
+                  </section>
+                )}
+
+                {!selectedResident && !residentsLoading && !residentsError && displayResidents.length > 0 && (
+                  <section className={cardBase + ' space-y-2 max-h-56 overflow-y-auto custom-scrollbar'}>
+                    <span className="text-xs font-semibold uppercase tracking-wider opacity-70 block" style={{ color: 'var(--text-secondary)' }}>Moradores</span>
+                    {displayResidents.map((r: Resident) => (
+                      <button
+                        key={r.id}
+                        onClick={() => { setSelectedResident(r); setSearchResident(r.name); }}
+                        className="w-full flex items-center justify-between gap-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] hover:border-[var(--text-primary)]/40 hover:bg-[var(--border-color)]/30 transition-all text-left group"
+                      >
+                        <div>
+                          <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
+                          <p className="text-[10px] font-medium uppercase tracking-wider opacity-60" style={{ color: 'var(--text-secondary)' }}>Unidade {r.unit}</p>
+                        </div>
+                        <Plus className="w-4 h-4 opacity-40 group-hover:opacity-100 flex-shrink-0" style={{ color: 'var(--text-primary)' }} />
+                      </button>
+                    ))}
+                  </section>
+                )}
+                {!selectedResident && !residentsLoading && !residentsError && displayResidents.length === 0 && (allResidents || []).length === 0 && (
+                  <p className="text-xs font-medium opacity-60" style={{ color: 'var(--text-secondary)' }}>Nenhum morador cadastrado. Cadastre em Moradores primeiro.</p>
+                )}
+                {!selectedResident && !residentsLoading && !residentsError && (searchResident || '').trim() && displayResidents.length === 0 && (
+                  <p className="text-xs font-medium opacity-60" style={{ color: 'var(--text-secondary)' }}>Nenhum morador encontrado.</p>
+                )}
+
+                {selectedResident && (
+                  <div className={cardBase + ' flex flex-col items-center text-center py-6'} style={{ backgroundColor: 'var(--secondary-card-bg)', borderColor: 'var(--border-color)' }}>
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-xl font-bold mb-3" style={{ backgroundColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                      {selectedResident.name.charAt(0)}
+                    </div>
+                    <p className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>{selectedResident.name}</p>
+                    <p className="text-[10px] font-medium uppercase tracking-wider opacity-60 mt-1" style={{ color: 'var(--text-secondary)' }}>Unidade {selectedResident.unit}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex-shrink-0 p-4 sm:p-5 pt-0 flex flex-col sm:flex-row gap-2">
+              <button
+                disabled={!selectedResident || packageSaving}
+                onClick={() => setStep(2)}
+                className="flex-1 py-3.5 sm:py-4 rounded-xl font-semibold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed focus:ring-2 focus:ring-[var(--text-primary)]/20 focus:border-[var(--text-primary)]/50"
+                style={selectedResident && !packageSaving ? { backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' } : { backgroundColor: 'var(--glass-bg)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}
+              >
+                Próximo: Inventário <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* STEP 2: DETAILS */}
+          <div className="w-1/3 flex-shrink-0 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <div className="space-y-5">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 mb-0.5" style={{ color: 'var(--text-secondary)' }}>Passo 2 de 3</p>
+                  <h2 className="text-lg sm:text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{stepTitles[1]}</h2>
+                  <p className="text-xs font-medium mt-0.5 opacity-60" style={{ color: 'var(--text-secondary)' }}>{stepLabels[1]}</p>
+                </div>
+
+                <section className={cardBase}>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 opacity-80" style={{ color: 'var(--text-secondary)' }}>Categoria</label>
                   <div className="flex flex-wrap gap-2">
-                     {packageCategories.map((cat: string) => (
-                       <button key={cat} onClick={() => setPackageType(cat)} className={`px-4 sm:px-6 md:px-8 py-2 sm:py-3 md:py-4 rounded-[20px] sm:rounded-[24px] text-[9px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest transition-all ${packageType === cat ? 'bg-black text-white shadow-xl scale-105' : 'bg-zinc-50 text-zinc-400 hover:bg-zinc-100'}`}>{cat}</button>
-                     ))}
-                     <button onClick={() => setIsAddingPkgCategory(!isAddingPkgCategory)} className="px-4 sm:px-6 py-2 sm:py-3 md:py-4 rounded-[20px] sm:rounded-[24px] border border-dashed border-zinc-200 text-zinc-300 hover:bg-zinc-50 transition-all"><Plus className="w-3 h-3 sm:w-4 sm:h-4" /></button>
+                    {packageCategories.map((cat: string) => (
+                      <button
+                        key={cat}
+                        onClick={() => setPackageType(cat)}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20 ${
+                          packageType === cat
+                            ? 'border-[var(--text-primary)]'
+                            : 'border-[var(--border-color)] hover:bg-[var(--border-color)]/30'
+                        }`}
+                        style={packageType === cat ? { backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' } : { color: 'var(--text-primary)' }}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setIsAddingPkgCategory(!isAddingPkgCategory)}
+                      className={'px-4 py-2.5 rounded-xl border border-dashed ' + btnSecondary}
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      <Plus className="w-4 h-4 inline mr-1 align-middle" /> Nova
+                    </button>
                   </div>
                   {isAddingPkgCategory && (
-                     <div className="flex items-center bg-zinc-50 rounded-[24px] p-2 border border-black/10 animate-in slide-in-from-top-2">
-                        <input type="text" value={newPkgCatName} onChange={e => setNewPkgCatName(e.target.value)} placeholder="Nova Categoria..." className="flex-1 bg-transparent px-4 font-black uppercase text-[10px] outline-none" />
-                        <button onClick={handleAddPkgCategory} className="p-3 bg-black text-white rounded-xl"><Check className="w-4 h-4"/></button>
-                     </div>
+                    <div className="flex gap-2 mt-3">
+                      <input
+                        value={newPkgCatName}
+                        onChange={e => setNewPkgCatName(e.target.value)}
+                        placeholder="Nova categoria..."
+                        className={inputBase + ' flex-1'}
+                      />
+                      <button onClick={handleAddPkgCategory} className="p-3 rounded-xl font-semibold transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20" style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' }}>
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
-                  <div className="space-y-6">
-                     <div className="flex justify-between items-center px-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest opacity-40">Inventário</label>
-                        <div className="flex items-center bg-zinc-50 rounded-2xl p-1 shadow-inner">
-                           <button onClick={() => { if(numItems > 1) handleRemoveItemRow(packageItems[packageItems.length-1].id); }} className="p-2.5 bg-white text-black rounded-xl shadow-sm hover:scale-105 transition-all"><Minus className="w-4 h-4"/></button>
-                           <span className="w-10 text-center font-black text-lg">{numItems}</span>
-                           <button onClick={handleAddItemRow} className="p-2.5 bg-white text-black rounded-xl shadow-sm hover:scale-105 transition-all"><Plus className="w-4 h-4"/></button>
-                        </div>
-                     </div>
-                     <div className="space-y-4">
-                        {packageItems.map((item: PackageItem, idx: number) => (
-                          <div key={item.id} className="p-8 bg-zinc-50 rounded-[40px] border border-transparent hover:border-black/5 transition-all space-y-5 animate-in slide-in-from-bottom-2 shadow-sm">
-                             <input type="text" placeholder="Nome do Produto..." value={item.name} onChange={e => updateItem(item.id, 'name', e.target.value)} className="w-full p-5 bg-white rounded-[24px] font-black text-sm outline-none border border-transparent focus:border-black/5 shadow-inner" />
-                             <textarea placeholder="Observações..." value={item.description} onChange={e => updateItem(item.id, 'description', e.target.value)} className="w-full p-5 bg-white rounded-[24px] font-medium text-xs outline-none border border-transparent focus:border-black/5 shadow-inner resize-none h-24" />
-                          </div>
-                        ))}
-                     </div>
-                  </div>
-                  <button onClick={() => setStep(3)} className="w-full py-4 sm:py-5 md:py-7 bg-black text-white rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] md:text-[12px] tracking-widest shadow-2xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 sm:gap-3">Próximo: Notificação <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" /></button>
-               </div>
-            </div>
+                </section>
 
-            {/* STEP 3: NOTIFY */}
-            <div className="w-1/3 flex-shrink-0 p-4 sm:p-6 md:p-8 lg:p-14 flex flex-col justify-between max-h-[95vh] min-h-0">
-               <div className="overflow-y-auto custom-scrollbar flex-1">
-                  <header className="flex justify-between items-start mb-6 sm:mb-8 md:mb-12 gap-2">
-                     <button onClick={() => setStep(2)} className="p-2 sm:p-3 md:p-4 bg-zinc-50 rounded-2xl sm:rounded-3xl hover:bg-zinc-100 transition-all flex-shrink-0"><ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6"/></button>
-                     <div className="text-right flex items-center gap-4 sm:gap-6">
-                        <button onClick={() => onConfirm(false)} className="text-sm sm:text-base md:text-lg font-black uppercase tracking-tight hover:text-blue-500 transition-colors active:scale-95">Salvar</button>
-                     </div>
-                  </header>
-                  <div className="space-y-6 sm:space-y-8 md:space-y-10">
-                     <div className="relative p-4 sm:p-6 md:p-10 bg-zinc-50 rounded-[32px] sm:rounded-[40px] md:rounded-[48px] border border-black/5 shadow-inner overflow-hidden">
-                        <div className="absolute top-3 sm:top-4 md:top-6 left-4 sm:left-6 md:left-10 flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" /><span className="text-[8px] sm:text-[9px] font-black text-green-600 uppercase tracking-wider sm:tracking-widest">WhatsApp Business</span></div>
-                        <textarea value={packageMessage} onChange={e => setPackageMessage(e.target.value)} className="w-full h-48 sm:h-56 md:h-64 mt-6 sm:mt-8 bg-transparent font-bold text-sm sm:text-lg md:text-xl leading-relaxed outline-none resize-none placeholder:opacity-10 border-none" />
-                        <div className="mt-4 sm:mt-6 flex justify-end"><div className="p-2 sm:p-3 bg-white rounded-xl sm:rounded-2xl border border-black/5 flex items-center gap-2 opacity-40"><Edit2 className="w-3 h-3" /><span className="text-[7px] sm:text-[8px] font-black uppercase">Editor Ativo</span></div></div>
-                     </div>
-                     <div className="p-4 sm:p-6 md:p-8 bg-zinc-900 text-white/40 rounded-[32px] sm:rounded-[40px] flex items-start sm:items-center gap-4 sm:gap-6"><Bell className="w-6 h-6 sm:w-8 sm:h-8 opacity-20 flex-shrink-0 mt-1 sm:mt-0" /><p className="text-[10px] sm:text-[11px] font-bold leading-relaxed">O registro será salvo permanentemente. O morador será alertado.</p></div>
+                <section className={cardBase}>
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="text-xs font-semibold uppercase tracking-wider opacity-80" style={{ color: 'var(--text-secondary)' }}>Inventário</label>
+                    <div className="flex items-center gap-1 rounded-lg border border-[var(--border-color)] p-1">
+                      <button onClick={() => { if (numItems > 1) handleRemoveItemRow(packageItems[packageItems.length - 1].id); }} className="p-2 rounded-md hover:bg-[var(--border-color)]/50 transition-all disabled:opacity-40" disabled={numItems <= 1} style={{ color: 'var(--text-primary)' }}><Minus className="w-4 h-4" /></button>
+                      <span className="w-8 text-center text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{numItems}</span>
+                      <button onClick={handleAddItemRow} className="p-2 rounded-md hover:bg-[var(--border-color)]/50 transition-all" style={{ color: 'var(--text-primary)' }}><Plus className="w-4 h-4" /></button>
+                    </div>
                   </div>
-               </div>
-               <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-6 sm:mt-8 md:mt-12 flex-shrink-0">
-                  <button onClick={() => onConfirm(false)} className="py-4 sm:py-5 md:py-7 bg-zinc-100 text-black rounded-[24px] sm:rounded-[32px] font-black uppercase text-[9px] sm:text-[10px] md:text-[11px] tracking-widest hover:bg-zinc-200 transition-all active:scale-95">Salvar</button>
-                  <button onClick={() => onConfirm(true)} className="py-4 sm:py-5 md:py-7 bg-green-600 text-white rounded-[24px] sm:rounded-[32px] font-black uppercase text-[9px] sm:text-[10px] md:text-[11px] tracking-widest flex items-center justify-center gap-2 sm:gap-4 shadow-2xl hover:scale-[1.02] active:scale-95 transition-all"><MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" /> <span className="hidden sm:inline">Notificar</span><span className="sm:hidden">Notif.</span></button>
-               </div>
+                  <div className="space-y-3">
+                    {packageItems.map((item: PackageItem) => (
+                      <div key={item.id} className="p-4 rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] space-y-3">
+                        <input
+                          placeholder="Nome do produto"
+                          value={item.name}
+                          onChange={e => updateItem(item.id, 'name', e.target.value)}
+                          className={inputBase}
+                        />
+                        <textarea
+                          placeholder="Observações"
+                          value={item.description}
+                          onChange={e => updateItem(item.id, 'description', e.target.value)}
+                          className={inputBase + ' resize-none h-20'}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
             </div>
-         </div>
+            <div className="flex-shrink-0 p-4 sm:p-5 pt-0 flex flex-col sm:flex-row gap-2">
+              <button
+                disabled={packageSaving}
+                onClick={() => setStep(1)}
+                className={btnSecondary + ' order-2 sm:order-1 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed'}
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <ChevronLeft className="w-4 h-4" /> Voltar
+              </button>
+              <button
+                disabled={packageSaving}
+                onClick={() => setStep(3)}
+                className="flex-1 py-3.5 sm:py-4 rounded-xl font-semibold text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:ring-2 focus:ring-[var(--text-primary)]/20"
+                style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' }}
+              >
+                Próximo: Notificação <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* STEP 3: NOTIFY */}
+          <div className="w-1/3 flex-shrink-0 flex flex-col min-h-0">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <div className="space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 mb-0.5" style={{ color: 'var(--text-secondary)' }}>Passo 3 de 3</p>
+                    <h2 className="text-lg sm:text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{stepTitles[2]}</h2>
+                    <p className="text-xs font-medium mt-0.5 opacity-60" style={{ color: 'var(--text-secondary)' }}>{stepLabels[2]}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      disabled={packageSaving}
+                      onClick={() => setStep(2)}
+                      className={btnSecondary + ' flex items-center gap-1.5 px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed'}
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Voltar
+                    </button>
+                    <button
+                      disabled={!selectedResident || packageSaving}
+                      onClick={() => onConfirm(false)}
+                      className="text-sm font-semibold uppercase tracking-wider opacity-80 hover:opacity-100 transition-opacity focus:ring-2 focus:ring-[var(--text-primary)]/20 rounded-lg px-2 py-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      {packageSaving ? 'Salvando…' : 'Salvar sem notificar'}
+                    </button>
+                  </div>
+                </div>
+
+                <section className={cardBase}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--highlight-card)' }} />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--highlight-card)' }}>WhatsApp Business</span>
+                  </div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-2 opacity-80" style={{ color: 'var(--text-secondary)' }}>Mensagem para o morador</label>
+                  <textarea
+                    value={packageMessage}
+                    onChange={e => setPackageMessage(e.target.value)}
+                    placeholder="Edite a mensagem de notificação..."
+                    disabled={packageSaving}
+                    className={inputBase + ' resize-none min-h-[180px] disabled:opacity-60 disabled:cursor-not-allowed'}
+                  />
+                </section>
+
+                <div className={cardBase + ' flex items-start gap-3'} style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)' }}>
+                  <Bell className="w-5 h-5 opacity-50 flex-shrink-0 mt-0.5" style={{ color: 'var(--text-secondary)' }} />
+                  <p className="text-xs font-medium leading-relaxed opacity-80" style={{ color: 'var(--text-secondary)' }}>
+                    O registro será salvo permanentemente. O morador pode ser alertado por WhatsApp.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex-shrink-0 p-4 sm:p-5 pt-0 grid grid-cols-2 gap-2">
+              <button
+                disabled={!selectedResident || packageSaving}
+                onClick={() => onConfirm(false)}
+                className={'py-3.5 sm:py-4 rounded-xl font-semibold text-xs uppercase tracking-wider border transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20 disabled:opacity-40 disabled:cursor-not-allowed ' + btnSecondary}
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {packageSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    Salvando…
+                  </>
+                ) : (
+                  'Salvar'
+                )}
+              </button>
+              <button
+                disabled={!selectedResident || packageSaving}
+                onClick={() => onConfirm(true)}
+                className="py-3.5 sm:py-4 rounded-xl font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-500 transition-all focus:ring-2 focus:ring-green-400/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {packageSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="hidden sm:inline">Salvando…</span>
+                    <span className="sm:hidden">Salvando…</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-4 h-4" />
+                    <span className="hidden sm:inline">Notificar</span>
+                    <span className="sm:hidden">Notif.</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

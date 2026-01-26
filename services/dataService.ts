@@ -7,9 +7,8 @@ import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem } from '
 
 export const savePackage = async (pkg: Package): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
-    // Buscar resident_id se necessário
-    let recipientId: string | null = null;
-    if (pkg.recipient) {
+    let recipientId: string | null = pkg.recipientId ?? null;
+    if (!recipientId && pkg.recipient) {
       const { data: resident } = await supabase
         .from('residents')
         .select('id')
@@ -19,7 +18,6 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       recipientId = resident?.id || null;
     }
 
-    // Inserir pacote
     const { data, error } = await supabase
       .from('packages')
       .insert({
@@ -32,8 +30,8 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
         status: pkg.status,
         deadline_minutes: pkg.deadlineMinutes || 45,
         resident_phone: pkg.residentPhone || null,
-        qr_code_data: null, // Pode ser preenchido depois
-        image_url: null // Pode ser preenchido depois
+        qr_code_data: (pkg.qrCodeData ?? null) || null,
+        image_url: (pkg.imageUrl ?? null) || null
       })
       .select()
       .single();
@@ -97,7 +95,9 @@ export const updatePackage = async (pkg: Package): Promise<{ success: boolean; e
 // SERVIÇOS PARA MORADORES
 // ============================================
 
-export const getResidents = async (): Promise<Resident[]> => {
+export type GetResidentsResult = { data: Resident[]; error?: string };
+
+export const getResidents = async (): Promise<GetResidentsResult> => {
   try {
     const { data, error } = await supabase
       .from('residents')
@@ -106,10 +106,10 @@ export const getResidents = async (): Promise<Resident[]> => {
 
     if (error) {
       console.error('Erro ao buscar moradores:', error);
-      return [];
+      return { data: [], error: error.message };
     }
 
-    return (data || []).map((r) => ({
+    const list = (data || []).map((r) => ({
       id: r.id,
       name: r.name,
       unit: r.unit,
@@ -117,9 +117,10 @@ export const getResidents = async (): Promise<Resident[]> => {
       phone: r.phone || '',
       whatsapp: r.whatsapp || ''
     }));
+    return { data: list };
   } catch (err: any) {
     console.error('Erro ao buscar moradores:', err);
-    return [];
+    return { data: [], error: err?.message ?? 'Erro ao carregar moradores' };
   }
 };
 
