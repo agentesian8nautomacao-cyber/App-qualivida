@@ -102,7 +102,19 @@ const ResidentRegister: React.FC<ResidentRegisterProps> = ({
       const result = await registerResident(newResident, passwordToUse);
       
       if (!result.success) {
-        setError(result.error || 'Erro ao realizar cadastro');
+        // Tratar erro de forma mais detalhada
+        let errorMessage = 'Erro ao realizar cadastro';
+        if (result.error) {
+          if (typeof result.error === 'string') {
+            errorMessage = result.error;
+          } else if (result.error instanceof Error) {
+            errorMessage = result.error.message;
+          } else if (typeof result.error === 'object') {
+            // Se for um objeto de erro do Supabase
+            errorMessage = (result.error as any).message || JSON.stringify(result.error);
+          }
+        }
+        setError(errorMessage);
         return;
       }
 
@@ -115,7 +127,22 @@ const ResidentRegister: React.FC<ResidentRegisterProps> = ({
         setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
       }, 2000);
     } catch (err: any) {
-      setError(err.message || 'Erro ao realizar cadastro');
+      // Tratar erro de forma mais detalhada
+      let errorMessage = 'Erro ao realizar cadastro';
+      if (err) {
+        if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        } else if (err.message) {
+          errorMessage = err.message;
+        } else if (typeof err === 'object') {
+          // Se for um objeto de erro do Supabase
+          errorMessage = err.message || err.error?.message || JSON.stringify(err);
+        }
+      }
+      console.error('Erro ao cadastrar morador:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

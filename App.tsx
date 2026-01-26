@@ -387,6 +387,7 @@ const App: React.FC = () => {
   const [packageSaving, setPackageSaving] = useState(false);
   const [residentFormData, setResidentFormData] = useState({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' });
   const [selectedResidentProfile, setSelectedResidentProfile] = useState<Resident | null>(null);
+  const [residentPassword, setResidentPassword] = useState<string | null>(null);
 
   // Mesma lógica da página Moradores: busca por nome ou unidade; sem busca = todos.
   const filteredResidents = useMemo(() => {
@@ -733,7 +734,36 @@ const App: React.FC = () => {
   };
   const handleAddPkgCategory = () => { if (!newPkgCatName.trim()) return; setPackageCategories([...packageCategories, newPkgCatName.trim()]); setPackageType(newPkgCatName.trim()); setNewPkgCatName(''); setIsAddingPkgCategory(false); };
   const handleAcknowledgeNotice = (id: string) => { setAllNotices(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)); };
-  const handleOpenResidentModal = (resident?: Resident) => { if (resident) { setResidentFormData(resident); } else { setResidentFormData({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' }); } setIsResidentModalOpen(true); };
+  const handleOpenResidentModal = async (resident?: Resident) => { 
+    if (resident) { 
+      setResidentFormData(resident);
+      // Buscar senha do morador apenas se for síndico
+      if (role === 'SINDICO' && resident.id) {
+        try {
+          const { data, error } = await supabase
+            .from('residents')
+            .select('password_hash')
+            .eq('id', resident.id)
+            .single();
+          
+          if (!error && data) {
+            setResidentPassword(data.password_hash || null);
+          } else {
+            setResidentPassword(null);
+          }
+        } catch (err) {
+          console.error('Erro ao buscar senha do morador:', err);
+          setResidentPassword(null);
+        }
+      } else {
+        setResidentPassword(null);
+      }
+    } else { 
+      setResidentFormData({ id: '', name: '', unit: '', email: '', phone: '', whatsapp: '' });
+      setResidentPassword(null);
+    } 
+    setIsResidentModalOpen(true); 
+  };
   const handleSaveResident = async () => { 
     if (!residentFormData.name || !residentFormData.unit) return; 
     // Normalizar unidade antes de salvar
@@ -917,20 +947,16 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (selectedRole: UserRole) => { 
-    // Se for morador e está no modo registro, não fazer nada (o ResidentRegister cuida disso)
-    if (selectedRole === 'MORADOR' && showResidentRegister) {
+    // Se for morador, mostrar cadastro/login de morador imediatamente
+    if (selectedRole === 'MORADOR') {
+      // Pular tela de apresentação e ir direto para cadastro
+      setShowLogoSplash(false);
+      setShowResidentRegister(true);
       return;
     }
     
     setRole(selectedRole);
-    // Se for morador via login antigo (deprecated)
-    if (selectedRole === 'MORADOR') {
-      // Redirecionar para cadastro/registro
-      setShowResidentRegister(true);
-      return;
-    } else {
-      setCurrentResident(null);
-    }
+    setCurrentResident(null);
     setIsAuthenticated(true);
     setActiveTab('dashboard');
   };
@@ -1270,7 +1296,18 @@ const App: React.FC = () => {
       <PackageDetailModal pkg={selectedPackageForDetail} onClose={() => setSelectedPackageForDetail(null)} onDeliver={handleDeliverPackage} onNotify={handleSendReminder} calculatePermanence={calculatePermanence} />
       <VisitorDetailModal visitor={selectedVisitorForDetail} onClose={() => setSelectedVisitorForDetail(null)} onCheckout={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />
       <OccurrenceDetailModal occurrence={selectedOccurrenceForDetail} onClose={() => setSelectedOccurrenceForDetail(null)} onSave={handleSaveOccurrenceDetails} setOccurrence={setSelectedOccurrenceForDetail} />
-      <ResidentFormModal isOpen={isResidentModalOpen} onClose={() => setIsResidentModalOpen(false)} data={residentFormData} setData={setResidentFormData} onSave={handleSaveResident} />
+      <ResidentFormModal 
+        isOpen={isResidentModalOpen} 
+        onClose={() => {
+          setIsResidentModalOpen(false);
+          setResidentPassword(null);
+        }} 
+        data={residentFormData} 
+        setData={setResidentFormData} 
+        onSave={handleSaveResident}
+        role={role}
+        residentPassword={residentPassword}
+      />
       <ImportResidentsModal isOpen={isImportResidentsModalOpen} onClose={() => setIsImportResidentsModalOpen(false)} onImport={handleImportResidents} existingResidents={allResidents} />
       <ImportBoletosModal isOpen={isImportBoletosModalOpen} onClose={() => setIsImportBoletosModalOpen(false)} onImport={handleImportBoletos} existingBoletos={allBoletos} allResidents={allResidents} />
       <CameraScanModal isOpen={isCameraScanModalOpen} onClose={() => setIsCameraScanModalOpen(false)} onScanSuccess={handleCameraScanSuccess} allResidents={allResidents} />

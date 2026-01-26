@@ -197,7 +197,7 @@ export const OccurrenceDetailModal = ({ occurrence, onClose, onSave, setOccurren
 };
 
 // --- MODAL FORMULARIO RESIDENTE ---
-export const ResidentFormModal = ({ isOpen, onClose, data, setData, onSave }: any) => {
+export const ResidentFormModal = ({ isOpen, onClose, data, setData, onSave, role, residentPassword }: any) => {
   if (!isOpen) return null;
   
   return (
@@ -215,6 +215,29 @@ export const ResidentFormModal = ({ isOpen, onClose, data, setData, onSave }: an
                 <div><label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Telefone</label><input type="text" value={data.phone} onChange={e => setData({...data, phone: e.target.value})} className="w-full p-4 bg-zinc-50 rounded-2xl font-bold text-sm outline-none border focus:border-black/10" placeholder="Apenas números" /></div>
                 <div className="col-span-2"><label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">WhatsApp (Opcional)</label><input type="text" value={data.whatsapp} onChange={e => setData({...data, whatsapp: e.target.value})} className="w-full p-4 bg-zinc-50 rounded-2xl font-bold text-sm outline-none border focus:border-black/10" placeholder="5511999999999" /></div>
                 <div className="col-span-2"><label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Email (Opcional)</label><input type="email" value={data.email} onChange={e => setData({...data, email: e.target.value})} className="w-full p-4 bg-zinc-50 rounded-2xl font-bold text-sm outline-none border focus:border-black/10" placeholder="email@exemplo.com" /></div>
+                {/* Campo de senha - apenas para síndico */}
+                {role === 'SINDICO' && data.id && (
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Senha do Morador</label>
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                      {residentPassword ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-bold text-amber-800 mb-2">Hash da Senha (Armazenado no Banco):</p>
+                          <code className="block text-[10px] font-mono bg-white p-2 rounded-lg border border-amber-300 text-amber-900 break-all">
+                            {residentPassword}
+                          </code>
+                          <p className="text-[9px] text-amber-700 opacity-70 mt-2">
+                            ⚠️ A senha está armazenada como hash (criptografada) por segurança. Não é possível visualizar a senha original.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs font-medium text-amber-700">
+                          Este morador ainda não possui senha cadastrada.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
              </div>
              <button onClick={onSave} className="w-full py-5 bg-black text-white rounded-[24px] font-black uppercase text-[11px] tracking-widest shadow-2xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 mt-4"><Save className="w-4 h-4" /> {data.id ? 'Atualizar Dados' : 'Cadastrar Morador'}</button>
           </div>

@@ -63,10 +63,20 @@ export const registerResident = async (
 
     if (error) {
       console.error('Erro ao cadastrar morador:', error);
+      // Tratar erro do Supabase de forma mais detalhada
+      let errorMessage = 'Erro ao cadastrar morador';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error.code) {
+        // Erro do Supabase com código
+        errorMessage = `Erro ${error.code}: ${error.message || error.hint || 'Erro ao cadastrar morador'}`;
+      }
       return {
         resident: resident as Resident,
         success: false,
-        error: error.message || 'Erro ao cadastrar morador'
+        error: errorMessage
       };
     }
 
@@ -84,10 +94,21 @@ export const registerResident = async (
     };
   } catch (err: any) {
     console.error('Erro ao registrar morador:', err);
+    // Tratar erro de forma mais detalhada
+    let errorMessage = 'Erro ao cadastrar morador';
+    if (err) {
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      } else if (err.error?.message) {
+        errorMessage = err.error.message;
+      }
+    }
     return {
       resident: resident as Resident,
       success: false,
-      error: err.message || 'Erro ao cadastrar morador'
+      error: errorMessage
     };
   }
 };
