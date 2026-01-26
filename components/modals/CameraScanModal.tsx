@@ -120,13 +120,14 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     videoRef.current.play().catch(() => {});
   }, [stream]);
 
-  // Iniciar câmera apenas em mobile quando modal abre; parar ao fechar
+  // Não solicitar câmera ao abrir: mobile exige gesto direto (clique) para getUserMedia.
+  // Cleanup ao fechar.
   useEffect(() => {
-    if (!isOpen || !mobile) {
-      if (!isOpen) resetModal();
+    if (!isOpen) {
+      resetModal();
       return;
     }
-    requestAccess();
+    if (!mobile) return;
     return () => {
       if (scanIntervalRef.current) {
         clearInterval(scanIntervalRef.current);
@@ -211,12 +212,11 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     }
   }, [capturedImage, scannedData, findResidentByQR, handleSuccess]);
 
-  const handleRetry = useCallback(async () => {
+  const handleRetry = useCallback(() => {
     setLocalError(null);
     clearError();
     stop();
-    await new Promise((r) => setTimeout(r, 300));
-    await requestAccess();
+    requestAccess();
   }, [stop, requestAccess, clearError]);
 
   const handleFileUpload = useCallback(
@@ -391,7 +391,33 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
             style={{ maxHeight: 'min(50vh, 400px)' }}
           >
             <canvas ref={canvasRef} className="hidden" />
-            {capturedImage ? (
+            {!stream && !capturedImage && status === 'idle' && !displayError ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+                <p className="text-sm text-center text-white/80">
+                  Toque em <strong>Ativar câmera</strong> para escanear QR Code ou tirar foto. O navegador vai pedir permissão.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => requestAccess()}
+                    className="flex-1 py-4 px-6 rounded-2xl bg-white text-black text-sm font-black uppercase flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all"
+                  >
+                    <Camera className="w-5 h-5" />
+                    Ativar câmera
+                  </button>
+                  <label className="flex-1 py-4 px-6 rounded-2xl border-2 border-dashed border-white/40 text-white/80 text-sm font-bold uppercase flex items-center justify-center gap-2 cursor-pointer hover:bg-white/10 hover:border-white/60 transition-all">
+                    <Upload className="w-5 h-5" />
+                    Enviar imagem
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : capturedImage ? (
               <div className="relative w-full h-full flex flex-col">
                 <img
                   src={capturedImage}
