@@ -104,6 +104,28 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
           <button onClick={onClose} className="p-4 bg-zinc-50 rounded-3xl hover:bg-zinc-100 transition-all"><X className="w-6 h-6"/></button>
         </header>
         <div className="space-y-8">
+           {/* Imagem da encomenda */}
+           {pkg.imageUrl && (
+             <section className="space-y-4">
+               <label className="text-[10px] font-black uppercase tracking-widest opacity-30 px-2">Foto da Encomenda</label>
+               <div className="rounded-[32px] border border-black/5 overflow-hidden bg-zinc-50">
+                 <img 
+                   src={pkg.imageUrl} 
+                   alt={`Encomenda ${pkg.type} para ${pkg.recipient}`}
+                   className="w-full h-auto max-h-[400px] object-contain"
+                   onError={(e) => {
+                     const target = e.target as HTMLImageElement;
+                     target.style.display = 'none';
+                     const parent = target.parentElement;
+                     if (parent) {
+                       parent.innerHTML = '<div class="p-8 text-center text-xs opacity-40">Imagem não disponível</div>';
+                     }
+                   }}
+                 />
+               </div>
+             </section>
+           )}
+           
            <div className="grid grid-cols-2 gap-4">
               <div className="p-8 bg-zinc-50 rounded-[32px] border border-black/5 shadow-inner"><span className="text-[8px] font-black uppercase tracking-widest opacity-30 block mb-2">Registro de Entrada</span><div className="flex items-center gap-2"><Clock className="w-4 h-4 opacity-40" /><span className="text-lg font-black uppercase">{pkg.displayTime}</span></div></div>
               <div className="p-8 bg-black text-white rounded-[32px] shadow-2xl relative overflow-hidden"><span className="text-[8px] font-black uppercase tracking-widest opacity-40 block mb-2">Tempo em Custódia</span><div className="flex items-center gap-2"><ArrowUpRight className="w-4 h-4 text-blue-400" /><span className="text-lg font-black uppercase">{pkg.status === 'Entregue' ? 'FINALIZADO' : calculatePermanence(pkg.receivedAt)}</span></div><div className="absolute top-0 right-0 w-20 h-20 bg-blue-500 opacity-10 rounded-full blur-2xl -mr-10 -mt-10" /></div>

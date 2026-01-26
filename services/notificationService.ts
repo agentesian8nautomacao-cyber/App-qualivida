@@ -214,3 +214,28 @@ export const countUnreadNotifications = async (moradorId: string): Promise<{ cou
     return { count: 0, error: err?.message ?? 'Erro ao contar notificações não lidas' };
   }
 };
+
+/**
+ * Deleta uma notificação
+ */
+export const deleteNotification = async (notificationId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    console.log('[deleteNotification] Deletando notificação:', notificationId);
+    
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('[deleteNotification] ❌ Erro ao deletar notificação:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log('[deleteNotification] ✅ Notificação deletada com sucesso');
+    return { success: true };
+  } catch (err: any) {
+    console.error('[deleteNotification] ❌ Erro inesperado:', err);
+    return { success: false, error: err?.message ?? 'Erro ao deletar notificação' };
+  }
+};

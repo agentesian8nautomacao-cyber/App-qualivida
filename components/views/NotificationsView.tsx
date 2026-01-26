@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Package, CheckCircle2, X, Eye, Clock } from 'lucide-react';
+import { Bell, Package, CheckCircle2, X, Eye, Clock, Trash2 } from 'lucide-react';
 import { Notification, Package as PackageType } from '../../types';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../../services/notificationService';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from '../../services/notificationService';
 
 interface NotificationsViewProps {
   moradorId: string;
@@ -44,6 +44,18 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
     const result = await markAllNotificationsAsRead(moradorId);
     if (result.success) {
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    }
+  };
+
+  const handleDeleteNotification = async (notificationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm('Tem certeza que deseja excluir esta notificação?')) {
+      const result = await deleteNotification(notificationId);
+      if (result.success) {
+        setNotifications(prev => prev.filter(n => n.id !== notificationId));
+      } else {
+        alert('Erro ao excluir notificação: ' + (result.error || 'Erro desconhecido'));
+      }
     }
   };
 
@@ -159,12 +171,22 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
           {filteredNotifications.map(notification => (
             <div
               key={notification.id}
-              className={`premium-glass rounded-2xl p-5 border transition-all cursor-pointer group ${
+              className={`premium-glass rounded-2xl p-5 border transition-all cursor-pointer group relative ${
                 notification.read
                   ? 'border-[var(--border-color)] opacity-70'
                   : 'border-[var(--text-primary)]/30 bg-[var(--border-color)]/20'
               } hover:border-[var(--text-primary)]/50 hover:bg-[var(--border-color)]/30`}
             >
+              {/* Botão X para deletar */}
+              <button
+                onClick={(e) => handleDeleteNotification(notification.id, e)}
+                className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20 hover:text-red-400"
+                style={{ color: 'var(--text-secondary)' }}
+                title="Excluir notificação"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
               <div className="flex items-start gap-4">
                 {/* Ícone */}
                 <div
@@ -180,7 +202,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
 
                 {/* Conteúdo */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 mb-1">
+                  <div className="flex items-start justify-between gap-3 mb-1 pr-8">
                     <h4
                       className={`text-sm font-bold ${
                         notification.read ? 'opacity-70' : ''
