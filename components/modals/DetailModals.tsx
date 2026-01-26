@@ -3,6 +3,7 @@ import React from 'react';
 import { X, Edit2, MessageCircle, Mail, Package as PackageIcon, CheckCircle2, Check, ShieldCheck, UserCircle, Plus, Clock, ArrowUpRight, LogOut, AlertTriangle, Save, Trash2, Bell } from 'lucide-react';
 import { Resident, Package, VisitorLog, Occurrence, Notice } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
+import { openWhatsApp } from '../../utils/phoneNormalizer';
 
 // --- PROFILE RESIDENTE 360 ---
 export const ResidentProfileModal = ({
@@ -28,7 +29,7 @@ export const ResidentProfileModal = ({
                 </div>
                 <span className="px-3 py-1 bg-white text-black rounded-lg text-[10px] font-black uppercase tracking-widest">{formatUnit(resident.unit)}</span>
                 <div className="flex gap-3 mt-4">
-                   {resident.whatsapp && <button onClick={() => window.open(`https://wa.me/${resident.whatsapp}`, '_blank')} className="p-2 bg-green-500/20 text-green-400 rounded-xl hover:bg-green-500 hover:text-white transition-all"><MessageCircle className="w-5 h-5" /></button>}
+                   {resident.whatsapp && <button onClick={() => openWhatsApp(resident.whatsapp, undefined, (error) => alert(`Erro ao abrir WhatsApp: ${error}`))} className="p-2 bg-green-500/20 text-green-400 rounded-xl hover:bg-green-500 hover:text-white transition-all"><MessageCircle className="w-5 h-5" /></button>}
                    <button className="p-2 bg-white/5 rounded-xl hover:bg-white hover:text-black transition-all"><Mail className="w-5 h-5" /></button>
                 </div>
              </div>

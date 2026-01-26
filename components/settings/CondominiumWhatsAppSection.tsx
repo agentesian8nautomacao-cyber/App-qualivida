@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MessageCircle, Save, Check, Info } from 'lucide-react';
 import { useAppConfig } from '../../contexts/AppConfigContext';
+import { normalizePhoneForWhatsApp } from '../../utils/phoneNormalizer';
 
 const CondominiumWhatsAppSection: React.FC = () => {
   const { config, updateConfig } = useAppConfig();
@@ -9,8 +10,16 @@ const CondominiumWhatsAppSection: React.FC = () => {
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
+    // Normalizar número antes de salvar
+    const normalization = normalizePhoneForWhatsApp(whatsapp.trim());
+    
+    if (!normalization.isValid || !normalization.normalized) {
+      alert(`Número de WhatsApp inválido: ${normalization.error || 'Formato incorreto'}\n\nPor favor, verifique o número e tente novamente.\nExemplo: 5511999999999 (código do país + DDD + número)`);
+      return;
+    }
+    
     setIsSaving(true);
-    updateConfig({ condominiumWhatsApp: whatsapp.trim() });
+    updateConfig({ condominiumWhatsApp: normalization.normalized });
     setTimeout(() => {
       setIsSaving(false);
       setSaved(true);

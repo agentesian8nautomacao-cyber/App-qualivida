@@ -3,6 +3,7 @@ import React from 'react';
 import { Search, UserPlus, Edit2, Trash2, MessageCircle, Mail, UserCircle, Upload } from 'lucide-react';
 import { Resident, Package, VisitorLog } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
+import { openWhatsApp } from '../../utils/phoneNormalizer';
 
 interface ResidentsViewProps {
   allResidents: Resident[];
@@ -118,7 +119,12 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
               <div className="mt-6 pt-6 border-t border-white/5 flex gap-2">
                  {resident.whatsapp && (
                    <button 
-                     onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/${resident.whatsapp}`, '_blank'); }}
+                     onClick={(e) => { 
+                       e.stopPropagation(); 
+                       openWhatsApp(resident.whatsapp, undefined, (error) => {
+                         alert(`Erro ao abrir WhatsApp: ${error}`);
+                       });
+                     }}
                      className="flex-1 py-3 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all text-[10px] font-black uppercase flex items-center justify-center gap-2"
                    >
                      <MessageCircle className="w-3 h-3" /> WhatsApp

@@ -37,6 +37,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 // Utils
 import { normalizeUnit, compareUnits } from './utils/unitFormatter';
+import { openWhatsApp } from './utils/phoneNormalizer';
 
 // Services
 import { getResidents, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
@@ -518,13 +519,15 @@ const App: React.FC = () => {
         // Usar WhatsApp do morador se disponível, senão usar do condomínio
         const whatsappNumber = selectedResident.whatsapp || config.condominiumWhatsApp;
         
-        if (!whatsappNumber) {
-          alert('Não foi possível encontrar um número de WhatsApp para enviar a notificação. Verifique se o morador tem WhatsApp cadastrado ou configure o WhatsApp do condomínio nas configurações.');
+        // Normalizar e validar número antes de enviar
+        const success = openWhatsApp(whatsappNumber, packageMessage, (error) => {
+          alert(`Não foi possível enviar a notificação via WhatsApp: ${error}\n\nVerifique se o morador tem WhatsApp cadastrado corretamente ou configure o WhatsApp do condomínio nas configurações.`);
+        });
+        
+        if (!success) {
+          // Se falhou, não continuar (já exibiu erro)
           return;
         }
-        
-        const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(packageMessage)}`;
-        window.open(url, '_blank');
       }
       resetPackageModal();
       setActiveTab('dashboard');
@@ -618,11 +621,6 @@ const App: React.FC = () => {
     // Determinar qual número de WhatsApp usar: morador > condomínio
     const whatsappNumber = resident?.whatsapp || config.condominiumWhatsApp;
     
-    if (!whatsappNumber) {
-      alert('Não foi possível encontrar um número de WhatsApp para enviar a notificação. Verifique se o morador tem WhatsApp cadastrado ou configure o WhatsApp do condomínio nas configurações.');
-      return;
-    }
-    
     const permanence = calculatePermanence(pkg.receivedAt);
     const residentName = resident?.name || pkg.recipient;
     const message = config.whatsappTemplates.packageReminder
@@ -630,8 +628,16 @@ const App: React.FC = () => {
       .replace('{packageType}', pkg.type)
       .replace('{condominiumName}', config.condominiumName)
       .replace('{permanence}', permanence);
-    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank');
+    
+    // Normalizar e validar número antes de enviar
+    const success = openWhatsApp(whatsappNumber, message, (error) => {
+      alert(`Não foi possível enviar o lembrete via WhatsApp: ${error}\n\nVerifique se o morador tem WhatsApp cadastrado corretamente ou configure o WhatsApp do condomínio nas configurações.`);
+    });
+    
+    if (!success) {
+      // Se falhou, não continuar (já exibiu erro)
+      return;
+    }
   };
   const handleAddPkgCategory = () => { if (!newPkgCatName.trim()) return; setPackageCategories([...packageCategories, newPkgCatName.trim()]); setPackageType(newPkgCatName.trim()); setNewPkgCatName(''); setIsAddingPkgCategory(false); };
   const handleAcknowledgeNotice = (id: string) => { setAllNotices(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)); };

@@ -2,6 +2,7 @@
 import React from 'react';
 import { Search, UserPlus, Phone, MessageCircle, MoreVertical, Trash2, Edit2, Briefcase } from 'lucide-react';
 import { Staff } from '../../types';
+import { openWhatsApp } from '../../utils/phoneNormalizer';
 
 interface StaffViewProps {
   allStaff: Staff[];
@@ -125,7 +126,7 @@ const StaffView: React.FC<StaffViewProps> = ({
                 </button>
                 <button 
                   disabled={!staff.phone}
-                  onClick={() => window.open(`https://wa.me/${staff.phone?.replace(/\D/g, '')}`)}
+                  onClick={() => openWhatsApp(staff.phone, undefined, (error) => alert(`Erro ao abrir WhatsApp: ${error}`))}
                   className="py-3 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                    <MessageCircle className="w-4 h-4" />
