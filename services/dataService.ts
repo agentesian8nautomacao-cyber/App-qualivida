@@ -263,6 +263,86 @@ export const deletePackage = async (id: string): Promise<{ success: boolean; err
   }
 };
 
+export type GetPackagesResult = { data: Package[]; error?: string };
+
+export const getPackages = async (): Promise<GetPackagesResult> => {
+  try {
+    // Buscar pacotes com image_url e qr_code_data
+    const { data, error } = await supabase
+      .from('packages')
+      .select(`
+        id,
+        recipient_id,
+        recipient_name,
+        unit,
+        type,
+        received_at,
+        display_time,
+        status,
+        deadline_minutes,
+        resident_phone,
+        delivered_at,
+        delivered_by,
+        qr_code_data,
+        image_url,
+        created_at,
+        updated_at
+      `)
+      .order('received_at', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar pacotes:', error);
+      return { data: [], error: error.message };
+    }
+
+    // Buscar itens dos pacotes
+    const packageIds = (data || []).map(p => p.id);
+    let packageItemsMap: Record<string, PackageItem[]> = {};
+    
+    if (packageIds.length > 0) {
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('package_items')
+        .select('id, package_id, name, description')
+        .in('package_id', packageIds);
+
+      if (!itemsError && itemsData) {
+        itemsData.forEach(item => {
+          if (!packageItemsMap[item.package_id]) {
+            packageItemsMap[item.package_id] = [];
+          }
+          packageItemsMap[item.package_id].push({
+            id: item.id,
+            name: item.name,
+            description: item.description || ''
+          });
+        });
+      }
+    }
+
+    // Converter para o formato Package
+    const packages: Package[] = (data || []).map((p: any) => ({
+      id: p.id,
+      recipient: p.recipient_name,
+      unit: p.unit,
+      type: p.type,
+      receivedAt: p.received_at,
+      displayTime: p.display_time || new Date(p.received_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      status: p.status as 'Pendente' | 'Entregue',
+      deadlineMinutes: p.deadline_minutes || 45,
+      residentPhone: p.resident_phone || undefined,
+      recipientId: p.recipient_id || undefined,
+      imageUrl: p.image_url || null,
+      qrCodeData: p.qr_code_data || null,
+      items: packageItemsMap[p.id] || []
+    }));
+
+    return { data: packages };
+  } catch (err: any) {
+    console.error('Erro ao buscar pacotes:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar encomendas' };
+  }
+};
+
 // ============================================
 // SERVIÇOS PARA MORADORES
 // ============================================

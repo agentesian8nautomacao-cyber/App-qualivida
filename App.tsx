@@ -41,7 +41,7 @@ import { normalizeUnit, compareUnits } from './utils/unitFormatter';
 import { openWhatsApp } from './utils/phoneNormalizer';
 
 // Services
-import { getResidents, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
+import { getResidents, getPackages, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
 import { getNotifications, countUnreadNotifications } from './services/notificationService';
 import { supabase } from './services/supabase';
 
@@ -153,11 +153,23 @@ const App: React.FC = () => {
     return () => { cancelled = true; };
   }, [isAuthenticated]);
 
-  const [allPackages, setAllPackages] = useState<Package[]>([
-    { id: '1', recipient: 'João Silva', unit: '102A', type: 'Amazon', receivedAt: new Date(Date.now() - 2 * 60 * 60000).toISOString(), displayTime: '08:30', status: 'Pendente', deadlineMinutes: 60, residentPhone: '5511999999999' },
-    { id: '2', recipient: 'Maria Santos', unit: '405B', type: 'Mercado Livre', receivedAt: new Date().toISOString(), displayTime: '11:15', status: 'Entregue', deadlineMinutes: 120, residentPhone: '5511888888888' },
-    { id: '3', recipient: 'João Silva', unit: '102A', type: 'Correios', receivedAt: new Date().toISOString(), displayTime: '14:20', status: 'Pendente', deadlineMinutes: 30, residentPhone: '5511999999999' },
-  ]);
+  // Carregar pacotes do banco de dados
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    setPackagesLoading(true);
+    getPackages().then((res) => {
+      if (cancelled) return;
+      if (res.data) {
+        setAllPackages(res.data);
+      }
+      setPackagesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  const [allPackages, setAllPackages] = useState<Package[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
 
   const [allOccurrences, setAllOccurrences] = useState<Occurrence[]>([
     { id: '1', residentName: 'Ana Oliveira', unit: '201C', description: 'Reclamou de vazamento no corredor do 2º andar.', status: 'Resolvido', date: '25/05/2024 10:00', reportedBy: 'Portaria' },
@@ -433,6 +445,19 @@ const App: React.FC = () => {
     fetchResidents(true);
   }, [isNewPackageModalOpen, isAuthenticated, fetchResidents]);
 
+  // Recarregar pacotes quando morador acessa a aba de notificações para garantir que imagens estejam atualizadas
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'MORADOR' || activeTab !== 'notifications') return;
+    
+    const loadPackages = async () => {
+      const result = await getPackages();
+      if (result.data) {
+        setAllPackages(result.data);
+      }
+    };
+    loadPackages();
+  }, [isAuthenticated, role, activeTab]);
+
   // Carregar notificações quando morador estiver autenticado
   useEffect(() => {
     if (!isAuthenticated || role !== 'MORADOR' || !currentResident) return;
@@ -446,6 +471,15 @@ const App: React.FC = () => {
     };
 
     loadNotifications();
+
+    // Recarregar pacotes quando morador acessa notificações para garantir que imagens estejam atualizadas
+    const loadPackages = async () => {
+      const result = await getPackages();
+      if (result.data) {
+        setAllPackages(result.data);
+      }
+    };
+    loadPackages();
 
     // Configurar Realtime listener para notificações
     console.log('[Realtime] Configurando listener para morador:', currentResident.id);
@@ -614,8 +648,15 @@ const App: React.FC = () => {
 
       const result = await savePackage(newPkg);
       if (result.success && result.id) {
-        newPkg.id = result.id;
-        setAllPackages([newPkg, ...allPackages]);
+        // Recarregar pacotes do banco para garantir que todos os dados estejam atualizados (incluindo image_url)
+        const packagesResult = await getPackages();
+        if (packagesResult.data) {
+          setAllPackages(packagesResult.data);
+        } else {
+          // Fallback: adicionar o pacote localmente se não conseguir recarregar
+          newPkg.id = result.id;
+          setAllPackages([newPkg, ...allPackages]);
+        }
         
         // Feedback de sucesso
         // A notificação automática no app já foi criada pelo savePackage
