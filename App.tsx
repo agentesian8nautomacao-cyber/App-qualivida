@@ -514,8 +514,16 @@ const App: React.FC = () => {
         return;
       }
 
-      if (sendNotify && selectedResident.whatsapp) {
-        const url = `https://wa.me/${selectedResident.whatsapp}?text=${encodeURIComponent(packageMessage)}`;
+      if (sendNotify) {
+        // Usar WhatsApp do morador se disponível, senão usar do condomínio
+        const whatsappNumber = selectedResident.whatsapp || config.condominiumWhatsApp;
+        
+        if (!whatsappNumber) {
+          alert('Não foi possível encontrar um número de WhatsApp para enviar a notificação. Verifique se o morador tem WhatsApp cadastrado ou configure o WhatsApp do condomínio nas configurações.');
+          return;
+        }
+        
+        const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(packageMessage)}`;
         window.open(url, '_blank');
       }
       resetPackageModal();
@@ -590,17 +598,40 @@ const App: React.FC = () => {
     }
   };
   const handleSendReminder = (pkg: Package) => {
-    const resident = allResidents.find(r => r.name === pkg.recipient);
-    if (resident && resident.whatsapp) { 
-      const permanence = calculatePermanence(pkg.receivedAt); 
-      const message = config.whatsappTemplates.packageReminder
-        .replace('{residentName}', resident.name)
-        .replace('{packageType}', pkg.type)
-        .replace('{condominiumName}', config.condominiumName)
-        .replace('{permanence}', permanence);
-      const url = `https://wa.me/${resident.whatsapp}?text=${encodeURIComponent(message)}`; 
-      window.open(url, '_blank'); 
+    // Buscar morador: primeiro por ID, depois por nome (case-insensitive), depois por unidade
+    let resident: Resident | undefined;
+    
+    if (pkg.recipientId) {
+      resident = allResidents.find(r => r.id === pkg.recipientId);
     }
+    
+    if (!resident) {
+      resident = allResidents.find(r => 
+        r.name.toLowerCase().trim() === pkg.recipient.toLowerCase().trim()
+      );
+    }
+    
+    if (!resident) {
+      resident = allResidents.find(r => r.unit === pkg.unit);
+    }
+    
+    // Determinar qual número de WhatsApp usar: morador > condomínio
+    const whatsappNumber = resident?.whatsapp || config.condominiumWhatsApp;
+    
+    if (!whatsappNumber) {
+      alert('Não foi possível encontrar um número de WhatsApp para enviar a notificação. Verifique se o morador tem WhatsApp cadastrado ou configure o WhatsApp do condomínio nas configurações.');
+      return;
+    }
+    
+    const permanence = calculatePermanence(pkg.receivedAt);
+    const residentName = resident?.name || pkg.recipient;
+    const message = config.whatsappTemplates.packageReminder
+      .replace('{residentName}', residentName)
+      .replace('{packageType}', pkg.type)
+      .replace('{condominiumName}', config.condominiumName)
+      .replace('{permanence}', permanence);
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
   const handleAddPkgCategory = () => { if (!newPkgCatName.trim()) return; setPackageCategories([...packageCategories, newPkgCatName.trim()]); setPackageType(newPkgCatName.trim()); setNewPkgCatName(''); setIsAddingPkgCategory(false); };
   const handleAcknowledgeNotice = (id: string) => { setAllNotices(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)); };
