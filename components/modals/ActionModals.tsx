@@ -444,7 +444,7 @@ export const NewPackageModal = ({
           </button>
         </header>
 
-        <div className={`flex flex-1 min-h-0 overflow-hidden transition-all duration-500 ease-out ${step === 2 ? '-translate-x-full' : step === 3 ? '-translate-x-[200%]' : 'translate-x-0'}`} style={{ width: '300%' }}>
+        <div className={`flex flex-1 min-h-0 overflow-hidden transition-all duration-500 ease-out ${step === 2 ? '-translate-x-[33.333%]' : step === 3 ? '-translate-x-[66.666%]' : 'translate-x-0'}`} style={{ width: '300%' }}>
           {/* STEP 1: RESIDENT */}
           <div className="w-1/3 flex-shrink-0 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
