@@ -105,19 +105,19 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h3 className="text-3xl font-black uppercase tracking-tighter" style={{ color: 'var(--text-primary)' }}>
+          <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter" style={{ color: 'var(--text-primary)' }}>
             Notificações
           </h3>
-          <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1" style={{ color: 'var(--text-secondary)' }}>
             {unreadCount > 0 ? `${unreadCount} não lida${unreadCount > 1 ? 's' : ''}` : 'Todas lidas'}
           </p>
         </div>
         {unreadCount > 0 && (
           <button
             onClick={handleMarkAllAsRead}
-            className="px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20"
+            className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-semibold uppercase tracking-wider transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20 whitespace-nowrap"
             style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
           >
             Marcar todas como lidas
@@ -126,10 +126,10 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
       </header>
 
       {/* Filtros */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setFilter('unread')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
+          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-semibold uppercase tracking-wider transition-all ${
             filter === 'unread'
               ? 'bg-[var(--text-primary)] text-[var(--bg-color)]'
               : 'bg-[var(--glass-bg)] border border-[var(--border-color)]'
@@ -140,7 +140,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
         </button>
         <button
           onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
+          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-semibold uppercase tracking-wider transition-all ${
             filter === 'all'
               ? 'bg-[var(--text-primary)] text-[var(--bg-color)]'
               : 'bg-[var(--glass-bg)] border border-[var(--border-color)]'
@@ -187,10 +187,10 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                 <X className="w-4 h-4" />
               </button>
 
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-3 sm:gap-4">
                 {/* Ícone */}
                 <div
-                  className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
+                  className={`flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center ${
                     notification.read
                       ? 'bg-[var(--glass-bg)]'
                       : 'bg-[var(--text-primary)]/20'
@@ -202,9 +202,9 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
 
                 {/* Conteúdo */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 mb-1 pr-8">
+                  <div className="flex items-start justify-between gap-2 sm:gap-3 mb-1 pr-6 sm:pr-8">
                     <h4
-                      className={`text-sm font-bold ${
+                      className={`text-xs sm:text-sm font-bold ${
                         notification.read ? 'opacity-70' : ''
                       }`}
                       style={{ color: 'var(--text-primary)' }}
@@ -212,30 +212,30 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                       {notification.title}
                     </h4>
                     {!notification.read && (
-                      <span className="w-2 h-2 bg-[var(--text-primary)] rounded-full flex-shrink-0 mt-1.5" />
+                      <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-[var(--text-primary)] rounded-full flex-shrink-0 mt-1.5" />
                     )}
                   </div>
                   <p
-                    className={`text-xs leading-relaxed mb-2 ${
+                    className={`text-[11px] sm:text-xs leading-relaxed mb-2 ${
                       notification.read ? 'opacity-60' : 'opacity-80'
                     }`}
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     {notification.message}
                   </p>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[10px] opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+                    <div className="flex items-center gap-2 text-[9px] sm:text-[10px] opacity-50" style={{ color: 'var(--text-secondary)' }}>
                       <Clock className="w-3 h-3" />
                       <span>{formatDate(notification.created_at)}</span>
                     </div>
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-wrap">
                       {notification.type === 'package' && notification.related_id && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleViewRelated(notification);
                           }}
-                          className="px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all"
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap"
                           style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                         >
                           <Eye className="w-3 h-3 inline mr-1" />
@@ -248,7 +248,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                             e.stopPropagation();
                             handleMarkAsRead(notification.id);
                           }}
-                          className="px-3 py-1.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider transition-all"
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap"
                           style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                         >
                           <CheckCircle2 className="w-3 h-3 inline mr-1" />

@@ -40,34 +40,34 @@ const PackagesView: React.FC<PackagesViewProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h3 className="text-3xl font-black uppercase tracking-tighter">Encomendas</h3>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sm:gap-4">
+        <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter">Encomendas</h3>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
+            <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 opacity-30" />
             <input
               type="text"
               placeholder="Pesquisar Encomenda..."
               value={packageSearch}
               onChange={(e) => setPackageSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-xs font-bold outline-none focus:border-[var(--text-primary)]/50 transition-all placeholder:opacity-40"
+              className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2.5 sm:py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[11px] sm:text-xs font-bold outline-none focus:border-[var(--text-primary)]/50 transition-all placeholder:opacity-40"
               style={{ color: 'var(--text-primary)' }}
             />
           </div>
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {canUseCamera && (
               <>
                 <button
                   onClick={onCameraScan}
-                  className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
+                  className="px-4 sm:px-6 py-2 sm:py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[9px] sm:text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-1.5 sm:gap-2 hover:bg-[var(--border-color)]"
                 >
-                  <Camera className="w-4 h-4" /> Escanear
+                  <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Escanear</span>
                 </button>
                 <button
                   onClick={onCameraScan}
-                  className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
+                  className="px-4 sm:px-6 py-2 sm:py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[9px] sm:text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-1.5 sm:gap-2 hover:bg-[var(--border-color)]"
                 >
-                  <ImageIcon className="w-4 h-4" /> Registrar por foto
+                  <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Registrar por foto</span>
                 </button>
               </>
             )}
@@ -78,9 +78,9 @@ const PackagesView: React.FC<PackagesViewProps> = ({
             )}
             <button
               onClick={() => setIsNewPackageModalOpen()}
-              className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+              className="px-4 sm:px-6 py-2 sm:py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[9px] sm:text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-1.5 sm:gap-2"
             >
-              <Plus className="w-4 h-4" /> Novo Registro
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Novo Registro</span>
             </button>
           </div>
         </div>
@@ -115,17 +115,17 @@ const PackagesView: React.FC<PackagesViewProps> = ({
         </section>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {displayPackages.map(pkg => (
           <div 
             key={pkg.id} 
             onClick={() => setSelectedPackageForDetail(pkg)}
-            className="premium-glass p-6 rounded-[32px] flex justify-between items-center cursor-pointer group relative"
+            className="premium-glass p-4 sm:p-6 rounded-[24px] sm:rounded-[32px] flex justify-between items-center cursor-pointer group relative gap-3 sm:gap-4"
           >
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-black opacity-40 uppercase">{pkg.type}</p>
-              <h4 className="font-black text-lg group-hover:text-blue-500 transition-colors">{pkg.recipient}</h4>
-              <p className="text-xs opacity-60">{formatUnit(pkg.unit)} • {pkg.displayTime}</p>
+              <p className="text-[9px] sm:text-[10px] font-black opacity-40 uppercase">{pkg.type}</p>
+              <h4 className="font-black text-base sm:text-lg group-hover:text-blue-500 transition-colors truncate">{pkg.recipient}</h4>
+              <p className="text-[11px] sm:text-xs opacity-60">{formatUnit(pkg.unit)} • {pkg.displayTime}</p>
               {pkg.items && pkg.items.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {pkg.items.slice(0, 2).map((it, idx) => (
@@ -135,7 +135,7 @@ const PackagesView: React.FC<PackagesViewProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
               {onDeletePackage && (
                 <button
                   type="button"
@@ -143,13 +143,13 @@ const PackagesView: React.FC<PackagesViewProps> = ({
                     e.stopPropagation();
                     onDeletePackage(pkg.id);
                   }}
-                  className="p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] text-red-500/90 hover:bg-red-500/10 hover:border-red-500/30 transition-all focus:ring-2 focus:ring-red-400/30 focus:outline-none"
+                  className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] text-red-500/90 hover:bg-red-500/10 hover:border-red-500/30 transition-all focus:ring-2 focus:ring-red-400/30 focus:outline-none"
                   aria-label="Excluir encomenda"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               )}
-              <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase ${pkg.status === 'Pendente' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
+              <span className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase ${pkg.status === 'Pendente' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
                 {pkg.status}
               </span>
             </div>

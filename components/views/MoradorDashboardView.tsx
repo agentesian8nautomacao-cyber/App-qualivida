@@ -71,42 +71,42 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header>
-        <h3 className="text-3xl font-black uppercase tracking-tighter">
+        <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter">
           Olá, {currentResident.name}
         </h3>
-        <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">
+        <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">
           {formatUnit(currentResident.unit)}
         </p>
       </header>
 
       {/* Cards de Resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewNotice && allNotices.length > 0 && onViewNotice(allNotices[0])}>
-          <div className="flex items-center justify-between mb-2">
-            <Bell className="w-6 h-6 opacity-40 group-hover:opacity-100 transition-opacity" />
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewNotice && allNotices.length > 0 && onViewNotice(allNotices[0])}>
+          <div className="flex items-center justify-between mb-1 sm:mb-2">
+            <Bell className="w-5 h-5 sm:w-6 sm:h-6 opacity-40 group-hover:opacity-100 transition-opacity" />
             {unreadNotices > 0 && (
-              <span className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-black text-white">
+              <span className="w-4 h-4 sm:w-5 sm:h-5 bg-red-500 rounded-full flex items-center justify-center text-[9px] sm:text-[10px] font-black text-white">
                 {unreadNotices}
               </span>
             )}
           </div>
-          <p className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Avisos</p>
-          <p className="text-2xl font-black">{unreadNotices}</p>
+          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Avisos</p>
+          <p className="text-xl sm:text-2xl font-black">{unreadNotices}</p>
         </div>
-        <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all">
-          <Receipt className="w-6 h-6 mb-2 opacity-40" />
-          <p className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Boletos</p>
-          <p className="text-2xl font-black text-amber-400">{pendingBoletos.length}</p>
+        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all">
+          <Receipt className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 opacity-40" />
+          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Boletos</p>
+          <p className="text-xl sm:text-2xl font-black text-amber-400">{pendingBoletos.length}</p>
         </div>
-        <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewPackage && myPackages.filter(p => p.status === 'Pendente').length > 0 && onViewPackage(myPackages.filter(p => p.status === 'Pendente')[0])}>
-          <Package className="w-6 h-6 mb-2 opacity-40 group-hover:opacity-100 transition-opacity" />
-          <p className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Encomendas</p>
-          <p className="text-2xl font-black">{myPackages.filter(p => p.status === 'Pendente').length}</p>
+        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewPackage && myPackages.filter(p => p.status === 'Pendente').length > 0 && onViewPackage(myPackages.filter(p => p.status === 'Pendente')[0])}>
+          <Package className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 opacity-40 group-hover:opacity-100 transition-opacity" />
+          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Encomendas</p>
+          <p className="text-xl sm:text-2xl font-black">{myPackages.filter(p => p.status === 'Pendente').length}</p>
         </div>
-        <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all">
-          <Calendar className="w-6 h-6 mb-2 opacity-40" />
-          <p className="text-xs font-black uppercase tracking-wider opacity-40 mb-1">Reservas</p>
-          <p className="text-2xl font-black">{myReservations.length}</p>
+        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all">
+          <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 opacity-40" />
+          <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Reservas</p>
+          <p className="text-xl sm:text-2xl font-black">{myReservations.length}</p>
         </div>
       </div>
 

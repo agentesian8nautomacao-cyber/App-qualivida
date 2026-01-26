@@ -33,18 +33,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10 relative">
       <header className="px-2">
-          <h3 className="text-2xl md:text-3xl font-black tracking-tighter text-contrast-high leading-tight uppercase">Central Operacional</h3>
-          <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-contrast-low">{config.condominiumName} Gestão Premium</p>
+          <h3 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tighter text-contrast-high leading-tight uppercase">Central Operacional</h3>
+          <p className="text-[9px] sm:text-[10px] md:text-[11px] font-bold uppercase tracking-widest text-contrast-low">{config.condominiumName} Gestão Premium</p>
       </header>
 
       <div className="relative group z-[100]">
-        <SearchCode className="absolute left-6 top-1/2 -translate-y-1/2 w-6 h-6 opacity-40 group-hover:text-[var(--text-primary)] transition-all" />
+        <SearchCode className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-5 h-5 sm:w-6 sm:h-6 opacity-40 group-hover:text-[var(--text-primary)] transition-all" />
         <input 
           type="text" 
-          placeholder="Busca Geral: Nome, Unidade, Status (Pendente, Entregue), Categoria..." 
+          placeholder="Busca Geral: Nome, Unidade, Status..." 
           value={globalSearchQuery}
           onChange={(e) => setGlobalSearchQuery(e.target.value)}
-          className="w-full pl-16 pr-6 py-6 text-xl bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-[32px] outline-none font-black tracking-tight focus:ring-4 focus:ring-[var(--text-primary)]/10 transition-all placeholder:opacity-20 shadow-lg"
+          className="w-full pl-12 sm:pl-16 pr-4 sm:pr-6 py-4 sm:py-5 md:py-6 text-base sm:text-lg md:text-xl bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-[24px] sm:rounded-[32px] outline-none font-black tracking-tight focus:ring-4 focus:ring-[var(--text-primary)]/10 transition-all placeholder:opacity-20 shadow-lg"
         />
 
         {/* PAINEL DE BUSCA GLOBAL (COMMAND PALETTE STYLE) */}
@@ -92,22 +92,22 @@ const DashboardView: React.FC<DashboardViewProps> = ({
         <RecentEventsBar eventStates={eventStates} onOpenQuickView={(cat) => setQuickViewCategory(cat)} />
 
         <div 
-          onClick={() => setIsNewPackageModalOpen(true)}
-          className="w-full contrast-card rounded-[48px] p-8 md:p-12 flex flex-col md:flex-row items-center justify-between transition-all shadow-2xl relative overflow-hidden group cursor-pointer border-none"
+          onClick={() => setIsNewPackageModalOpen()}
+          className="w-full contrast-card rounded-[32px] sm:rounded-[40px] md:rounded-[48px] p-6 sm:p-8 md:p-12 flex flex-col md:flex-row items-center justify-between transition-all shadow-2xl relative overflow-hidden group cursor-pointer border-none"
         >
           {/* ... Main Card Content ... */}
-          <div className="flex flex-col md:flex-row items-center gap-10 relative z-10 w-full">
-            <div className="w-24 h-24 rounded-[32px] bg-black/5 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all duration-500 shadow-xl">
-               <PackageIcon className="w-10 h-10" />
+          <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8 md:gap-10 relative z-10 w-full">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-[24px] sm:rounded-[28px] md:rounded-[32px] bg-black/5 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all duration-500 shadow-xl flex-shrink-0">
+               <PackageIcon className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10" />
             </div>
-            <div className="text-center md:text-left">
-              <span className="text-[10px] font-black uppercase tracking-[0.4em] opacity-40">Gestão de Recebimentos</span>
-              <h4 className="text-4xl md:text-5xl font-black tracking-tighter leading-none uppercase mt-2">Registro de Encomendas</h4>
-              <p className="text-sm font-medium opacity-60 mt-3 max-w-lg">Fácil de registrar.</p>
+            <div className="text-center md:text-left flex-1 min-w-0">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.4em] opacity-40">Gestão de Recebimentos</span>
+              <h4 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tighter leading-none uppercase mt-2">Registro de Encomendas</h4>
+              <p className="text-xs sm:text-sm font-medium opacity-60 mt-2 sm:mt-3 max-w-lg">Fácil de registrar.</p>
             </div>
-            <div className="md:ml-auto">
-               <div className="w-16 h-16 rounded-full border border-black/10 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all active:scale-90">
-                  <ArrowRight className="w-6 h-6" />
+            <div className="md:ml-auto flex-shrink-0">
+               <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full border border-black/10 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all active:scale-90">
+                  <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6" />
                </div>
             </div>
           </div>
@@ -115,36 +115,36 @@ const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div onClick={() => setActiveTab('visitors')} className="group secondary-card p-8 h-[240px] rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all">
-           <Users className="w-8 h-8 opacity-20" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5">
+        <div onClick={() => setActiveTab('visitors')} className="group secondary-card p-6 sm:p-8 h-auto sm:h-[200px] md:h-[240px] rounded-[32px] sm:rounded-[40px] md:rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all">
+           <Users className="w-6 h-6 sm:w-8 sm:h-8 opacity-20" />
            <div className="mt-auto">
-              <h3 className="text-2xl font-black uppercase tracking-tight leading-none">VISITANTES</h3>
-              <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest mt-2">Controle de acesso</p>
+              <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">VISITANTES</h3>
+              <p className="text-[9px] sm:text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1 sm:mt-2">Controle de acesso</p>
            </div>
-           <div className="flex justify-end mt-4">
-              <ChevronRight className="w-6 h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
+           <div className="flex justify-end mt-3 sm:mt-4">
+              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
            </div>
         </div>
         
-        <div onClick={() => setActiveTab('occurrences')} className="group secondary-card p-8 h-[240px] rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all">
-           <ShieldAlert className="w-8 h-8 opacity-20" />
+        <div onClick={() => setActiveTab('occurrences')} className="group secondary-card p-6 sm:p-8 h-auto sm:h-[200px] md:h-[240px] rounded-[32px] sm:rounded-[40px] md:rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all">
+           <ShieldAlert className="w-6 h-6 sm:w-8 sm:h-8 opacity-20" />
            <div className="mt-auto">
-              <h3 className="text-2xl font-black uppercase tracking-tight leading-none">OCORRÊNCIAS</h3>
-              <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest mt-2">Segurança e Relatos</p>
+              <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">OCORRÊNCIAS</h3>
+              <p className="text-[9px] sm:text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1 sm:mt-2">Segurança e Relatos</p>
            </div>
-           <div className="flex justify-end mt-4">
-              <ChevronRight className="w-6 h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
+           <div className="flex justify-end mt-3 sm:mt-4">
+              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
            </div>
         </div>
-        <div onClick={() => setActiveTab('residents')} className="group secondary-card p-8 h-[240px] rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all">
-           <Home className="w-8 h-8 opacity-20" />
+        <div onClick={() => setActiveTab('residents')} className="group secondary-card p-6 sm:p-8 h-auto sm:h-[200px] md:h-[240px] rounded-[32px] sm:rounded-[40px] md:rounded-[48px] flex flex-col justify-between cursor-pointer shadow-xl transition-all sm:col-span-2 md:col-span-1">
+           <Home className="w-6 h-6 sm:w-8 sm:h-8 opacity-20" />
            <div className="mt-auto">
-              <h3 className="text-2xl font-black uppercase tracking-tight leading-none">MORADORES</h3>
-              <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest mt-2">Base de unidades</p>
+              <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">MORADORES</h3>
+              <p className="text-[9px] sm:text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1 sm:mt-2">Base de unidades</p>
            </div>
-           <div className="flex justify-end mt-4">
-              <ChevronRight className="w-6 h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
+           <div className="flex justify-end mt-3 sm:mt-4">
+              <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 opacity-20 group-hover:translate-x-1 transition-transform" />
            </div>
         </div>
       </div>
