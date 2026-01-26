@@ -542,6 +542,18 @@ const App: React.FC = () => {
 
   const handleDeletePackage = async (id: string) => {
     if (!confirm('Excluir esta encomenda? A ação não pode ser desfeita.')) return;
+    
+    // Se for um ID temporário ou não for um UUID válido, apenas remover do estado local
+    const isTempId = id.startsWith('temp-');
+    const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    
+    if (isTempId || !isValidUUID) {
+      console.log('Removendo encomenda temporária do estado local:', id);
+      setAllPackages(prev => prev.filter(p => p.id !== id));
+      setSelectedPackageForDetail(prev => (prev?.id === id ? null : prev));
+      return;
+    }
+    
     const result = await deletePackage(id);
     if (result.success) {
       setAllPackages(prev => prev.filter(p => p.id !== id));

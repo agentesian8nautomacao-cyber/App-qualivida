@@ -18,23 +18,43 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       recipientId = resident?.id || null;
     }
 
-    const { data, error } = await supabase
+    // Preparar dados para inserção
+    const insertData: any = {
+      recipient_id: recipientId,
+      recipient_name: pkg.recipient,
+      unit: pkg.unit,
+      type: pkg.type,
+      received_at: pkg.receivedAt,
+      display_time: pkg.displayTime,
+      status: pkg.status,
+      deadline_minutes: pkg.deadlineMinutes || 45,
+      resident_phone: pkg.residentPhone || null,
+      qr_code_data: (pkg.qrCodeData ?? null) || null
+    };
+
+    // Tentar inserir com image_url primeiro
+    if (pkg.imageUrl) {
+      insertData.image_url = pkg.imageUrl;
+    }
+
+    let { data, error } = await supabase
       .from('packages')
-      .insert({
-        recipient_id: recipientId,
-        recipient_name: pkg.recipient,
-        unit: pkg.unit,
-        type: pkg.type,
-        received_at: pkg.receivedAt,
-        display_time: pkg.displayTime,
-        status: pkg.status,
-        deadline_minutes: pkg.deadlineMinutes || 45,
-        resident_phone: pkg.residentPhone || null,
-        qr_code_data: (pkg.qrCodeData ?? null) || null,
-        image_url: (pkg.imageUrl ?? null) || null
-      })
+      .insert(insertData)
       .select()
       .single();
+
+    // Se falhar por causa da coluna image_url não existir, tentar sem ela
+    if (error && error.message && error.message.includes("image_url")) {
+      console.warn('Coluna image_url não encontrada, tentando sem ela...');
+      delete insertData.image_url;
+      const retryResult = await supabase
+        .from('packages')
+        .insert(insertData)
+        .select()
+        .single();
+      data = retryResult.data;
+      error = retryResult.error;
+    }
 
     if (error) {
       console.error('Erro ao salvar pacote:', error);
