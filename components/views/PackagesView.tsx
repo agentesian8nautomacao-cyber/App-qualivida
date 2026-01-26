@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Search, Plus, Camera, Image as ImageIcon, Users, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Plus, Camera, Image as ImageIcon, Users, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { Package, Resident } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
 import { isMobile } from '../../utils/deviceDetection';
@@ -12,6 +12,7 @@ interface PackagesViewProps {
   setPackageSearch: (val: string) => void;
   setIsNewPackageModalOpen: (val: boolean) => void;
   setSelectedPackageForDetail: (pkg: Package) => void;
+  onDeletePackage?: (id: string) => void;
   onCameraScan?: () => void;
 }
 
@@ -22,6 +23,7 @@ const PackagesView: React.FC<PackagesViewProps> = ({
   setPackageSearch,
   setIsNewPackageModalOpen,
   setSelectedPackageForDetail,
+  onDeletePackage,
   onCameraScan,
 }) => {
   const mobile = isMobile();
@@ -118,9 +120,9 @@ const PackagesView: React.FC<PackagesViewProps> = ({
           <div 
             key={pkg.id} 
             onClick={() => setSelectedPackageForDetail(pkg)}
-            className="premium-glass p-6 rounded-[32px] flex justify-between items-center cursor-pointer group"
+            className="premium-glass p-6 rounded-[32px] flex justify-between items-center cursor-pointer group relative"
           >
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] font-black opacity-40 uppercase">{pkg.type}</p>
               <h4 className="font-black text-lg group-hover:text-blue-500 transition-colors">{pkg.recipient}</h4>
               <p className="text-xs opacity-60">{formatUnit(pkg.unit)} • {pkg.displayTime}</p>
@@ -133,7 +135,20 @@ const PackagesView: React.FC<PackagesViewProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {onDeletePackage && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePackage(pkg.id);
+                  }}
+                  className="p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] text-red-500/90 hover:bg-red-500/10 hover:border-red-500/30 transition-all focus:ring-2 focus:ring-red-400/30 focus:outline-none"
+                  aria-label="Excluir encomenda"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
               <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase ${pkg.status === 'Pendente' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
                 {pkg.status}
               </span>

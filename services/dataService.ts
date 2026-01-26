@@ -91,6 +91,25 @@ export const updatePackage = async (pkg: Package): Promise<{ success: boolean; e
   }
 };
 
+export const deletePackage = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase
+      .from('packages')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Erro ao excluir encomenda:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao excluir encomenda:', err);
+    return { success: false, error: err?.message || 'Erro ao excluir encomenda' };
+  }
+};
+
 // ============================================
 // SERVIÇOS PARA MORADORES
 // ============================================

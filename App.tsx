@@ -39,7 +39,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { normalizeUnit, compareUnits } from './utils/unitFormatter';
 
 // Services
-import { getResidents, savePackage, updatePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
+import { getResidents, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
 
 // Modals
 import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
@@ -539,6 +539,18 @@ const App: React.FC = () => {
       alert('Erro ao marcar como entregue: ' + (result.error || 'Erro desconhecido'));
     }
   };
+
+  const handleDeletePackage = async (id: string) => {
+    if (!confirm('Excluir esta encomenda? A ação não pode ser desfeita.')) return;
+    const result = await deletePackage(id);
+    if (result.success) {
+      setAllPackages(prev => prev.filter(p => p.id !== id));
+      setSelectedPackageForDetail(prev => (prev?.id === id ? null : prev));
+    } else {
+      console.error('Erro ao excluir encomenda:', result.error);
+      alert('Erro ao excluir encomenda: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
   const handleResolveOccurrence = async (id: string) => {
     const occurrence = allOccurrences.find(occ => occ.id === id);
     if (!occurrence) return;
@@ -901,7 +913,7 @@ const App: React.FC = () => {
       case 'packages': 
         if (role === 'MORADOR' && currentResident) {
           const myPackages = allPackages.filter(p => p.unit === currentResident.unit);
-          return <PackagesView allPackages={myPackages} allResidents={[]} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onCameraScan={undefined} />;
+          return <PackagesView allPackages={myPackages} allResidents={[]} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onDeletePackage={handleDeletePackage} onCameraScan={undefined} />;
         }
         if (role === 'SINDICO') {
           return (
@@ -914,7 +926,7 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <PackagesView allPackages={allPackages} allResidents={allResidents} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onCameraScan={() => setIsCameraScanModalOpen(true)} />;
+        return <PackagesView allPackages={allPackages} allResidents={allResidents} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onDeletePackage={handleDeletePackage} onCameraScan={() => setIsCameraScanModalOpen(true)} />;
       case 'settings': 
         if (role === 'MORADOR') {
           return (
