@@ -10,7 +10,10 @@ export interface UseCameraReturn {
   stream: MediaStream | null;
   status: CameraStatus;
   error: string | null;
+  /** Chama getUserMedia de forma síncrona no clique (sem await antes). Use no onClick nativo do botão. */
   requestAccess: () => Promise<boolean>;
+  /** Retorna uma Promise mas invoca getUserMedia no mesmo tick. Use em listener nativo (addEventListener). */
+  requestAccessSync: () => Promise<boolean>;
   stop: () => void;
   clearError: () => void;
 }
@@ -148,5 +151,92 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     }
   }, [opts.facingMode]);
 
-  return { stream, status, error, requestAccess, stop, clearError };
+  /**
+   * Invoca getUserMedia no mesmo tick (sem await antes da chamada).
+   * Use em addEventListener('click') nativo no botão "Ativar câmera" para garantir user gesture.
+   */
+  const requestAccessSync = useCallback((): Promise<boolean> => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setStream(null);
+    setError(null);
+    setStatus('requesting');
+
+    if (!isSecureContext()) {
+      const msg = 'Câmera exige HTTPS. Use conexão segura ou localhost.';
+      setError(msg);
+      setStatus('error');
+      return Promise.resolve(false);
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Câmera não disponível neste navegador.');
+      setStatus('error');
+      return Promise.resolve(false);
+    }
+
+    const constraintsPreferred: MediaStreamConstraints = {
+      video: {
+        facingMode: { ideal: opts.facingMode ?? 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    };
+
+    const constraintsFallback: MediaStreamConstraints = {
+      video: true,
+      audio: false,
+    };
+
+    // Invocação síncrona: getUserMedia é chamado no mesmo tick do clique.
+    const p = navigator.mediaDevices
+      .getUserMedia(constraintsPreferred)
+      .then((mediaStream) => {
+        streamRef.current = mediaStream;
+        setStream(mediaStream);
+        setStatus('ready');
+        setError(null);
+        return true;
+      })
+      .catch((firstErr: unknown) => {
+        const e = firstErr as { name?: string };
+        const useFallback =
+          e?.name === 'NotFoundError' ||
+          e?.name === 'DevicesNotFoundError' ||
+          e?.name === 'OverconstrainedError' ||
+          e?.name === 'ConstraintNotSatisfiedError';
+        if (!useFallback) {
+          const msg = formatCameraError(firstErr);
+          setError(msg);
+          setStatus('error');
+          setStream(null);
+          streamRef.current = null;
+          return false;
+        }
+        return navigator.mediaDevices.getUserMedia(constraintsFallback).then(
+          (mediaStream) => {
+            streamRef.current = mediaStream;
+            setStream(mediaStream);
+            setStatus('ready');
+            setError(null);
+            return true;
+          },
+          (err) => {
+            const msg = formatCameraError(err);
+            setError(msg);
+            setStatus('error');
+            setStream(null);
+            streamRef.current = null;
+            return false;
+          }
+        );
+      });
+
+    return p;
+  }, [opts.facingMode]);
+
+  return { stream, status, error, requestAccess, requestAccessSync, stop, clearError };
 }

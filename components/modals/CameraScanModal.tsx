@@ -51,7 +51,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
   allResidents,
 }) => {
   const mobile = isMobile();
-  const { stream, status, error, requestAccess, stop, clearError } = useCamera({
+  const { stream, status, error, requestAccessSync, stop, clearError } = useCamera({
     facingMode: 'environment',
   });
 
@@ -64,6 +64,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scanIntervalRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activateButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const displayError = localError ?? error;
 
@@ -137,6 +138,22 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, mobile]);
+
+  // Listener nativo no botão "Ativar câmera": getUserMedia precisa ser acionado por gesto real.
+  // React onClick pode quebrar o user gesture em alguns mobile browsers.
+  const showActivate = Boolean(
+    isOpen && mobile && !stream && !capturedImage && status === 'idle' && !displayError
+  );
+  useEffect(() => {
+    if (!showActivate) return;
+    const btn = activateButtonRef.current;
+    if (!btn) return;
+    const handler = () => {
+      requestAccessSync();
+    };
+    btn.addEventListener('click', handler);
+    return () => btn.removeEventListener('click', handler);
+  }, [showActivate, requestAccessSync]);
 
   // QR scan loop (apenas quando stream pronto e modo qr)
   useEffect(() => {
@@ -216,8 +233,8 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
     setLocalError(null);
     clearError();
     stop();
-    requestAccess();
-  }, [stop, requestAccess, clearError]);
+    requestAccessSync();
+  }, [stop, requestAccessSync, clearError]);
 
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -398,8 +415,8 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
                   <button
+                    ref={activateButtonRef}
                     type="button"
-                    onClick={() => requestAccess()}
                     className="flex-1 py-4 px-6 rounded-2xl bg-white text-black text-sm font-black uppercase flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all"
                   >
                     <Camera className="w-5 h-5" />
@@ -432,7 +449,7 @@ const CameraScanModal: React.FC<CameraScanModalProps> = ({
                 <div className="absolute bottom-2 left-2 right-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { setCapturedImage(null); setScannedData(null); requestAccess(); }}
+                    onClick={() => { setCapturedImage(null); setScannedData(null); requestAccessSync(); }}
                     className="flex-1 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] text-xs font-black uppercase"
                     style={{ color: 'var(--text-primary)' }}
                   >
