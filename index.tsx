@@ -1,8 +1,8 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AppConfigProvider } from './contexts/AppConfigContext';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -25,8 +25,10 @@ if (savedConfig) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <AppConfigProvider>
-      <App />
-    </AppConfigProvider>
+    <ErrorBoundary>
+      <AppConfigProvider>
+        <App />
+      </AppConfigProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

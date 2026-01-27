@@ -77,7 +77,7 @@ const PackagesView: React.FC<PackagesViewProps> = ({
               </p>
             )}
             <button
-              onClick={() => setIsNewPackageModalOpen()}
+              onClick={() => setIsNewPackageModalOpen(true)}
               className="px-4 sm:px-6 py-2 sm:py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[9px] sm:text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-1.5 sm:gap-2"
             >
               <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Novo Registro</span>

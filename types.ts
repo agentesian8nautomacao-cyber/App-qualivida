@@ -101,10 +101,14 @@ export interface VisitorLog {
   residentName: string;
   unit: string;
   visitorCount: number;
-  visitorNames?: string; // Opcional
+  visitorNames?: string;
   entryTime: string;
   exitTime?: string;
   status: 'active' | 'completed';
+  type?: string;
+  doc?: string;
+  vehicle?: string;
+  plate?: string;
 }
 
 // --- CRM TYPES ---

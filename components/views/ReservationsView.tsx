@@ -1,6 +1,5 @@
-
-import React from 'react';
-import { Plus, Search, Calendar as CalendarIcon, Users, Clock, Check, Timer, AlertOctagon, Home, UtensilsCrossed, Flame, Dumbbell } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, Search, Calendar as CalendarIcon, Users, Clock, Check, Timer, Home, UtensilsCrossed } from 'lucide-react';
 import { formatUnit } from '../../utils/unitFormatter';
 
 interface ReservationsViewProps {
@@ -12,6 +11,41 @@ interface ReservationsViewProps {
   handleReservationAction: (id: string) => void;
 }
 
+const todayLabel = () => {
+  const d = new Date();
+  const month = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
+  return `${month} ${d.getDate()}`;
+};
+
+const toMins = (t: string) => {
+  const [h, m] = (t || '0:0').trim().split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+type Slot = { label: string; start: number; end: number };
+const SLOTS: Slot[] = [
+  { label: 'Manhã', start: 6 * 60, end: 12 * 60 },
+  { label: 'Tarde', start: 12 * 60, end: 18 * 60 },
+  { label: 'Noite', start: 18 * 60, end: 24 * 60 }
+];
+
+function occupancyFromReservations(reservations: { time: string }[]): { occupied: boolean; pct: number }[] {
+  const slotOccupied = SLOTS.map(s => {
+    const overlaps = reservations.some(r => {
+      const [startStr, endStr] = (r.time || '').split(' - ').map(s => s.trim());
+      const resStart = toMins(startStr);
+      const resEnd = toMins(endStr);
+      return resStart < s.end && resEnd > s.start;
+    });
+    return overlaps;
+  });
+  const total = SLOTS.length;
+  return SLOTS.map((_, i) => ({
+    occupied: slotOccupied[i],
+    pct: 100 / total
+  }));
+}
+
 const ReservationsView: React.FC<ReservationsViewProps> = ({
   dayReservations,
   reservationFilter,
@@ -20,12 +54,32 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
   areasStatus,
   handleReservationAction
 }) => {
-  const displayReservations = dayReservations.filter(r => {
-    if (reservationFilter === 'all') return true;
-    if (reservationFilter === 'today') return r.date.includes('JAN'); 
-    if (reservationFilter === 'pending') return r.status === 'active' || r.status === 'scheduled';
-    return true;
-  });
+  const [reservationSearch, setReservationSearch] = useState('');
+
+  const displayReservations = useMemo(() => {
+    let list = dayReservations.filter(r => {
+      if (reservationFilter === 'all') return true;
+      if (reservationFilter === 'today') return r.date === todayLabel();
+      if (reservationFilter === 'pending') return r.status === 'active' || r.status === 'scheduled';
+      return true;
+    });
+    const q = reservationSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        r =>
+          (r.resident && r.resident.toLowerCase().includes(q)) ||
+          (r.unit && r.unit.toLowerCase().includes(q)) ||
+          (r.area && r.area.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [dayReservations, reservationFilter, reservationSearch]);
+
+  const todayReservations = useMemo(
+    () => dayReservations.filter(r => r.date === todayLabel()),
+    [dayReservations]
+  );
+  const timelineSegments = useMemo(() => occupancyFromReservations(todayReservations), [todayReservations]);
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
@@ -41,6 +95,8 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
                 <input 
                    type="text" 
                    placeholder="Buscar por morador, unidade ou área..." 
+                   value={reservationSearch}
+                   onChange={(e) => setReservationSearch(e.target.value)}
                    className="w-full pl-16 pr-6 py-5 bg-zinc-900 border border-white/5 rounded-[24px] text-sm font-bold outline-none text-white placeholder:text-zinc-600 focus:border-white/20 transition-all shadow-lg"
                 />
              </div>
@@ -85,11 +141,10 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
            {areasStatus.map((area: any) => {
               // Mapear ícones baseado no nome da área
               const getAreaIcon = (name: string) => {
-                if (name.includes('SALÃO') || name.includes('FESTAS')) return Home;
-                if (name.includes('GOURMET')) return UtensilsCrossed;
-                if (name.includes('CHURRASQUEIRA')) return Flame;
-                if (name.includes('ACADEMIA')) return Dumbbell;
-                return Home; // Default
+                const n = name.toLowerCase();
+                if (n.includes('salão') || n.includes('festas')) return Home;
+                if (n.includes('gourmet')) return UtensilsCrossed;
+                return Home;
               };
               
               const AreaIcon = getAreaIcon(area.name);
@@ -119,20 +174,22 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
          </div>
       </div>
 
-      {/* Timeline Visual (Mock) */}
-      <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden flex mb-2 opacity-50">
-         {/* Mockup visual de ocupação do dia (Barra) */}
-         <div className="w-[30%] bg-zinc-800" /> {/* Manhã livre */}
-         <div className="w-[10%] bg-blue-900/40" /> {/* Ocupado */}
-         <div className="w-[20%] bg-zinc-800" />
-         <div className="w-[15%] bg-blue-900/40" /> 
-         <div className="w-[25%] bg-zinc-800" />
+      {/* Timeline de ocupação do dia (baseada nas reservas de hoje) */}
+      <div className="w-full h-2 bg-zinc-900 rounded-full overflow-hidden flex mb-2">
+         {timelineSegments.map((seg, i) => (
+           <div
+             key={i}
+             className={`h-full transition-colors ${seg.occupied ? 'bg-blue-500/50' : 'bg-zinc-800'}`}
+             style={{ width: `${seg.pct}%` }}
+             title={`${SLOTS[i].label}: ${seg.occupied ? 'Ocupado' : 'Livre'}`}
+           />
+         ))}
       </div>
       <div className="flex justify-between text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-8 px-1">
          <span>06:00</span>
          <span>12:00</span>
          <span>18:00</span>
-         <span>00:00</span>
+         <span>24:00</span>
       </div>
 
       {/* Lista de Reservas (Cards) */}
@@ -140,7 +197,6 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
          {displayReservations.length > 0 ? (
            <div className="space-y-4">
              {displayReservations.map(res => {
-                // Parse Mock Date for Calendar Badge
                 const [month, day] = res.date.split(' ');
                 
                 return (
@@ -207,7 +263,7 @@ const ReservationsView: React.FC<ReservationsViewProps> = ({
          ) : (
             <div className="py-24 text-center opacity-30 font-black uppercase text-xs tracking-[0.2em] border-2 border-dashed border-white/5 rounded-[48px] flex flex-col items-center gap-4">
                <CalendarIcon className="w-10 h-10 opacity-50" />
-               Nenhuma reserva encontrada para este filtro
+               {reservationSearch.trim() ? 'Nenhuma reserva encontrada para este filtro ou busca' : 'Nenhuma reserva encontrada para este filtro'}
             </div>
          )}
       </div>

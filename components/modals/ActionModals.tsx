@@ -27,9 +27,13 @@ export const NewReservationModal = ({
                <div className="relative">
                   <select 
                     value={data.area}
-                    onChange={(e) => setData({...data, area: e.target.value})}
+                    onChange={(e) => {
+                      const area = areasStatus.find((a: any) => a.name === e.target.value);
+                      setData({ ...data, area: e.target.value, areaId: area ? area.id : '' });
+                    }}
                     className="w-full p-5 bg-white/5 rounded-2xl outline-none font-bold text-sm border-none focus:ring-1 focus:ring-white/30 appearance-none text-white transition-all shadow-inner"
                   >
+                     <option value="" className="bg-zinc-900 text-white">Selecione a área</option>
                      {areasStatus.map((area: any) => (
                         <option key={area.id} value={area.name} className="bg-zinc-900 text-white">{area.name}</option>
                      ))}
@@ -63,7 +67,7 @@ export const NewReservationModal = ({
                            <div 
                              key={r.id}
                              onClick={() => {
-                                setData({ ...data, resident: r.name, unit: r.unit });
+                                setData({ ...data, resident: r.name, unit: r.unit, residentId: r.id });
                                 setSearchQuery(r.name);
                                 setShowSuggestions(false);
                              }}

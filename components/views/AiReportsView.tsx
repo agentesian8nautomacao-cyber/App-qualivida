@@ -70,7 +70,13 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
     };
   }, [visitorLogs, allPackages, allOccurrences, allNotes, dayReservations]);
 
+  const hasGeminiKey = !!(process.env.API_KEY && String(process.env.API_KEY).trim());
+
   const handleGenerateReport = async () => {
+    if (!hasGeminiKey) {
+      setReportContent('Configure GEMINI_API_KEY no arquivo .env ou nas variáveis de ambiente do Vercel para gerar relatórios com IA.');
+      return;
+    }
     setIsGenerating(true);
     setReportContent(null);
 
@@ -114,21 +120,59 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
       });
 
       setReportContent(response.text || "Não foi possível gerar o relatório.");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setReportContent("Erro ao conectar com a Inteligência Artificial. Verifique sua conexão e tente novamente.");
+      const msg = error?.message?.toLowerCase?.().includes('api') || !hasGeminiKey
+        ? 'Configure GEMINI_API_KEY no .env ou nas variáveis do Vercel para gerar relatórios com IA.'
+        : 'Erro ao conectar com a Inteligência Artificial. Verifique sua conexão e tente novamente.';
+      setReportContent(msg);
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleExportPDF = () => {
-    // Implementação futura de exportação PDF
-    alert('Funcionalidade de exportação PDF em desenvolvimento');
+    if (!reportContent) {
+      alert('Gere o relatório antes de exportar.');
+      return;
+    }
+    const win = window.open('', '_blank');
+    if (!win) {
+      alert('Permita pop-ups para exportar o PDF.');
+      return;
+    }
+    const title = `Relatório IA - ${config.condominiumName} - ${new Date().toLocaleDateString('pt-BR')}`;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html><head><meta charset="utf-8"><title>${title}</title>
+      <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 1rem; color: #1a1a1a; line-height: 1.6; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .meta { color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }
+        pre { white-space: pre-wrap; word-wrap: break-word; background: #f5f5f5; padding: 1rem; border-radius: 8px; font-size: 0.875rem; }
+      </style></head>
+      <body>
+        <h1>Relatório Inteligente – ${config.condominiumName}</h1>
+        <p class="meta">${new Date().toLocaleDateString('pt-BR', { dateStyle: 'long' })} • Gerado por IA</p>
+        <pre>${reportContent.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.onafterprint = () => win.close();
   };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
+      {!hasGeminiKey && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/20 border border-amber-500/30 rounded-2xl">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <p className="text-xs font-bold text-amber-200">
+            Configure <code className="bg-black/20 px-1.5 py-0.5 rounded">GEMINI_API_KEY</code> no <code className="bg-black/20 px-1.5 py-0.5 rounded">.env</code> ou nas variáveis do Vercel para gerar relatórios com IA.
+          </p>
+        </div>
+      )}
       {/* HEADER MODERNO */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
@@ -291,10 +335,15 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
               {!isGenerating && !reportContent && (
                 <button
                   onClick={handleGenerateReport}
-                  className="group px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-xl font-black uppercase text-[11px] tracking-widest hover:scale-105 transition-all shadow-lg flex items-center gap-2"
+                  disabled={!hasGeminiKey}
+                  className={`group px-6 py-3 rounded-xl font-black uppercase text-[11px] tracking-widest transition-all shadow-lg flex items-center gap-2 ${
+                    hasGeminiKey
+                      ? 'bg-[var(--text-primary)] text-[var(--bg-color)] hover:scale-105'
+                      : 'bg-zinc-600 text-zinc-400 cursor-not-allowed opacity-70'
+                  }`}
                 >
-                  <Sparkles className="w-4 h-4 group-hover:animate-spin" />
-                  Gerar com IA
+                  <Sparkles className={`w-4 h-4 ${hasGeminiKey ? 'group-hover:animate-spin' : ''}`} />
+                  {hasGeminiKey ? 'Gerar com IA' : 'Configure GEMINI_API_KEY'}
                 </button>
               )}
             </div>
@@ -348,10 +397,10 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
               <div className="py-12 border-2 border-dashed border-[var(--border-color)] rounded-[24px] flex flex-col items-center justify-center text-center opacity-40">
                 <PieChart className="w-12 h-12 mb-4 text-[var(--text-secondary)]" />
                 <p className="text-sm font-bold uppercase tracking-widest text-[var(--text-secondary)]">
-                  Nenhum relatório gerado ainda
+                  {hasGeminiKey ? 'Nenhum relatório gerado ainda' : 'Configure GEMINI_API_KEY para gerar relatórios'}
                 </p>
                 <p className="text-xs text-[var(--text-secondary)] mt-2">
-                  Clique em "Gerar com IA" para criar um relatório executivo
+                  {hasGeminiKey ? 'Clique em "Gerar com IA" para criar um relatório executivo' : 'Adicione a chave no .env ou nas variáveis do Vercel.'}
                 </p>
               </div>
             )}

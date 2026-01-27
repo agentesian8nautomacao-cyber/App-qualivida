@@ -4,12 +4,16 @@ interface VideoIntroProps {
   onComplete: () => void;
 }
 
+const FALLBACK_TIMEOUT_MS = 15000;
+
 const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const completedRef = useRef(false);
 
-  // Callback estável para completar
   const handleComplete = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
     onComplete();
   }, [onComplete]);
 
@@ -19,73 +23,58 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
 
     let isCleanedUp = false;
 
-    // Quando o vídeo terminar, completar automaticamente
     const handleVideoEnd = () => {
-      if (!isCleanedUp) {
-        handleComplete();
-      }
+      if (!isCleanedUp) handleComplete();
     };
 
-    // Tentar reproduzir o vídeo
     const playVideo = async () => {
       if (isCleanedUp || !video) return;
-      
       try {
-        // Não recarregar se já estiver carregado
-        if (video.readyState < 2) {
-          video.load();
-        }
-        
-        // Aguardar um pouco antes de tentar reproduzir
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        if (!isCleanedUp && video) {
-          await video.play();
-        }
-      } catch (error) {
-        // Se falhar (autoplay bloqueado), aguardar interação do usuário
-        console.log('Autoplay bloqueado, aguardando interação do usuário');
+        if (video.readyState < 2) video.load();
+        await new Promise(r => setTimeout(r, 100));
+        if (!isCleanedUp && video) await video.play();
+      } catch {
+        console.log('Autoplay bloqueado, aguardando interação.');
       }
     };
 
-    // Adicionar listeners
-    video.addEventListener('ended', handleVideoEnd, { once: true });
-    
-    // Tentar reproduzir quando o vídeo estiver pronto
     const handleCanPlay = () => {
-      if (!isCleanedUp) {
-        playVideo();
-      }
+      if (!isCleanedUp) playVideo();
     };
-    
+
+    video.addEventListener('ended', handleVideoEnd, { once: true });
     video.addEventListener('canplay', handleCanPlay, { once: true });
     video.addEventListener('loadeddata', handleCanPlay, { once: true });
+    if (video.readyState >= 2) playVideo();
 
-    // Se o vídeo já estiver pronto, tentar reproduzir imediatamente
-    if (video.readyState >= 2) {
-      playVideo();
-    }
+    const fallbackTimer = setTimeout(() => {
+      if (!isCleanedUp) {
+        console.log('[VideoIntro] Fallback: vídeo não finalizou a tempo.');
+        handleComplete();
+      }
+    }, FALLBACK_TIMEOUT_MS);
 
     return () => {
       isCleanedUp = true;
+      clearTimeout(fallbackTimer);
       video.removeEventListener('ended', handleVideoEnd);
       video.removeEventListener('canplay', handleCanPlay);
       video.removeEventListener('loadeddata', handleCanPlay);
     };
   }, [handleComplete]);
 
-  // Permitir pular ao toque/clique na tela inteira
-  const handleScreenClick = useCallback(() => {
+  const handleScreenClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-skip-btn]')) return;
     handleComplete();
   }, [handleComplete]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="video-intro-container"
       onClick={handleScreenClick}
-      style={{ 
-        width: '100vw', 
+      style={{
+        width: '100vw',
         height: '100vh',
         position: 'fixed',
         top: 0,
@@ -127,14 +116,19 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
           WebkitBackfaceVisibility: 'hidden',
           WebkitTransform: 'translateZ(0)'
         }}
-        onError={(e) => {
-          console.error('Erro ao carregar vídeo:', e);
-          // Se o vídeo falhar ao carregar, completar após 2 segundos
-          setTimeout(() => {
-            handleComplete();
-          }, 2000);
+        onError={() => {
+          console.error('Erro ao carregar vídeo.');
+          setTimeout(handleComplete, 500);
         }}
       />
+      <button
+        data-skip-btn
+        type="button"
+        onClick={(e) => { e.stopPropagation(); handleComplete(); }}
+        className="absolute top-6 right-6 z-10 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl text-xs font-black uppercase tracking-widest border border-white/20 transition-all cursor-pointer"
+      >
+        Pular
+      </button>
     </div>
   );
 };

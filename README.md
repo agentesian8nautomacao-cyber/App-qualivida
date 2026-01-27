@@ -13,11 +13,10 @@ Este projeto está configurado para deploy automático no Vercel.
 ### Configuração no Vercel
 
 1. Conecte seu repositório GitHub ao Vercel
-2. Configure a variável de ambiente `GEMINI_API_KEY` no painel do Vercel:
-   - Acesse: Settings → Environment Variables
-   - Adicione: `GEMINI_API_KEY` com sua chave da API Gemini
-   - Obtenha sua chave em: https://aistudio.google.com/apikey
-
+2. Em **Settings → Environment Variables**, configure:
+   - `VITE_SUPABASE_URL` — URL do projeto Supabase (ex.: `https://xxx.supabase.co`)
+   - `VITE_SUPABASE_ANON_KEY` — Chave anônima do Supabase
+   - `GEMINI_API_KEY` — Chave da API Gemini ([aistudio.google.com/apikey](https://aistudio.google.com/apikey))
 3. O Vercel detectará automaticamente o framework Vite e fará o build
 
 ### Arquivos de Configuração
@@ -49,9 +48,9 @@ Este projeto está configurado para deploy automático no Vercel.
    yarn add vite@6.2.0 @vitejs/plugin-react@5.1.2 --dev
    ```
 
-3. Configure a variável de ambiente:
-   - Crie um arquivo `.env.local` na raiz do projeto
-   - Adicione: `GEMINI_API_KEY=sua_chave_aqui`
+3. Configure as variáveis de ambiente:
+   - Copie `.env.example` para `.env.local`
+   - Preencha `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `GEMINI_API_KEY`
 
 4. Execute o projeto:
    ```bash

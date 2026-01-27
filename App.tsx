@@ -41,7 +41,18 @@ import { normalizeUnit, compareUnits } from './utils/unitFormatter';
 import { openWhatsApp } from './utils/phoneNormalizer';
 
 // Services
-import { getResidents, getPackages, savePackage, updatePackage, deletePackage, saveResident, deleteResident, saveVisitor, updateVisitor, saveOccurrence, updateOccurrence, saveBoleto, updateBoleto, deleteBoleto } from './services/dataService';
+import {
+  getResidents, getPackages, savePackage, updatePackage, deletePackage,
+  saveResident, deleteResident,
+  getVisitors, saveVisitor, updateVisitor,
+  getOccurrences, saveOccurrence, updateOccurrence,
+  getBoletos, saveBoleto, updateBoleto, deleteBoleto,
+  getNotes, saveNote, updateNote, deleteNote,
+  getNotices, saveNotice, updateNotice, deleteNotice,
+  getChatMessages, saveChatMessage,
+  getStaff, saveStaff, deleteStaff,
+  getAreas, getReservations, saveReservation, updateReservation
+} from './services/dataService';
 import { getNotifications, countUnreadNotifications } from './services/notificationService';
 import { supabase } from './services/supabase';
 
@@ -160,9 +171,7 @@ const App: React.FC = () => {
     setPackagesLoading(true);
     getPackages().then((res) => {
       if (cancelled) return;
-      if (res.data) {
-        setAllPackages(res.data);
-      }
+      if (res.data) setAllPackages(res.data);
       setPackagesLoading(false);
     });
     return () => { cancelled = true; };
@@ -171,100 +180,48 @@ const App: React.FC = () => {
   const [allPackages, setAllPackages] = useState<Package[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
 
-  const [allOccurrences, setAllOccurrences] = useState<Occurrence[]>([
-    { id: '1', residentName: 'Ana Oliveira', unit: '201C', description: 'Reclamou de vazamento no corredor do 2º andar.', status: 'Resolvido', date: '25/05/2024 10:00', reportedBy: 'Portaria' },
-    { id: '2', residentName: 'João Silva', unit: '102A', description: 'Morador informou que o portão da garagem está fazendo barulho excessivo.', status: 'Aberto', date: '26/05/2024 14:20', reportedBy: 'Portaria' },
-  ]);
+  // Carregar visitantes, ocorrências e boletos do Supabase
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    getVisitors().then((res) => { if (!cancelled && res.data) setVisitorLogs(res.data); });
+    getOccurrences().then((res) => { if (!cancelled && res.data) setAllOccurrences(res.data); });
+    getBoletos().then((res) => { if (!cancelled && res.data) setAllBoletos(res.data); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
-  const [visitorLogs, setVisitorLogs] = useState<any[]>([
-    { id: '1', residentName: 'Ricardo Almeida', unit: '202', visitorCount: 1, visitorNames: 'Carlos (Técnico)', entryTime: new Date(Date.now() - 1000 * 60 * 135).toISOString(), status: 'active', type: 'Prestador' },
-    { id: '2', residentName: 'Maria Fernanda', unit: '101', visitorCount: 2, visitorNames: 'Pais', entryTime: '2024-05-25T14:00:00', exitTime: '2024-05-25T16:30:00', status: 'completed', type: 'Visita' },
-    { id: '3', residentName: 'João Silva', unit: '102A', visitorCount: 1, visitorNames: 'Pedro (Entregador)', entryTime: new Date(Date.now() - 1000 * 60 * 15).toISOString(), status: 'active', type: 'Delivery' }
-  ]);
+  // Carregar notas, avisos, chat, staff do Supabase
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    getNotes().then((res) => { if (!cancelled && res.data) setAllNotes(res.data); });
+    getNotices().then((res) => { if (!cancelled && res.data) setAllNotices(res.data); });
+    getChatMessages().then((res) => { if (!cancelled && res.data) setChatMessages(res.data); });
+    getStaff().then((res) => { if (!cancelled && res.data) setAllStaff(res.data); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
-  const [allNotes, setAllNotes] = useState<Note[]>([
-    { id: '1', content: 'Verificar lâmpada do bloco B que está piscando.', date: new Date().toISOString(), completed: false, category: 'Manutenção' },
-    { id: '2', content: 'Aviso de mudança agendada para unidade 303 no sábado.', date: '27/05/2024 09:30', completed: true, category: 'Agenda' }
-  ]);
-
-  const [allNotices, setAllNotices] = useState<Notice[]>([
-    { id: '1', title: 'Manutenção Preventiva', content: 'Elevador Bloco A ficará parado amanhã das 08h às 12h para manutenção.', author: 'Síndico', authorRole: 'SINDICO', date: new Date().toISOString(), category: 'Manutenção', priority: 'high', pinned: true, read: false },
-    { id: '2', title: 'Portão da Garagem', content: 'O motor do portão principal está fazendo ruído. Técnico acionado.', author: 'Zelador', authorRole: 'PORTEIRO', date: new Date(Date.now() - 86400000).toISOString(), category: 'Urgente', priority: 'high', pinned: false, read: false },
-    { id: '3', title: 'Festa Julina', content: 'A festa do condomínio será dia 25/07. Avisar moradores sobre barulho.', author: 'Comissão', authorRole: 'SINDICO', date: new Date(Date.now() - 172800000).toISOString(), category: 'Social', priority: 'normal', pinned: false, read: true },
-    { id: '4', title: 'Mudança Unidade 404', content: 'Agendada para hoje à tarde. Liberar entrada do caminhão.', author: 'Portaria 1', authorRole: 'PORTEIRO', date: new Date().toISOString(), category: 'Institucional', priority: 'normal', pinned: false, read: false },
-  ]);
-
-  const [allBoletos, setAllBoletos] = useState<Boleto[]>([
-    { 
-      id: '1', 
-      residentName: 'João Silva', 
-      unit: '102A', 
-      referenceMonth: '01/2025', 
-      dueDate: '2025-01-10', 
-      amount: 450.00, 
-      status: 'Pendente',
-      barcode: '34191090000012345678901234567890123456789012',
-      description: 'Taxa de condomínio - Janeiro/2025'
-    },
-    { 
-      id: '2', 
-      residentName: 'Maria Santos', 
-      unit: '405B', 
-      referenceMonth: '01/2025', 
-      dueDate: '2025-01-10', 
-      amount: 450.00, 
-      status: 'Pago',
-      paidDate: '2025-01-05',
-      description: 'Taxa de condomínio - Janeiro/2025'
-    },
-    { 
-      id: '3', 
-      residentName: 'Ana Oliveira', 
-      unit: '201C', 
-      referenceMonth: '12/2024', 
-      dueDate: '2024-12-10', 
-      amount: 450.00, 
-      status: 'Vencido',
-      barcode: '34191090000012345678901234567890123456789013',
-      description: 'Taxa de condomínio - Dezembro/2024'
-    },
-    { 
-      id: '4', 
-      residentName: 'Ricardo Almeida', 
-      unit: '202', 
-      referenceMonth: '01/2025', 
-      dueDate: '2025-01-10', 
-      amount: 450.00, 
-      status: 'Pendente',
-      barcode: '34191090000012345678901234567890123456789014',
-      description: 'Taxa de condomínio - Janeiro/2025'
-    },
-  ]);
+  const [allOccurrences, setAllOccurrences] = useState<Occurrence[]>([]);
+  const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>([]);
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
+  const [allNotices, setAllNotices] = useState<Notice[]>([]);
+  const [allBoletos, setAllBoletos] = useState<Boleto[]>([]);
   const [boletoSearch, setBoletoSearch] = useState('');
 
   // Estado de notificações
   const [allNotifications, setAllNotifications] = useState<Notification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
-  const [allStaff, setAllStaff] = useState<Staff[]>([
-    { id: '1', name: 'José Carlos', role: 'Zelador', status: 'Ativo', shift: 'Comercial', phone: '11999991234', email: 'zelador@qualivida.com' },
-    { id: '2', name: 'Marcos Souza', role: 'Porteiro', status: 'Ativo', shift: 'Noite', phone: '11999995678' },
-    { id: '3', name: 'Ana Pereira', role: 'Faxineira', status: 'Férias', shift: 'Manhã', phone: '11999994321' },
-    { id: '4', name: 'Pedro Lima', role: 'Segurança', status: 'Ativo', shift: 'Madrugada', phone: '11999998765' }
-  ]);
+  const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [staffSearch, setStaffSearch] = useState('');
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [staffFormData, setStaffFormData] = useState<Partial<Staff>>({});
 
   const [noticeFilter, setNoticeFilter] = useState<'all' | 'urgent' | 'unread'>('all');
-  const [activeNoticeTab, setActiveNoticeTab] = useState<'wall' | 'chat'>('wall'); // Para Mobile
-  const [isChatOpen, setIsChatOpen] = useState(false); // Mobile Bottom Sheet State
+  const [activeNoticeTab, setActiveNoticeTab] = useState<'wall' | 'chat'>('wall');
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: '1', text: 'Boa tarde, alguma novidade na portaria?', senderRole: 'SINDICO', timestamp: new Date(Date.now() - 3600000).toISOString(), read: true },
-    { id: '2', text: 'Tudo tranquilo por aqui, Sr. Síndico. Apenas uma entrega grande para o 402.', senderRole: 'PORTEIRO', timestamp: new Date(Date.now() - 3500000).toISOString(), read: true },
-    { id: '3', text: 'Perfeito. Avise-me se chegar correspondência da Receita.', senderRole: 'SINDICO', timestamp: new Date(Date.now() - 3400000).toISOString(), read: true },
-  ]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -274,67 +231,121 @@ const App: React.FC = () => {
     }
   }, [chatMessages, activeTab, isChatOpen]);
 
-  const handleSendChatMessage = () => {
+  const handleSendChatMessage = async () => {
     if (!chatInput.trim()) return;
-    const newMsg: ChatMessage = { id: Date.now().toString(), text: chatInput, senderRole: role, timestamp: new Date().toISOString(), read: false };
-    setChatMessages([...chatMessages, newMsg]);
+    const text = chatInput.trim();
     setChatInput('');
+    const newMsg: ChatMessage = { id: `temp-${Date.now()}`, text, senderRole: role, timestamp: new Date().toISOString(), read: false };
+    const res = await saveChatMessage(newMsg);
+    if (res.success) {
+      const { data } = await getChatMessages();
+      if (data) setChatMessages(data);
+    } else {
+      setChatInput(text);
+      console.error('Erro ao enviar mensagem:', res.error);
+    }
   };
 
-  const [areasStatus, setAreasStatus] = useState([
-    { id: '1', name: 'SALÃO DE FESTAS CRYSTAL', capacity: 80, today: '1 HOJE', rules: 'Fechar às 23h • Proibido som externo' },
-    { id: '2', name: 'ESPAÇO GOURMET', capacity: 30, today: '0 HOJE', rules: 'Limpeza inclusa na taxa' },
-  ]);
+  const [areasData, setAreasData] = useState<{ id: string; name: string; capacity: number; rules: string | null }[]>([]);
+  const [reservationsData, setReservationsData] = useState<{ id: string; areaId: string; areaName: string; residentId: string; residentName: string; unit: string; date: string; startTime: string; endTime: string; status: string }[]>([]);
 
-  const [dayReservations, setDayReservations] = useState([
-    { id: 'r1', resident: 'RICARDO ALMEIDA', unit: '202', area: 'SALÃO DE FESTAS CRYSTAL', time: '18:00 - 22:00', status: 'scheduled', date: 'JAN 9' }
-  ]);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    getAreas().then((a) => { if (!cancelled && a.data) setAreasData(a.data); });
+    getReservations().then((r) => { if (!cancelled && r.data) setReservationsData(r.data); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  const todayYMD = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const areasStatus = useMemo(() => {
+    const reservable = areasData.filter((a) => {
+      const n = a.name.toLowerCase();
+      return n.includes('gourmet') || n.includes('salão') || n.includes('festas');
+    });
+    return reservable.map((a) => {
+      const todayCount = reservationsData.filter(
+        (r) => r.areaId === a.id && r.date === todayYMD && (r.status === 'scheduled' || r.status === 'active')
+      ).length;
+      return { id: a.id, name: a.name, capacity: a.capacity, today: `${todayCount} HOJE`, rules: a.rules || '' };
+    });
+  }, [areasData, reservationsData, todayYMD]);
+
+  const dayReservations = useMemo(() => {
+    return reservationsData.map((r) => {
+      const d = new Date(r.date + 'T12:00:00');
+      const month = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
+      const day = d.getDate();
+      return {
+        id: r.id,
+        resident: r.residentName,
+        unit: r.unit,
+        area: r.areaName,
+        time: `${r.startTime} - ${r.endTime}`,
+        status: r.status,
+        date: `${month} ${day}`
+      };
+    });
+  }, [reservationsData]);
+
+  const fetchReservations = useCallback(() => {
+    getReservations().then((r) => { if (r.data) setReservationsData(r.data); });
+  }, []);
 
   const [reservationFilter, setReservationFilter] = useState<'all' | 'today' | 'pending'>('today');
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false);
   const [reservationSearchQuery, setReservationSearchQuery] = useState('');
   const [showResSuggestions, setShowResSuggestions] = useState(false);
-  const [newReservationData, setNewReservationData] = useState({ area: 'SALÃO DE FESTAS CRYSTAL', resident: '', unit: '', date: '', startTime: '', endTime: '' });
+  const [newReservationData, setNewReservationData] = useState({ area: '', areaId: '', resident: '', unit: '', residentId: '', date: '', startTime: '', endTime: '' });
 
   const hasTimeConflict = useMemo(() => {
     if (!newReservationData.date || !newReservationData.startTime || !newReservationData.endTime || !newReservationData.area) return false;
-    const toMins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toMins = (t: string) => { const [h, m] = (t || '0:0').split(':').map(Number); return h * 60 + m; };
     const newStart = toMins(newReservationData.startTime);
     const newEnd = toMins(newReservationData.endTime);
-    const dateObj = new Date(newReservationData.date);
+    const dateObj = new Date(newReservationData.date + 'T12:00:00');
     const month = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
     const day = dateObj.getDate();
     const formattedDate = `${month} ${day}`;
-    return dayReservations.some(r => {
-        if (r.area !== newReservationData.area || r.date !== formattedDate) return false;
-        const [startStr, endStr] = r.time.split(' - ');
-        const rStart = toMins(startStr);
-        const rEnd = toMins(endStr);
-        return (newStart < rEnd && newEnd > rStart);
+    return dayReservations.some((r) => {
+      if (r.area !== newReservationData.area || r.date !== formattedDate) return false;
+      const [startStr, endStr] = r.time.split(' - ');
+      const rStart = toMins(startStr);
+      const rEnd = toMins(endStr);
+      return newStart < rEnd && newEnd > rStart;
     });
   }, [newReservationData, dayReservations]);
 
-  const handleReservationAction = (id: string) => {
-    setDayReservations(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      if (r.status === 'scheduled') return { ...r, status: 'active' };
-      if (r.status === 'active') return { ...r, status: 'completed' };
-      return r;
-    }));
+  const handleReservationAction = async (id: string) => {
+    const r = reservationsData.find((x) => x.id === id);
+    if (!r) return;
+    const next = r.status === 'scheduled' ? 'active' : r.status === 'active' ? 'completed' : r.status;
+    if (next === r.status) return;
+    const res = await updateReservation(id, { status: next });
+    if (res.success) fetchReservations();
   };
 
-  const handleCreateReservation = () => {
-    if(!newReservationData.resident || !newReservationData.date || hasTimeConflict) return;
-    const dateObj = new Date(newReservationData.date);
-    const month = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
-    const day = dateObj.getDate();
-    const formattedDate = `${month} ${day}`;
-    const newRes = { id: Date.now().toString(), resident: newReservationData.resident, unit: newReservationData.unit, area: newReservationData.area, time: `${newReservationData.startTime} - ${newReservationData.endTime}`, status: 'scheduled', date: formattedDate };
-    setDayReservations([newRes, ...dayReservations]);
-    setIsReservationModalOpen(false);
-    setNewReservationData({ area: 'SALÃO DE FESTAS CRYSTAL', resident: '', unit: '', date: '', startTime: '', endTime: '' });
-    setReservationSearchQuery('');
-    setShowResSuggestions(false);
+  const handleCreateReservation = async () => {
+    if (!newReservationData.resident || !newReservationData.date || !newReservationData.areaId || !newReservationData.residentId || hasTimeConflict) return;
+    const res = await saveReservation({
+      areaId: newReservationData.areaId,
+      residentId: newReservationData.residentId,
+      residentName: newReservationData.resident,
+      unit: newReservationData.unit,
+      date: newReservationData.date,
+      startTime: newReservationData.startTime,
+      endTime: newReservationData.endTime,
+      status: 'scheduled'
+    });
+    if (res.success) {
+      fetchReservations();
+      setIsReservationModalOpen(false);
+      setNewReservationData({ area: '', areaId: '', resident: '', unit: '', residentId: '', date: '', startTime: '', endTime: '' });
+      setReservationSearchQuery('');
+      setShowResSuggestions(false);
+    } else {
+      alert('Erro ao criar reserva: ' + (res.error || 'Erro desconhecido'));
+    }
   };
 
   const filteredResForReservation = useMemo(() => {
@@ -347,7 +358,9 @@ const App: React.FC = () => {
   const eventStates = useMemo(() => {
     const now = new Date();
     const isWithin = (iso: string, mins: number) => { if (!iso) return false; const d = new Date(iso); return (now.getTime() - d.getTime()) < mins * 60 * 1000; };
-    const today = new Date().toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' }).toUpperCase().replace('.', '');
+    const d = new Date();
+    const month = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
+    const today = `${month} ${d.getDate()}`;
     return {
       hasNewPackage: allPackages.some(p => p.status === 'Pendente'),
       hasActiveVisitor: visitorLogs.some(v => v.status === 'active'),
@@ -364,12 +377,19 @@ const App: React.FC = () => {
       case 'packages': return allPackages.filter(p => p.status === 'Pendente');
       case 'visitors': return visitorLogs.filter(v => v.status === 'active');
       case 'occurrences': return allOccurrences.filter(o => o.status === 'Aberto');
-      case 'reservations': return [{ area: 'Salão de Festas', unit: '102A', time: '18:00' }];
+      case 'reservations': {
+        const d = new Date();
+        const month = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
+        const today = `${month} ${d.getDate()}`;
+        return dayReservations
+          .filter(r => r.date === today && (r.status === 'scheduled' || r.status === 'active'))
+          .map(r => ({ id: r.id, area: r.area, unit: r.unit, time: r.time, residentName: r.resident, date: r.date }));
+      }
       case 'notes': return allNotes.filter(n => !n.completed);
       case 'notices': return allNotices.slice(0, 3);
       default: return [];
     }
-  }, [quickViewCategory, allPackages, visitorLogs, allOccurrences, allNotes, allNotices]);
+  }, [quickViewCategory, allPackages, visitorLogs, allOccurrences, allNotes, allNotices, dayReservations]);
 
   const [isNewPackageModalOpen, setIsNewPackageModalOpen] = useState(false);
   const [packageStep, setPackageStep] = useState(1);
@@ -561,14 +581,13 @@ const App: React.FC = () => {
   }, [isAuthenticated, role, currentResident]);
 
   const handleVisitorCheckOut = async (id: string) => {
-    const visitor = visitorLogs.find(v => v.id === id);
+    const visitor = visitorLogs.find((v) => v.id === id);
     if (!visitor) return;
-    
     const updatedVisitor = { ...visitor, status: 'completed' as const, exitTime: new Date().toISOString() };
     const result = await updateVisitor(updatedVisitor);
-    
     if (result.success) {
-      setVisitorLogs(prev => prev.map(v => v.id === id ? updatedVisitor : v));
+      const { data } = await getVisitors();
+      if (data) setVisitorLogs(data);
     } else {
       console.error('Erro ao atualizar visitante:', result.error);
       alert('Erro ao fazer checkout: ' + (result.error || 'Erro desconhecido'));
@@ -576,13 +595,23 @@ const App: React.FC = () => {
   };
   const resetVisitorModal = () => { setIsVisitorModalOpen(false); setNewVisitorStep(1); setNewVisitorData({ unit: '', name: '', doc: '', type: 'Visita', vehicle: '', plate: '', residentName: '' }); setSearchResident(''); };
   const handleRegisterVisitor = async () => {
-    const newVisitor: VisitorLog = { id: `temp-${Date.now()}`, residentName: newVisitorData.residentName || 'Desconhecido', unit: newVisitorData.unit, visitorCount: 1, visitorNames: newVisitorData.name, entryTime: new Date().toISOString(), status: 'active' };
-    
-    // Salvar no Supabase
+    const newVisitor: VisitorLog = {
+      id: `temp-${Date.now()}`,
+      residentName: newVisitorData.residentName || 'Desconhecido',
+      unit: newVisitorData.unit,
+      visitorCount: 1,
+      visitorNames: newVisitorData.name,
+      entryTime: new Date().toISOString(),
+      status: 'active',
+      type: newVisitorData.type || 'Visita',
+      doc: newVisitorData.doc || undefined,
+      vehicle: newVisitorData.vehicle || undefined,
+      plate: newVisitorData.plate || undefined
+    };
     const result = await saveVisitor(newVisitor);
-    if (result.success && result.id) {
-      newVisitor.id = result.id;
-      setVisitorLogs([newVisitor, ...visitorLogs]);
+    if (result.success) {
+      const { data } = await getVisitors();
+      if (data) setVisitorLogs(data);
       resetVisitorModal();
     } else {
       console.error('Erro ao salvar visitante:', result.error);
@@ -735,14 +764,13 @@ const App: React.FC = () => {
     }
   };
   const handleResolveOccurrence = async (id: string) => {
-    const occurrence = allOccurrences.find(occ => occ.id === id);
+    const occurrence = allOccurrences.find((occ) => occ.id === id);
     if (!occurrence) return;
-    
     const updatedOccurrence = { ...occurrence, status: 'Resolvido' as const };
     const result = await updateOccurrence(updatedOccurrence);
-    
     if (result.success) {
-      setAllOccurrences(prev => prev.map(occ => occ.id === id ? updatedOccurrence : occ));
+      const { data } = await getOccurrences();
+      if (data) setAllOccurrences(data);
     } else {
       console.error('Erro ao resolver ocorrência:', result.error);
       alert('Erro ao resolver ocorrência: ' + (result.error || 'Erro desconhecido'));
@@ -750,10 +778,10 @@ const App: React.FC = () => {
   };
   const handleSaveOccurrenceDetails = async () => {
     if (!selectedOccurrenceForDetail) return;
-    
     const result = await updateOccurrence(selectedOccurrenceForDetail);
     if (result.success) {
-      setAllOccurrences(prev => prev.map(o => o.id === selectedOccurrenceForDetail.id ? selectedOccurrenceForDetail : o));
+      const { data } = await getOccurrences();
+      if (data) setAllOccurrences(data);
       setSelectedOccurrenceForDetail(null);
     } else {
       console.error('Erro ao salvar ocorrência:', result.error);
@@ -879,8 +907,31 @@ const App: React.FC = () => {
       alert('Erro ao remover morador: ' + (result.error || 'Erro desconhecido'));
     }
   };
-  const handleImportResidents = (residents: Resident[]) => { setAllResidents(prev => [...residents, ...prev]); };
-  const handleImportBoletos = (boletos: Boleto[]) => { setAllBoletos(prev => [...boletos, ...prev]); };
+  const handleImportResidents = async (residents: Resident[]) => {
+    for (let i = 0; i < residents.length; i++) {
+      const r = { ...residents[i], id: `temp-${Date.now()}-${i}` };
+      const res = await saveResident(r);
+      if (!res.success) {
+        const msg = `Erro ao importar "${r.name}": ${res.error || 'Erro desconhecido'}`;
+        alert(msg);
+        throw new Error(msg);
+      }
+    }
+    const { data } = await getResidents();
+    if (data) setAllResidents(data);
+  };
+  const handleImportBoletos = async (boletos: Boleto[]) => {
+    for (const b of boletos) {
+      const res = await saveBoleto(b);
+      if (!res.success) {
+        const msg = `Erro ao importar boleto "${b.residentName}": ${res.error || 'Erro desconhecido'}`;
+        alert(msg);
+        throw new Error(msg);
+      }
+    }
+    const { data } = await getBoletos();
+    if (data) setAllBoletos(data);
+  };
   const handleDeleteBoleto = async (boleto: Boleto) => {
     const result = await deleteBoleto(boleto.id);
     if (result.success) {
@@ -945,8 +996,28 @@ const App: React.FC = () => {
     setActiveTab('packages');
     setIsNewPackageModalOpen(true);
   };
-  const handleSaveNoticeChanges = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.map(n => n.id === selectedNoticeForEdit.id ? selectedNoticeForEdit : n)); setSelectedNoticeForEdit(null); };
-  const handleDeleteNotice = () => { if (!selectedNoticeForEdit) return; setAllNotices(prev => prev.filter(n => n.id !== selectedNoticeForEdit.id)); setSelectedNoticeForEdit(null); };
+  const handleSaveNoticeChanges = async () => {
+    if (!selectedNoticeForEdit) return;
+    const res = await updateNotice(selectedNoticeForEdit);
+    if (res.success) {
+      const { data } = await getNotices();
+      if (data) setAllNotices(data);
+      setSelectedNoticeForEdit(null);
+    } else {
+      alert('Erro ao salvar aviso: ' + (res.error || 'Erro desconhecido'));
+    }
+  };
+  const handleDeleteNotice = async () => {
+    if (!selectedNoticeForEdit) return;
+    const res = await deleteNotice(selectedNoticeForEdit.id);
+    if (res.success) {
+      const { data } = await getNotices();
+      if (data) setAllNotices(data);
+      setSelectedNoticeForEdit(null);
+    } else {
+      alert('Erro ao excluir aviso: ' + (res.error || 'Erro desconhecido'));
+    }
+  };
 
   const [isNewNoteModalOpen, setIsNewNoteModalOpen] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -1042,40 +1113,62 @@ const App: React.FC = () => {
     sessionStorage.removeItem('userRole');
   };
 
-  const handleSaveNote = () => {
+  const handleSaveNote = async () => {
     if (!newNoteContent.trim()) return;
-    if (editingNoteId) { setAllNotes(allNotes.map(n => n.id === editingNoteId ? { ...n, content: newNoteContent, category: newNoteCategory, scheduled: newNoteScheduled } : n)); } 
-    else { const newNote: Note = { id: Date.now().toString(), content: newNoteContent, date: new Date().toISOString(), completed: false, category: newNoteCategory, scheduled: newNoteScheduled }; setAllNotes([newNote, ...allNotes]); }
+    const iso = new Date().toISOString();
+    if (editingNoteId) {
+      const note = allNotes.find((n) => n.id === editingNoteId);
+      if (!note) return;
+      const res = await updateNote({ ...note, content: newNoteContent, category: newNoteCategory, scheduled: newNoteScheduled });
+      if (!res.success) {
+        alert('Erro ao atualizar nota: ' + (res.error || 'Erro desconhecido'));
+        return;
+      }
+    } else {
+      const res = await saveNote({ id: `temp-${Date.now()}`, content: newNoteContent, date: iso, completed: false, category: newNoteCategory, scheduled: newNoteScheduled });
+      if (!res.success) {
+        alert('Erro ao criar nota: ' + (res.error || 'Erro desconhecido'));
+        return;
+      }
+    }
+    const { data } = await getNotes();
+    if (data) setAllNotes(data);
     setNewNoteContent(''); setNewNoteCategory('Geral'); setNewNoteScheduled(''); setIsScheduleOpen(false); setEditingNoteId(null); setIsNewNoteModalOpen(false);
   };
   const handleAddCategory = () => { if (!newCatName.trim()) return; const colors = ['bg-zinc-100', 'bg-amber-100', 'bg-red-100', 'bg-blue-100', 'bg-purple-100', 'bg-green-100']; const randomColor = colors[Math.floor(Math.random() * colors.length)]; setNoteCategories([...noteCategories, { name: newCatName.trim(), color: randomColor }]); setNewCatName(''); setIsAddingCategory(false); };
   const handleRemoveCategory = (name: string) => { if (name === 'Geral') return; setNoteCategories(noteCategories.filter(cat => cat.name !== name)); if (newNoteCategory === name) setNewNoteCategory('Geral'); };
 
-  // Handlers de Funcionários (Staff)
-  const handleSaveStaff = () => {
+  const handleSaveStaff = async () => {
     if (!staffFormData.name || !staffFormData.role) return;
-    if (staffFormData.id) {
-       setAllStaff(prev => prev.map(s => s.id === staffFormData.id ? { ...s, ...staffFormData } as Staff : s));
+    const staff: Staff = {
+      id: (staffFormData.id && !String(staffFormData.id).startsWith('temp-') ? staffFormData.id : `temp-${Date.now()}`) as string,
+      name: staffFormData.name,
+      role: staffFormData.role,
+      status: (staffFormData.status as 'Ativo' | 'Férias' | 'Licença') || 'Ativo',
+      shift: (staffFormData.shift as 'Manhã' | 'Tarde' | 'Noite' | 'Madrugada' | 'Comercial') || 'Comercial',
+      phone: staffFormData.phone,
+      email: staffFormData.email
+    };
+    const res = await saveStaff(staff);
+    if (res.success) {
+      const { data } = await getStaff();
+      if (data) setAllStaff(data);
+      setIsStaffModalOpen(false);
+      setStaffFormData({});
     } else {
-       const newStaff: Staff = { 
-          id: Date.now().toString(), 
-          name: staffFormData.name!, 
-          role: staffFormData.role!,
-          status: staffFormData.status || 'Ativo',
-          shift: staffFormData.shift || 'Comercial',
-          phone: staffFormData.phone,
-          email: staffFormData.email
-       };
-       setAllStaff(prev => [newStaff, ...prev]);
+      alert('Erro ao salvar funcionário: ' + (res.error || 'Erro desconhecido'));
     }
-    setIsStaffModalOpen(false);
-    setStaffFormData({});
   };
 
-  const handleDeleteStaff = (id: string) => {
-     if(window.confirm("Deseja desligar este colaborador do sistema?")) {
-        setAllStaff(prev => prev.filter(s => s.id !== id));
-     }
+  const handleDeleteStaff = async (id: string) => {
+    if (!window.confirm('Deseja desligar este colaborador do sistema?')) return;
+    const res = await deleteStaff(id);
+    if (res.success) {
+      const { data } = await getStaff();
+      if (data) setAllStaff(data);
+    } else {
+      alert('Erro ao remover funcionário: ' + (res.error || 'Erro desconhecido'));
+    }
   };
 
   const renderContent = () => {
@@ -1345,12 +1438,16 @@ const App: React.FC = () => {
       {role === 'PORTEIRO' && <DraggableFab onClick={() => { setEditingNoteId(null); setNewNoteContent(''); setIsNewNoteModalOpen(true); }} />}
       <QuickViewModal 
         category={quickViewCategory} data={quickViewData} onClose={() => setQuickViewCategory(null)} onGoToPage={(tab) => setActiveTab(tab)}
-        onMarkAsDone={(note) => { setAllNotes(prev => prev.map(n => n.id === note.id ? { ...n, completed: true } : n)); }}
+        onMarkAsDone={async (note) => {
+          const res = await updateNote({ ...note, completed: true });
+          if (res.success) { const { data } = await getNotes(); if (data) setAllNotes(data); }
+        }}
         onAddNew={() => { if (quickViewCategory === 'visitors') { setQuickViewCategory(null); resetVisitorModal(); setIsVisitorModalOpen(true); } }}
         onSelectItem={(item) => { 
           if (quickViewCategory === 'packages') { setSelectedPackageForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'visitors') { setSelectedVisitorForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'occurrences') { setSelectedOccurrenceForDetail(item); setQuickViewCategory(null); } 
+          else if (quickViewCategory === 'reservations') { setActiveTab('reservations'); setQuickViewCategory(null); }
           else if (quickViewCategory === 'notes') { setEditingNoteId(item.id); setNewNoteContent(item.content); setNewNoteCategory(item.category || 'Geral'); setNewNoteScheduled(item.scheduled || ''); setIsNewNoteModalOpen(true); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'notices') { setSelectedNoticeForEdit(item); setQuickViewCategory(null); }
         }}
@@ -1399,9 +1496,9 @@ const App: React.FC = () => {
         };
         
         const result = await saveOccurrence(newOccurrence);
-        if (result.success && result.id) {
-          newOccurrence.id = result.id;
-          setAllOccurrences(prev => [newOccurrence, ...prev]);
+        if (result.success) {
+          const { data } = await getOccurrences();
+          if (data) setAllOccurrences(data);
           setOccurrenceDescription('');
           setIsOccurrenceModalOpen(false);
         } else {

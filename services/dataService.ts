@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem } from '../types';
+import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem, Note, Notice, ChatMessage, Staff } from '../types';
 import { createNotification } from './notificationService';
 
 // ============================================
@@ -469,6 +469,10 @@ export const saveVisitor = async (visitor: VisitorLog): Promise<{ success: boole
         unit: visitor.unit,
         visitor_count: visitor.visitorCount || 1,
         visitor_names: visitor.visitorNames || null,
+        type: visitor.type ?? 'Visita',
+        doc: visitor.doc ?? null,
+        vehicle: visitor.vehicle ?? null,
+        plate: visitor.plate ?? null,
         entry_time: visitor.entryTime,
         exit_time: visitor.exitTime || null,
         status: visitor.status
@@ -507,6 +511,38 @@ export const updateVisitor = async (visitor: VisitorLog): Promise<{ success: boo
   } catch (err: any) {
     console.error('Erro ao atualizar visitante:', err);
     return { success: false, error: err.message || 'Erro ao atualizar visitante' };
+  }
+};
+
+export type GetVisitorsResult = { data: VisitorLog[]; error?: string };
+
+export const getVisitors = async (): Promise<GetVisitorsResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('visitors')
+      .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status')
+      .order('entry_time', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar visitantes:', error);
+      return { data: [], error: error.message };
+    }
+
+    const list: VisitorLog[] = (data || []).map((v: any) => ({
+      id: v.id,
+      residentName: v.resident_name,
+      unit: v.unit,
+      visitorCount: v.visitor_count ?? 1,
+      visitorNames: v.visitor_names ?? undefined,
+      type: v.type ?? 'Visita',
+      entryTime: v.entry_time,
+      exitTime: v.exit_time ?? undefined,
+      status: v.status as 'active' | 'completed'
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar visitantes:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar visitantes' };
   }
 };
 
@@ -573,6 +609,36 @@ export const updateOccurrence = async (occurrence: Occurrence): Promise<{ succes
   } catch (err: any) {
     console.error('Erro ao atualizar ocorrência:', err);
     return { success: false, error: err.message || 'Erro ao atualizar ocorrência' };
+  }
+};
+
+export type GetOccurrencesResult = { data: Occurrence[]; error?: string };
+
+export const getOccurrences = async (): Promise<GetOccurrencesResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('occurrences')
+      .select('id, resident_name, unit, description, status, date, reported_by')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar ocorrências:', error);
+      return { data: [], error: error.message };
+    }
+
+    const list: Occurrence[] = (data || []).map((o: any) => ({
+      id: o.id,
+      residentName: o.resident_name,
+      unit: o.unit,
+      description: o.description,
+      status: o.status as 'Aberto' | 'Em Andamento' | 'Resolvido',
+      date: typeof o.date === 'string' ? o.date : new Date(o.date).toISOString(),
+      reportedBy: o.reported_by
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar ocorrências:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar ocorrências' };
   }
 };
 
@@ -662,5 +728,553 @@ export const deleteBoleto = async (id: string): Promise<{ success: boolean; erro
   } catch (err: any) {
     console.error('Erro ao deletar boleto:', err);
     return { success: false, error: err.message || 'Erro ao deletar boleto' };
+  }
+};
+
+export type GetBoletosResult = { data: Boleto[]; error?: string };
+
+export const getBoletos = async (): Promise<GetBoletosResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('boletos')
+      .select('id, resident_name, unit, reference_month, due_date, amount, status, barcode, pdf_url, paid_date, description')
+      .order('due_date', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar boletos:', error);
+      return { data: [], error: error.message };
+    }
+
+    const toDateStr = (v: any) => {
+      if (!v) return '';
+      if (typeof v === 'string') return v;
+      const d = new Date(v);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const list: Boleto[] = (data || []).map((b: any) => ({
+      id: b.id,
+      residentName: b.resident_name,
+      unit: b.unit,
+      referenceMonth: b.reference_month,
+      dueDate: toDateStr(b.due_date),
+      amount: Number(b.amount),
+      status: b.status as 'Pendente' | 'Pago' | 'Vencido',
+      barcode: b.barcode ?? undefined,
+      pdfUrl: b.pdf_url ?? undefined,
+      paidDate: b.paid_date ? toDateStr(b.paid_date) : undefined,
+      description: b.description ?? undefined
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar boletos:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar boletos' };
+  }
+};
+
+// ============================================
+// SERVIÇOS PARA NOTAS
+// ============================================
+
+export type GetNotesResult = { data: Note[]; error?: string };
+
+export const getNotes = async (): Promise<GetNotesResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, content, date, completed, scheduled, category')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar notas:', error);
+      return { data: [], error: error.message };
+    }
+
+    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+
+    const list: Note[] = (data || []).map((n: any) => ({
+      id: n.id,
+      content: n.content,
+      date: toIso(n.date),
+      completed: !!n.completed,
+      scheduled: n.scheduled ? toIso(n.scheduled) : undefined,
+      category: n.category ?? undefined
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar notas:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar notas' };
+  }
+};
+
+export const saveNote = async (note: Note): Promise<{ success: boolean; error?: string; id?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('notes')
+      .insert({
+        content: note.content,
+        date: note.date,
+        completed: note.completed ?? false,
+        scheduled: note.scheduled || null,
+        category: note.category || null
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao salvar nota:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error('Erro ao salvar nota:', err);
+    return { success: false, error: err?.message ?? 'Erro ao salvar nota' };
+  }
+};
+
+export const updateNote = async (note: Note): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase
+      .from('notes')
+      .update({
+        content: note.content,
+        completed: note.completed ?? false,
+        scheduled: note.scheduled || null,
+        category: note.category || null
+      })
+      .eq('id', note.id);
+
+    if (error) {
+      console.error('Erro ao atualizar nota:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao atualizar nota:', err);
+    return { success: false, error: err?.message ?? 'Erro ao atualizar nota' };
+  }
+};
+
+export const deleteNote = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.from('notes').delete().eq('id', id);
+    if (error) {
+      console.error('Erro ao deletar nota:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao deletar nota:', err);
+    return { success: false, error: err?.message ?? 'Erro ao deletar nota' };
+  }
+};
+
+// ============================================
+// SERVIÇOS PARA AVISOS (NOTICES)
+// ============================================
+
+export type GetNoticesResult = { data: Notice[]; error?: string };
+
+export const getNotices = async (): Promise<GetNoticesResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('notices')
+      .select('id, title, content, author, author_role, date, category, priority, pinned')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar avisos:', error);
+      return { data: [], error: error.message };
+    }
+
+    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+
+    const list: Notice[] = (data || []).map((n: any) => ({
+      id: n.id,
+      title: n.title,
+      content: n.content,
+      author: n.author,
+      authorRole: n.author_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
+      date: toIso(n.date),
+      category: n.category ?? undefined,
+      priority: (n.priority as 'high' | 'normal') ?? 'normal',
+      pinned: !!n.pinned,
+      read: false
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar avisos:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar avisos' };
+  }
+};
+
+export const saveNotice = async (notice: Notice): Promise<{ success: boolean; error?: string; id?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('notices')
+      .insert({
+        title: notice.title,
+        content: notice.content,
+        author: notice.author,
+        author_role: notice.authorRole,
+        date: notice.date,
+        category: notice.category || null,
+        priority: notice.priority ?? 'normal',
+        pinned: notice.pinned ?? false
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao salvar aviso:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error('Erro ao salvar aviso:', err);
+    return { success: false, error: err?.message ?? 'Erro ao salvar aviso' };
+  }
+};
+
+export const updateNotice = async (notice: Notice): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase
+      .from('notices')
+      .update({
+        title: notice.title,
+        content: notice.content,
+        category: notice.category || null,
+        priority: notice.priority ?? 'normal',
+        pinned: notice.pinned ?? false
+      })
+      .eq('id', notice.id);
+
+    if (error) {
+      console.error('Erro ao atualizar aviso:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao atualizar aviso:', err);
+    return { success: false, error: err?.message ?? 'Erro ao atualizar aviso' };
+  }
+};
+
+export const deleteNotice = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.from('notices').delete().eq('id', id);
+    if (error) {
+      console.error('Erro ao deletar aviso:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao deletar aviso:', err);
+    return { success: false, error: err?.message ?? 'Erro ao deletar aviso' };
+  }
+};
+
+// ============================================
+// SERVIÇOS PARA CHAT
+// ============================================
+
+export type GetChatMessagesResult = { data: ChatMessage[]; error?: string };
+
+export const getChatMessages = async (): Promise<GetChatMessagesResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, text, sender_role, timestamp, read')
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar mensagens:', error);
+      return { data: [], error: error.message };
+    }
+
+    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+
+    const list: ChatMessage[] = (data || []).map((m: any) => ({
+      id: m.id,
+      text: m.text,
+      senderRole: m.sender_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
+      timestamp: toIso(m.timestamp),
+      read: !!m.read
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar chat:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar chat' };
+  }
+};
+
+export const saveChatMessage = async (msg: ChatMessage): Promise<{ success: boolean; error?: string; id?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        text: msg.text,
+        sender_role: msg.senderRole,
+        timestamp: msg.timestamp,
+        read: msg.read ?? false
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao salvar mensagem:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error('Erro ao salvar mensagem:', err);
+    return { success: false, error: err?.message ?? 'Erro ao salvar mensagem' };
+  }
+};
+
+// ============================================
+// SERVIÇOS PARA FUNCIONÁRIOS (STAFF)
+// ============================================
+
+export type GetStaffResult = { data: Staff[]; error?: string };
+
+export const getStaff = async (): Promise<GetStaffResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('staff')
+      .select('id, name, role, status, shift, phone, email')
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar funcionários:', error);
+      return { data: [], error: error.message };
+    }
+
+    const list: Staff[] = (data || []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      role: s.role,
+      status: s.status as 'Ativo' | 'Férias' | 'Licença',
+      shift: s.shift as 'Manhã' | 'Tarde' | 'Noite' | 'Madrugada' | 'Comercial',
+      phone: s.phone ?? undefined,
+      email: s.email ?? undefined
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar funcionários:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar funcionários' };
+  }
+};
+
+export const saveStaff = async (staff: Staff): Promise<{ success: boolean; error?: string; id?: string }> => {
+  try {
+    if (staff.id && !staff.id.startsWith('temp-')) {
+      const { error } = await supabase
+        .from('staff')
+        .update({
+          name: staff.name,
+          role: staff.role,
+          status: staff.status ?? 'Ativo',
+          shift: staff.shift ?? 'Comercial',
+          phone: staff.phone || null,
+          email: staff.email || null
+        })
+        .eq('id', staff.id);
+
+      if (error) {
+        console.error('Erro ao atualizar funcionário:', error);
+        return { success: false, error: error.message };
+      }
+      return { success: true, id: staff.id };
+    }
+
+    const { data, error } = await supabase
+      .from('staff')
+      .insert({
+        name: staff.name,
+        role: staff.role,
+        status: staff.status ?? 'Ativo',
+        shift: staff.shift ?? 'Comercial',
+        phone: staff.phone || null,
+        email: staff.email || null
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao salvar funcionário:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error('Erro ao salvar funcionário:', err);
+    return { success: false, error: err?.message ?? 'Erro ao salvar funcionário' };
+  }
+};
+
+export const deleteStaff = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.from('staff').delete().eq('id', id);
+    if (error) {
+      console.error('Erro ao deletar funcionário:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao deletar funcionário:', err);
+    return { success: false, error: err?.message ?? 'Erro ao deletar funcionário' };
+  }
+};
+
+// ============================================
+// SERVIÇOS PARA ÁREAS E RESERVAS
+// ============================================
+
+export interface AreaRow {
+  id: string;
+  name: string;
+  capacity: number;
+  rules: string | null;
+}
+
+export type GetAreasResult = { data: AreaRow[]; error?: string };
+
+export const getAreas = async (): Promise<GetAreasResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('areas')
+      .select('id, name, capacity, rules')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar áreas:', error);
+      return { data: [], error: error.message };
+    }
+    const list: AreaRow[] = (data || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      capacity: a.capacity ?? 0,
+      rules: a.rules ?? null
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar áreas:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar áreas' };
+  }
+};
+
+export interface ReservationRow {
+  id: string;
+  areaId: string;
+  areaName: string;
+  residentId: string;
+  residentName: string;
+  unit: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+}
+
+export type GetReservationsResult = { data: ReservationRow[]; error?: string };
+
+export const getReservations = async (): Promise<GetReservationsResult> => {
+  try {
+    const areasRes = await getAreas();
+    const areaMap = Object.fromEntries(areasRes.data.map((a) => [a.id, a.name]));
+
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('id, area_id, resident_id, resident_name, unit, date, start_time, end_time, status')
+      .order('date', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar reservas:', error);
+      return { data: [], error: error.message };
+    }
+
+    const toDateStr = (v: any) => {
+      if (!v) return '';
+      if (typeof v === 'string') return v.slice(0, 10);
+      return new Date(v).toISOString().slice(0, 10);
+    };
+    const toTimeStr = (v: any) => {
+      if (!v) return '00:00';
+      if (typeof v === 'string') return v.slice(0, 5);
+      const d = new Date(`1970-01-01T${v}`);
+      return d.toTimeString().slice(0, 5);
+    };
+
+    const list: ReservationRow[] = (data || []).map((r: any) => ({
+      id: r.id,
+      areaId: r.area_id,
+      areaName: areaMap[r.area_id] ?? '',
+      residentId: r.resident_id,
+      residentName: r.resident_name,
+      unit: r.unit,
+      date: toDateStr(r.date),
+      startTime: toTimeStr(r.start_time),
+      endTime: toTimeStr(r.end_time),
+      status: r.status
+    }));
+    return { data: list };
+  } catch (err: any) {
+    console.error('Erro ao buscar reservas:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar reservas' };
+  }
+};
+
+export const saveReservation = async (r: {
+  areaId: string;
+  residentId: string;
+  residentName: string;
+  unit: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status?: string;
+}): Promise<{ success: boolean; error?: string; id?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('reservations')
+      .insert({
+        area_id: r.areaId,
+        resident_id: r.residentId,
+        resident_name: r.residentName,
+        unit: r.unit,
+        date: r.date,
+        start_time: r.startTime,
+        end_time: r.endTime,
+        status: r.status ?? 'scheduled'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao salvar reserva:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error('Erro ao salvar reserva:', err);
+    return { success: false, error: err?.message ?? 'Erro ao salvar reserva' };
+  }
+};
+
+export const updateReservation = async (
+  id: string,
+  updates: { status?: string }
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.from('reservations').update(updates).eq('id', id);
+    if (error) {
+      console.error('Erro ao atualizar reserva:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao atualizar reserva:', err);
+    return { success: false, error: err?.message ?? 'Erro ao atualizar reserva' };
   }
 };

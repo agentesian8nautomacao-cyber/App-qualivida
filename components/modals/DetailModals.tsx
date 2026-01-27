@@ -31,8 +31,12 @@ export const ResidentProfileModal = ({
                 </div>
                 <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 bg-white text-black rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest">{formatUnit(resident.unit)}</span>
                 <div className="flex gap-2 sm:gap-3 mt-2 sm:mt-4">
-                   {resident.whatsapp && <button onClick={() => openWhatsApp(resident.whatsapp, undefined, (error) => alert(`Erro ao abrir WhatsApp: ${error}`))} className="p-1.5 sm:p-2 bg-green-500/20 text-green-400 rounded-lg sm:rounded-xl hover:bg-green-500 hover:text-white transition-all flex-shrink-0"><MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" /></button>}
-                   <button className="p-1.5 sm:p-2 bg-white/5 rounded-lg sm:rounded-xl hover:bg-white hover:text-black transition-all flex-shrink-0"><Mail className="w-4 h-4 sm:w-5 sm:h-5" /></button>
+                   {resident.whatsapp && <button onClick={() => openWhatsApp(resident.whatsapp, undefined, (error) => alert(`Erro ao abrir WhatsApp: ${error}`))} className="p-1.5 sm:p-2 bg-green-500/20 text-green-400 rounded-lg sm:rounded-xl hover:bg-green-500 hover:text-white transition-all flex-shrink-0" title="WhatsApp"><MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" /></button>}
+                   {resident.email ? (
+                     <a href={`mailto:${resident.email}`} className="p-1.5 sm:p-2 bg-white/5 rounded-lg sm:rounded-xl hover:bg-white hover:text-black transition-all flex-shrink-0 inline-flex" title="E-mail"><Mail className="w-4 h-4 sm:w-5 sm:h-5" /></a>
+                   ) : (
+                     <span className="p-1.5 sm:p-2 bg-white/5 rounded-lg sm:rounded-xl opacity-40 cursor-not-allowed inline-flex" title="E-mail não cadastrado"><Mail className="w-4 h-4 sm:w-5 sm:h-5" /></span>
+                   )}
                 </div>
              </div>
           </div>

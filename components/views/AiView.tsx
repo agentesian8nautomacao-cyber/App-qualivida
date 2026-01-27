@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { BrainCircuit, Mic, SendHorizontal, X, Activity, Radio, Cpu, Sparkles, MessageSquare, History, Volume2, ShieldAlert, Settings, User } from 'lucide-react';
+import { BrainCircuit, Mic, SendHorizontal, X, Activity, Radio, Cpu, Sparkles, MessageSquare, History, Volume2, ShieldAlert, Settings, User, AlertTriangle } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { encode, decode, decodeAudioData } from '../../services/audioHelper';
 import { getInternalInstructions } from '../../services/ai/internalInstructions';
@@ -317,8 +317,18 @@ ${voiceSettings.style === 'serious'
     setIsLiveConnecting(false);
   };
 
+  const hasGeminiKey = !!(process.env.API_KEY && String(process.env.API_KEY).trim());
+
   return (
     <div className="h-[calc(100vh-140px)] min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6 animate-in fade-in duration-500 overflow-hidden relative">
+      {!hasGeminiKey && (
+        <div className="absolute top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 py-3 bg-amber-500/20 border-b border-amber-500/30 rounded-b-2xl">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <p className="text-xs font-bold text-amber-200">
+            Configure <code className="bg-black/20 px-1.5 py-0.5 rounded">GEMINI_API_KEY</code> no <code className="bg-black/20 px-1.5 py-0.5 rounded">.env</code> ou nas variáveis do Vercel para usar o assistente IA.
+          </p>
+        </div>
+      )}
       
       {/* SELETOR DE VOZ (MODAL INTERNO) */}
       {isVoiceSettingsOpen && (
@@ -459,7 +469,8 @@ ${voiceSettings.style === 'serious'
                </button>
                <button 
                   onClick={startLiveMode}
-                  className={`group flex items-center gap-2 md:gap-4 px-4 md:px-6 lg:px-8 py-3 md:py-4 text-white rounded-2xl md:rounded-3xl transition-all shadow-2xl active:scale-95 ${voiceSettings.gender === 'male' ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-purple-600 hover:bg-purple-500'}`}
+                  disabled={!hasGeminiKey || isLiveConnecting}
+                  className={`group flex items-center gap-2 md:gap-4 px-4 md:px-6 lg:px-8 py-3 md:py-4 text-white rounded-2xl md:rounded-3xl transition-all shadow-2xl active:scale-95 ${!hasGeminiKey ? 'opacity-50 cursor-not-allowed bg-zinc-600' : voiceSettings.gender === 'male' ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-purple-600 hover:bg-purple-500'}`}
                >
                   <Mic className="w-4 h-4 md:w-5 md:h-5 group-hover:animate-bounce" />
                   <span className="text-[9px] md:text-[10px] lg:text-[11px] font-black uppercase tracking-wider md:tracking-widest hidden sm:inline">Live Voice</span>
@@ -515,15 +526,15 @@ ${voiceSettings.style === 'serious'
                   type="text" 
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Pergunte sobre notas, chat ou operações..."
+                  onKeyDown={(e) => e.key === 'Enter' && hasGeminiKey && handleSendMessage()}
+                  placeholder={hasGeminiKey ? 'Pergunte sobre notas, chat ou operações...' : 'Configure GEMINI_API_KEY para usar o assistente'}
                   className="w-full relative bg-zinc-900/50 border border-white/10 rounded-[24px] md:rounded-[32px] pl-4 md:pl-8 pr-16 md:pr-20 py-4 md:py-6 lg:py-7 text-xs md:text-sm font-bold text-white outline-none focus:border-white/20 transition-all placeholder:text-zinc-600 shadow-inner"
                />
                <button 
                   onClick={handleSendMessage}
-                  disabled={!input.trim() || isProcessing}
+                  disabled={!hasGeminiKey || !input.trim() || isProcessing}
                   className={`absolute right-2 md:right-3 top-1/2 -translate-y-1/2 p-3 md:p-4 lg:p-5 rounded-xl md:rounded-2xl transition-all ${
-                     input.trim() && !isProcessing
+                     hasGeminiKey && input.trim() && !isProcessing
                         ? 'bg-white text-black shadow-2xl hover:scale-105 active:scale-95' 
                         : 'bg-zinc-800 text-zinc-600 cursor-not-allowed opacity-50'
                   }`}

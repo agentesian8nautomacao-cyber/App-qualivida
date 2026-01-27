@@ -33,7 +33,7 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
     notices: { title: 'Últimos Comunicados', icon: Bell, color: 'text-green-500', tab: 'notices' },
   }[category];
 
-  const isClickable = category === 'packages' || category === 'visitors' || category === 'occurrences' || category === 'notes' || category === 'notices';
+  const isClickable = category === 'packages' || category === 'visitors' || category === 'occurrences' || category === 'reservations' || category === 'notes' || category === 'notices';
 
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">

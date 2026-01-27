@@ -451,13 +451,21 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     setPreviewData(boletos);
   };
 
-  const handleImport = () => {
+  const [isImporting, setIsImporting] = useState(false);
+  const handleImport = async () => {
     if (previewData.length === 0) {
       setErrors(['Nenhum boleto válido para importar.']);
       return;
     }
-    onImport(previewData);
-    handleClose();
+    setIsImporting(true);
+    try {
+      await onImport(previewData);
+      handleClose();
+    } catch (e) {
+      setErrors([e instanceof Error ? e.message : 'Erro ao importar.']);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleClose = () => {
@@ -687,10 +695,10 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
           </button>
           <button
             onClick={handleImport}
-            disabled={previewData.length === 0 || isProcessing}
+            disabled={previewData.length === 0 || isProcessing || isImporting}
             className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-xl text-xs font-black uppercase hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
-            Importar {previewData.length > 0 && `(${previewData.length})`}
+            {isImporting ? 'Importando...' : `Importar ${previewData.length > 0 ? `(${previewData.length})` : ''}`}
           </button>
         </div>
       </div>
