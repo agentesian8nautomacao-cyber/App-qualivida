@@ -5,13 +5,15 @@ interface VideoIntroProps {
 }
 
 // Duração esperada do vídeo "Gestão Qualivida.mp4" (~6s) + pequena margem
-const FALLBACK_TIMEOUT_MS = 7000;
+const FALLBACK_TIMEOUT_MS = 8000;
 
 const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const completedRef = useRef(false);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const playAttemptedRef = useRef(false);
 
   const handleComplete = useCallback(() => {
     if (completedRef.current) return;
@@ -32,13 +34,28 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      console.warn('[VideoIntro] Referência do vídeo não encontrada');
+      return;
+    }
+    
+    if (playAttemptedRef.current) {
+      console.log('[VideoIntro] Reprodução já foi tentada');
+      return;
+    }
+
+    console.log('[VideoIntro] Inicializando vídeo...', {
+      src: video.src,
+      readyState: video.readyState,
+      networkState: video.networkState
+    });
 
     let isCleanedUp = false;
+    let playTimeout: NodeJS.Timeout | null = null;
 
     const handleVideoEnd = () => {
       if (!isCleanedUp && !completedRef.current) {
-        // Garantir que o vídeo não repita
+        console.log('[VideoIntro] Vídeo finalizado');
         if (video) {
           video.pause();
           video.currentTime = video.duration;
@@ -47,45 +64,144 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
       }
     };
 
-    const playVideo = async () => {
-      if (isCleanedUp || !video) return;
+    const playVideo = async (forceMuted = false) => {
+      if (isCleanedUp || !video || playAttemptedRef.current) return;
+      
+      playAttemptedRef.current = true;
+      
       try {
-        if (video.readyState < 2) video.load();
-        await new Promise(r => setTimeout(r, 100));
-        if (!isCleanedUp && video) {
-          // Tentar habilitar áudio e reproduzir
-          video.muted = false;
-          await video.play();
+        // Garantir que o vídeo está carregado
+        if (video.readyState < 2) {
+          console.log('[VideoIntro] Carregando vídeo...');
+          video.load();
+          // Aguardar um pouco mais para o vídeo carregar
+          await new Promise(r => setTimeout(r, 300));
         }
-      } catch (error) {
-        console.log('Autoplay bloqueado, tentando com áudio após interação:', error);
-        // Se falhar, tentar com muted primeiro e depois habilitar áudio
-        try {
+
+        if (isCleanedUp || !video) return;
+
+        // Tentar reproduzir
+        if (forceMuted) {
           video.muted = true;
-          await video.play();
-          // Após iniciar, tentar habilitar áudio
+        } else {
+          video.muted = false;
+        }
+
+        console.log('[VideoIntro] Tentando reproduzir vídeo...', { 
+          readyState: video.readyState, 
+          muted: video.muted 
+        });
+
+        await video.play();
+        
+        console.log('[VideoIntro] ✅ Vídeo reproduzindo com sucesso');
+        
+        // Se estava muted, tentar habilitar áudio após um tempo
+        if (forceMuted) {
           setTimeout(() => {
             if (!isCleanedUp && video) {
-              video.muted = false;
+              try {
+                video.muted = false;
+                console.log('[VideoIntro] Áudio habilitado');
+              } catch (e) {
+                console.log('[VideoIntro] Não foi possível habilitar áudio:', e);
+              }
             }
-          }, 100);
-        } catch {
-          console.log('Autoplay bloqueado completamente.');
+          }, 500);
+        }
+      } catch (error: any) {
+        console.log('[VideoIntro] Erro ao reproduzir:', error?.name || error);
+        
+        // Se não foi tentado com muted, tentar agora
+        if (!forceMuted) {
+          console.log('[VideoIntro] Tentando com muted...');
+          playAttemptedRef.current = false;
+          setTimeout(() => playVideo(true), 200);
+        } else {
+          // Se já tentou com muted e falhou, aguardar interação do usuário
+          console.log('[VideoIntro] Aguardando interação do usuário...');
+          playAttemptedRef.current = false;
+          
+          // Adicionar listener para quando o usuário interagir
+          const handleUserInteraction = async () => {
+            if (video && !isCleanedUp && !completedRef.current) {
+              try {
+                video.muted = false;
+                await video.play();
+                console.log('[VideoIntro] ✅ Vídeo reproduzindo após interação');
+                document.removeEventListener('click', handleUserInteraction);
+                document.removeEventListener('touchstart', handleUserInteraction);
+              } catch (e) {
+                console.log('[VideoIntro] Ainda não foi possível reproduzir:', e);
+              }
+            }
+          };
+          
+          document.addEventListener('click', handleUserInteraction, { once: true });
+          document.addEventListener('touchstart', handleUserInteraction, { once: true });
         }
       }
     };
 
     const handleCanPlay = () => {
-      if (!isCleanedUp) playVideo();
+      if (!isCleanedUp && !playAttemptedRef.current) {
+        console.log('[VideoIntro] Vídeo pronto para reprodução');
+        playVideo();
+      }
     };
 
-    video.addEventListener('ended', handleVideoEnd, { once: true });
-    video.addEventListener('canplay', handleCanPlay, { once: true });
-    video.addEventListener('loadeddata', handleCanPlay, { once: true });
-    if (video.readyState >= 2) playVideo();
+    const handleLoadedData = () => {
+      if (!isCleanedUp && !playAttemptedRef.current) {
+        console.log('[VideoIntro] Dados do vídeo carregados');
+        playVideo();
+      }
+    };
 
+    const handleLoadedMetadata = () => {
+      if (!isCleanedUp && !playAttemptedRef.current) {
+        console.log('[VideoIntro] Metadados do vídeo carregados');
+        // Tentar reproduzir se já tiver dados suficientes
+        if (video.readyState >= 2) {
+          playVideo();
+        }
+      }
+    };
+
+    const handleError = (e: Event) => {
+      console.error('[VideoIntro] Erro ao carregar vídeo:', e);
+      setVideoError(true);
+      // Aguardar um pouco antes de completar para dar chance de recuperar
+      setTimeout(() => {
+        if (!isCleanedUp) {
+          handleComplete();
+        }
+      }, 1000);
+    };
+
+    // Adicionar todos os listeners
+    video.addEventListener('ended', handleVideoEnd, { once: true });
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('canplaythrough', handleCanPlay);
+    video.addEventListener('loadeddata', handleLoadedData);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('error', handleError);
+
+    // Tentar reproduzir imediatamente se o vídeo já estiver pronto
+    if (video.readyState >= 3) {
+      console.log('[VideoIntro] Vídeo já está pronto, reproduzindo imediatamente');
+      playVideo();
+    } else if (video.readyState >= 2) {
+      console.log('[VideoIntro] Vídeo parcialmente carregado, aguardando...');
+      playTimeout = setTimeout(() => playVideo(), 500);
+    } else {
+      // Forçar carregamento
+      console.log('[VideoIntro] Forçando carregamento do vídeo...');
+      video.load();
+    }
+
+    // Fallback timer
     const fallbackTimer = setTimeout(() => {
-      if (!isCleanedUp) {
+      if (!isCleanedUp && !completedRef.current) {
         console.log('[VideoIntro] Fallback: vídeo não finalizou a tempo.');
         handleComplete();
       }
@@ -93,10 +209,14 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
 
     return () => {
       isCleanedUp = true;
+      if (playTimeout) clearTimeout(playTimeout);
       clearTimeout(fallbackTimer);
       video.removeEventListener('ended', handleVideoEnd);
       video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('loadeddata', handleCanPlay);
+      video.removeEventListener('canplaythrough', handleCanPlay);
+      video.removeEventListener('loadeddata', handleLoadedData);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('error', handleError);
     };
   }, [handleComplete]);
 
@@ -138,7 +258,19 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
         playsInline
         preload="auto"
         loop={false}
+        muted={false}
         className="video-intro-responsive"
+        onLoadStart={() => console.log('[VideoIntro] Vídeo iniciando carregamento...')}
+        onLoadedMetadata={() => console.log('[VideoIntro] Metadados carregados')}
+        onLoadedData={() => console.log('[VideoIntro] Dados carregados')}
+        onCanPlay={() => console.log('[VideoIntro] Vídeo pode ser reproduzido')}
+        onCanPlayThrough={() => console.log('[VideoIntro] Vídeo pode ser reproduzido completamente')}
+        onPlaying={() => console.log('[VideoIntro] ✅ Vídeo está reproduzindo')}
+        onPlay={() => console.log('[VideoIntro] Evento play disparado')}
+        onPause={() => console.log('[VideoIntro] Vídeo pausado')}
+        onWaiting={() => console.log('[VideoIntro] Vídeo aguardando buffer...')}
+        onStalled={() => console.log('[VideoIntro] Vídeo travado (stalled)')}
+        onSuspend={() => console.log('[VideoIntro] Carregamento suspenso')}
         style={
           isLargeScreen
             ? {

@@ -103,9 +103,41 @@ const App: React.FC = () => {
   const [showResidentRegister, setShowResidentRegister] = useState(false);
   const [showLogoSplash, setShowLogoSplash] = useState(false);
   const [showVideoIntro, setShowVideoIntro] = useState(() => {
-    const hasSeenIntro = localStorage.getItem('hasSeenVideoIntro');
-    return hasSeenIntro !== 'true';
+    // Verificar se já viu o vídeo apenas após o componente estar montado
+    if (typeof window !== 'undefined') {
+      try {
+        const hasSeenIntro = localStorage.getItem('hasSeenVideoIntro');
+        return hasSeenIntro !== 'true';
+      } catch (e) {
+        // Se houver erro ao acessar localStorage, mostrar o vídeo
+        console.warn('Erro ao acessar localStorage:', e);
+        return true;
+      }
+    }
+    return true;
   });
+
+  // Garantir que o vídeo seja exibido no primeiro acesso
+  useEffect(() => {
+    // Verificar novamente após o componente estar montado
+    if (typeof window !== 'undefined') {
+      try {
+        const hasSeenIntro = localStorage.getItem('hasSeenVideoIntro');
+        console.log('[App] Verificando vídeo intro:', { hasSeenIntro, showVideoIntro });
+        if (hasSeenIntro !== 'true' && !showVideoIntro) {
+          // Se não viu e não está mostrando, mostrar
+          console.log('[App] Exibindo vídeo intro');
+          setShowVideoIntro(true);
+        }
+      } catch (e) {
+        console.warn('[App] Erro ao verificar localStorage:', e);
+        // Em caso de erro, mostrar o vídeo por segurança
+        if (!showVideoIntro) {
+          setShowVideoIntro(true);
+        }
+      }
+    }
+  }, [showVideoIntro]);
 
   // Carregar dados do usuário administrador (síndico/porteiro) e avatar local
   useEffect(() => {
@@ -2057,10 +2089,16 @@ const App: React.FC = () => {
   if (isScreenSaverActive) {
     content = <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
   } else if (showVideoIntro) {
+    console.log('[App] Renderizando VideoIntro');
     content = (
       <VideoIntro
         onComplete={() => {
-          localStorage.setItem('hasSeenVideoIntro', 'true');
+          console.log('[App] VideoIntro completado');
+          try {
+            localStorage.setItem('hasSeenVideoIntro', 'true');
+          } catch (e) {
+            console.warn('[App] Erro ao salvar no localStorage:', e);
+          }
           setShowVideoIntro(false);
         }}
       />
