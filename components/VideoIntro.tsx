@@ -37,7 +37,14 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
     let isCleanedUp = false;
 
     const handleVideoEnd = () => {
-      if (!isCleanedUp) handleComplete();
+      if (!isCleanedUp && !completedRef.current) {
+        // Garantir que o vídeo não repita
+        if (video) {
+          video.pause();
+          video.currentTime = video.duration;
+        }
+        handleComplete();
+      }
     };
 
     const playVideo = async () => {
@@ -45,9 +52,26 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
       try {
         if (video.readyState < 2) video.load();
         await new Promise(r => setTimeout(r, 100));
-        if (!isCleanedUp && video) await video.play();
-      } catch {
-        console.log('Autoplay bloqueado, aguardando interação.');
+        if (!isCleanedUp && video) {
+          // Tentar habilitar áudio e reproduzir
+          video.muted = false;
+          await video.play();
+        }
+      } catch (error) {
+        console.log('Autoplay bloqueado, tentando com áudio após interação:', error);
+        // Se falhar, tentar com muted primeiro e depois habilitar áudio
+        try {
+          video.muted = true;
+          await video.play();
+          // Após iniciar, tentar habilitar áudio
+          setTimeout(() => {
+            if (!isCleanedUp && video) {
+              video.muted = false;
+            }
+          }, 100);
+        } catch {
+          console.log('Autoplay bloqueado completamente.');
+        }
       }
     };
 
@@ -111,9 +135,9 @@ const VideoIntro: React.FC<VideoIntroProps> = ({ onComplete }) => {
         ref={videoRef}
         src="/Gestão Qualivida.mp4"
         autoPlay
-        muted
         playsInline
         preload="auto"
+        loop={false}
         className="video-intro-responsive"
         style={
           isLargeScreen

@@ -25,6 +25,8 @@ export interface Package {
   imageUrl?: string | null;
   /** Dados lidos do QR Code (captura). */
   qrCodeData?: string | null;
+  /** Nome do porteiro que recebeu a encomenda */
+  receivedByName?: string | null;
 }
 
 export interface Reservation {

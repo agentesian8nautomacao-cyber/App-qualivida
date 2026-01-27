@@ -64,7 +64,8 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       display_time: pkg.displayTime,
       status: pkg.status,
       deadline_minutes: pkg.deadlineMinutes || 45,
-      resident_phone: pkg.residentPhone || null
+      resident_phone: pkg.residentPhone || null,
+      received_by_name: pkg.receivedByName || null
     };
 
     // Adicionar campos opcionais se existirem
@@ -100,10 +101,16 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       console.log('[Notificação] ✅ Condições OK. Criando notificação para morador:', recipientId, 'Encomenda:', packageId);
       
       try {
+        // Montar mensagem da notificação com nome do porteiro
+        const porteiroName = pkg.receivedByName || 'Porteiro';
+        const notificationMessage = pkg.receivedByName 
+          ? `Uma encomenda foi recebida por ${porteiroName} e está disponível para retirada.`
+          : 'Uma encomenda foi recebida e está disponível para retirada.';
+        
         const notificationResult = await createNotification(
           recipientId,
           '📦 Nova encomenda na portaria',
-          'Uma encomenda foi recebida e está disponível para retirada.',
+          notificationMessage,
           'package',
           packageId
         );
@@ -186,6 +193,7 @@ export const getPackages = async (): Promise<GetPackagesResult> => {
           resident_phone,
           delivered_at,
           delivered_by,
+          received_by_name,
           qr_code_data,
           image_url,
           created_at,
@@ -224,6 +232,7 @@ export const getPackages = async (): Promise<GetPackagesResult> => {
       recipientId: p.recipient_id || undefined,
       imageUrl: p.image_url || null,
       qrCodeData: p.qr_code_data || null,
+      receivedByName: p.received_by_name || null,
       items: packageItemsMap[p.id] || []
     }));
 
@@ -906,6 +915,103 @@ export const getStaff = async (): Promise<GetStaffResult> => {
   }
 };
 
+// Helper para gerar username único baseado no nome
+const generateUsername = (name: string): string => {
+  // Normalizar nome: remover acentos, converter para minúsculas, substituir espaços por underscore
+  const normalized = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/[^a-z0-9]/g, '_') // Substitui caracteres especiais por underscore
+    .replace(/_+/g, '_') // Remove underscores duplicados
+    .replace(/^_|_$/g, ''); // Remove underscores no início e fim
+  
+  return normalized || 'porteiro';
+};
+
+// Helper para criar usuário na tabela users quando porteiro é importado
+const createUserFromStaff = async (staff: Staff): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Apenas criar usuário se for porteiro
+    if (staff.role.toLowerCase() !== 'porteiro') {
+      return { success: true };
+    }
+
+    // Gerar username único
+    let username = generateUsername(staff.name);
+    let counter = 1;
+    let finalUsername = username;
+
+    // Verificar se username já existe e gerar um único
+    while (true) {
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', finalUsername)
+        .maybeSingle();
+
+      if (!existing) break; // Username disponível
+      
+      finalUsername = `${username}_${counter}`;
+      counter++;
+      
+      // Limite de segurança para evitar loop infinito
+      if (counter > 100) {
+        finalUsername = `${username}_${Date.now()}`;
+        break;
+      }
+    }
+
+    // Criar hash de senha padrão (senha: 123456)
+    // Usar formato "plain:" para compatibilidade com o sistema atual
+    const defaultPassword = 'plain:123456';
+
+    // Criar usuário na tabela users
+    const { error: userError } = await supabase
+      .from('users')
+      .insert({
+        username: finalUsername,
+        password_hash: defaultPassword,
+        role: 'PORTEIRO',
+        name: staff.name,
+        email: staff.email || null,
+        phone: staff.phone || null,
+        is_active: staff.status === 'Ativo'
+      });
+
+    if (userError) {
+      // Se o erro for de duplicidade, tentar atualizar
+      if (userError.code === '23505' || userError.message.includes('duplicate')) {
+        // Usuário já existe, atualizar dados
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            name: staff.name,
+            email: staff.email || null,
+            phone: staff.phone || null,
+            is_active: staff.status === 'Ativo'
+          })
+          .eq('username', finalUsername);
+
+        if (updateError) {
+          console.warn('[createUserFromStaff] Erro ao atualizar usuário existente:', updateError);
+          return { success: false, error: updateError.message };
+        }
+        return { success: true };
+      }
+      
+      console.warn('[createUserFromStaff] Erro ao criar usuário:', userError);
+      return { success: false, error: userError.message };
+    }
+
+    console.log('[createUserFromStaff] ✅ Usuário criado para porteiro:', staff.name, 'Username:', finalUsername);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[createUserFromStaff] Erro inesperado:', err);
+    return { success: false, error: err?.message ?? 'Erro ao criar usuário' };
+  }
+};
+
 export const saveStaff = async (staff: Staff): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     const isNew = !staff.id || staff.id.startsWith('temp-');
@@ -923,7 +1029,26 @@ export const saveStaff = async (staff: Staff): Promise<{ success: boolean; error
       ? await createData('staff', payload)
       : await updateData('staff', payload);
 
-    return { success: result.success, id: result.id || staff.id, error: result.error };
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    // Se for um porteiro novo, criar usuário na tabela users para permitir login
+    if (isNew && staff.role.toLowerCase() === 'porteiro') {
+      const userResult = await createUserFromStaff(staff);
+      if (!userResult.success) {
+        console.warn('[saveStaff] Aviso: Funcionário salvo, mas não foi possível criar usuário:', userResult.error);
+        // Não falhar o salvamento do staff, apenas avisar
+      }
+    } else if (!isNew && staff.role.toLowerCase() === 'porteiro') {
+      // Se estiver atualizando um porteiro existente, atualizar também o usuário
+      const userResult = await createUserFromStaff(staff);
+      if (!userResult.success) {
+        console.warn('[saveStaff] Aviso: Funcionário atualizado, mas não foi possível atualizar usuário:', userResult.error);
+      }
+    }
+
+    return { success: true, id: result.id || staff.id };
   } catch (err: any) {
     console.error('Erro ao salvar funcionário:', err);
     return { success: false, error: err?.message ?? 'Erro ao salvar funcionário' };

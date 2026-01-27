@@ -103,7 +103,7 @@ const App: React.FC = () => {
   const [showResidentRegister, setShowResidentRegister] = useState(false);
   const [showLogoSplash, setShowLogoSplash] = useState(false);
   const [showVideoIntro, setShowVideoIntro] = useState(() => {
-    const hasSeenIntro = sessionStorage.getItem('hasSeenVideoIntro');
+    const hasSeenIntro = localStorage.getItem('hasSeenVideoIntro');
     return hasSeenIntro !== 'true';
   });
 
@@ -829,6 +829,9 @@ const App: React.FC = () => {
     if (packageSaving) return;
     setPackageSaving(true);
     try {
+      // Obter nome do porteiro para identificar quem recebeu a encomenda
+      const porteiroName = currentAdminUser?.name || currentAdminUser?.username || 'Porteiro';
+      
       const newPkg: Package = {
         id: `temp-${Date.now()}`,
         recipient: selectedResident.name,
@@ -842,7 +845,8 @@ const App: React.FC = () => {
         items: packageItems.filter((it) => it.name.trim() !== ''),
         recipientId: selectedResident.id,
         imageUrl: pendingPackageImage ?? null,
-        qrCodeData: pendingPackageQrData ?? null
+        qrCodeData: pendingPackageQrData ?? null,
+        receivedByName: porteiroName
       };
 
       const result = await savePackage(newPkg);
@@ -2056,13 +2060,11 @@ const App: React.FC = () => {
     content = (
       <VideoIntro
         onComplete={() => {
-          sessionStorage.setItem('hasSeenVideoIntro', 'true');
+          localStorage.setItem('hasSeenVideoIntro', 'true');
           setShowVideoIntro(false);
         }}
       />
     );
-  } else if (!isAuthenticated && showLogoSplash) {
-    content = <LogoSplash onComplete={() => setShowLogoSplash(false)} durationMs={2200} />;
   } else if (!isAuthenticated && showResidentRegister) {
     content = (
       <ResidentRegister
