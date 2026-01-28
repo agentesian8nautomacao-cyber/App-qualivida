@@ -97,42 +97,9 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
   const [showResidentRegister, setShowResidentRegister] = useState(false);
-  // Estado inicial: começar como true (mostrar logo) para não autenticados
+  // Mostrar sempre o LogoSplash para usuários não autenticados,
+  // respeitando apenas o tempo configurado em LogoSplash (sem ocultar antecipadamente via localStorage)
   const [showLogoSplash, setShowLogoSplash] = useState<boolean>(true);
-
-  // Verificar localStorage apenas uma vez após a montagem do componente
-  useEffect(() => {
-    // Verificar imediatamente se estamos no cliente
-    if (typeof window === 'undefined') {
-      // Se não estiver no cliente (SSR), manter como true
-      return;
-    }
-
-    // Só verificar se não estiver autenticado
-    if (isAuthenticated) {
-      setShowLogoSplash(false);
-      return;
-    }
-
-    // Adicionar delay maior para garantir que o componente tenha tempo de renderizar
-    // Especialmente importante em produção (Vercel) onde o hydration pode ser mais rápido
-    const checkTimer = setTimeout(() => {
-      try {
-        const hasSeenSplash = localStorage.getItem('hasSeenLogoSplash');
-        const shouldShow = hasSeenSplash !== 'true';
-        console.log('[App] Verificando logo splash:', { hasSeenSplash, shouldShow });
-        
-        // Atualizar o estado baseado no localStorage
-        setShowLogoSplash(shouldShow);
-      } catch (e) {
-        // Se houver erro ao acessar localStorage, manter a logo visível por segurança
-        console.warn('[App] Erro ao verificar localStorage:', e);
-        // Não alterar o estado, manter como true (já é o padrão)
-      }
-    }, 300); // Delay maior (300ms) para garantir renderização completa, especialmente em produção
-
-    return () => clearTimeout(checkTimer);
-  }, [isAuthenticated]); // Executar quando autenticação mudar
 
   // Carregar dados do usuário administrador (síndico/porteiro) e avatar local
   useEffect(() => {
