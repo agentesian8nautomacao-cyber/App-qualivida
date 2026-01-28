@@ -87,6 +87,7 @@ const calculatePermanence = (receivedAt: string) => {
 const App: React.FC = () => {
   const { config } = useAppConfig();
   const toast = useToast();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [role, setRole] = useState<UserRole>('PORTEIRO');
   const [currentResident, setCurrentResident] = useState<Resident | null>(null);
@@ -2170,11 +2171,24 @@ const App: React.FC = () => {
     content = (
       <div
         className="w-screen h-screen bg-black flex items-center justify-center relative cursor-pointer"
-        onClick={handleSkipSplash}
+        onClick={() => {
+          // Se o vídeo estiver mudo, o primeiro clique só ativa o áudio e mantém o splash
+          if (videoRef.current && videoRef.current.muted) {
+            videoRef.current.muted = false;
+            videoRef.current
+              .play()
+              .catch((err) => console.warn('[App] Erro ao tentar reproduzir vídeo com áudio:', err));
+            return;
+          }
+          // Se já não estiver mais mudo, o clique passa a pular para o login
+          handleSkipSplash();
+        }}
       >
         <video
+          ref={videoRef}
           src="/GestaoQualivida.mp4"
           autoPlay
+          muted
           className="w-full h-full object-cover"
           onClick={(e) => e.stopPropagation()}
           onEnded={handleSkipSplash}
