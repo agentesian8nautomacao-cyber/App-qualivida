@@ -7,24 +7,92 @@ interface LogoSplashProps {
   durationMs?: number;
 }
 
-const LogoSplash: React.FC<LogoSplashProps> = ({ onComplete, durationMs = 2200 }) => {
+const LogoSplash: React.FC<LogoSplashProps> = ({ onComplete, durationMs = 4000 }) => {
   const { config } = useAppConfig();
   const [hidden, setHidden] = useState(false);
   const completedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  const durationMsRef = useRef(durationMs);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+
+  // Atualizar refs quando props mudarem
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+    durationMsRef.current = durationMs;
+  }, [onComplete, durationMs]);
 
   const handleComplete = useCallback(() => {
-    if (completedRef.current) return;
+    if (completedRef.current) {
+      console.log('[LogoSplash] handleComplete chamado mas já estava completo');
+      return;
+    }
+    
     completedRef.current = true;
+    
+    // Limpar timer se ainda estiver ativo
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    const elapsed = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
+    console.log('[LogoSplash] Completando após', elapsed, 'ms');
+    
     setHidden(true);
-    onComplete();
-  }, [onComplete]);
+    
+    // Pequeno delay antes de chamar onComplete para garantir que a animação de fade tenha tempo
+    setTimeout(() => {
+      onCompleteRef.current();
+    }, 100);
+  }, []);
 
   useEffect(() => {
-    const t = setTimeout(handleComplete, durationMs);
-    return () => clearTimeout(t);
-  }, [durationMs, handleComplete]);
+    // Garantir que o timer só seja iniciado uma vez
+    if (completedRef.current || timerRef.current) {
+      console.log('[LogoSplash] Timer já iniciado ou componente já completo');
+      return;
+    }
+    
+    const duration = durationMsRef.current;
+    startTimeRef.current = Date.now();
+    
+    console.log('[LogoSplash] Iniciando timer de', duration, 'ms');
+    
+    timerRef.current = setTimeout(() => {
+      if (completedRef.current) {
+        console.log('[LogoSplash] Timer disparou mas componente já estava completo');
+        return;
+      }
+      
+      const elapsed = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
+      console.log('[LogoSplash] Timer completado após', elapsed, 'ms (esperado:', duration, 'ms)');
+      
+      handleComplete();
+    }, duration);
+    
+    return () => {
+      if (timerRef.current) {
+        console.log('[LogoSplash] Limpando timer (componente desmontado)');
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [handleComplete]); // handleComplete é estável (sem dependências)
 
-  const handleClick = useCallback(() => handleComplete(), [handleComplete]);
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (completedRef.current) {
+      console.log('[LogoSplash] Clique ignorado - já completo');
+      return;
+    }
+    
+    const elapsed = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
+    console.log('[LogoSplash] Clique detectado após', elapsed, 'ms - pulando splash');
+    handleComplete();
+  }, [handleComplete]);
 
   return (
     <div

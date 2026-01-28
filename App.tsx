@@ -6,7 +6,6 @@ import Login from './components/Login';
 import LogoSplash from './components/LogoSplash';
 import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
-import VideoIntro from './components/VideoIntro';
 import { UserRole, Package, Resident, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto, Notification } from './types';
 
 // Components
@@ -98,10 +97,8 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
   const [showResidentRegister, setShowResidentRegister] = useState(false);
-  const [showLogoSplash, setShowLogoSplash] = useState(false);
-  // Estado inicial: começar como true (mostrar vídeo) para evitar tela em branco
-  // O useEffect vai verificar o localStorage e ajustar se necessário
-  const [showVideoIntro, setShowVideoIntro] = useState<boolean>(true);
+  // Estado inicial: começar como true (mostrar logo) para não autenticados
+  const [showLogoSplash, setShowLogoSplash] = useState<boolean>(true);
 
   // Verificar localStorage apenas uma vez após a montagem do componente
   useEffect(() => {
@@ -111,19 +108,30 @@ const App: React.FC = () => {
       return;
     }
 
-    try {
-      const hasSeenIntro = localStorage.getItem('hasSeenVideoIntro');
-      const shouldShow = hasSeenIntro !== 'true';
-      console.log('[App] Verificando vídeo intro:', { hasSeenIntro, shouldShow });
-      
-      // Atualizar o estado baseado no localStorage
-      setShowVideoIntro(shouldShow);
-    } catch (e) {
-      // Se houver erro ao acessar localStorage, manter o vídeo visível por segurança
-      console.warn('[App] Erro ao verificar localStorage:', e);
-      // Não alterar o estado, manter como true (já é o padrão)
+    // Só verificar se não estiver autenticado
+    if (isAuthenticated) {
+      setShowLogoSplash(false);
+      return;
     }
-  }, []); // Executar apenas uma vez na montagem
+
+    // Adicionar um pequeno delay para garantir que o componente tenha tempo de renderizar
+    const checkTimer = setTimeout(() => {
+      try {
+        const hasSeenSplash = localStorage.getItem('hasSeenLogoSplash');
+        const shouldShow = hasSeenSplash !== 'true';
+        console.log('[App] Verificando logo splash:', { hasSeenSplash, shouldShow });
+        
+        // Atualizar o estado baseado no localStorage
+        setShowLogoSplash(shouldShow);
+      } catch (e) {
+        // Se houver erro ao acessar localStorage, manter a logo visível por segurança
+        console.warn('[App] Erro ao verificar localStorage:', e);
+        // Não alterar o estado, manter como true (já é o padrão)
+      }
+    }, 100); // Pequeno delay de 100ms para garantir renderização
+
+    return () => clearTimeout(checkTimer);
+  }, [isAuthenticated]); // Executar quando autenticação mudar
 
   // Carregar dados do usuário administrador (síndico/porteiro) e avatar local
   useEffect(() => {
@@ -2138,19 +2146,20 @@ const App: React.FC = () => {
   let content: React.ReactNode;
   if (isScreenSaverActive) {
     content = <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
-  } else if (showVideoIntro) {
-    // Mostrar vídeo se for true
-    console.log('[App] Renderizando VideoIntro', { showVideoIntro });
+  } else if (!isAuthenticated && showLogoSplash) {
+    // Mostrar logo splash se for true
+    console.log('[App] Renderizando LogoSplash', { showLogoSplash });
     content = (
-      <VideoIntro
+      <LogoSplash
+        durationMs={4000}
         onComplete={() => {
-          console.log('[App] VideoIntro completado');
+          console.log('[App] LogoSplash completado');
           try {
-            localStorage.setItem('hasSeenVideoIntro', 'true');
+            localStorage.setItem('hasSeenLogoSplash', 'true');
           } catch (e) {
             console.warn('[App] Erro ao salvar no localStorage:', e);
           }
-          setShowVideoIntro(false);
+          setShowLogoSplash(false);
         }}
       />
     );
