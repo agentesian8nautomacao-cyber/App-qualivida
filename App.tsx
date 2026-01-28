@@ -46,7 +46,7 @@ import {
   getOccurrences, saveOccurrence, updateOccurrence, deleteOccurrence,
   getBoletos, saveBoleto, updateBoleto, deleteBoleto,
   getNotices, saveNotice, updateNotice, deleteNotice,
-  getChatMessages, saveChatMessage,
+  getChatMessages, saveChatMessage, deleteAllChatMessages,
   getStaff, saveStaff, deleteStaff, getPorteiroLoginInfo,
   getAreas, getReservations, saveReservation, updateReservation
 } from './services/dataService';
@@ -428,9 +428,50 @@ const App: React.FC = () => {
     getNotices((data) => { if (!cancelled && data) setAllNotices(data); }).then((res) => {
       if (!cancelled && res.data) setAllNotices(res.data);
     });
-    getChatMessages().then((res) => { if (!cancelled && res.data) setChatMessages(res.data); });
+    getChatMessages().then((res) => {
+      if (!cancelled && res.data) {
+        const sessionStart = chatSessionStartRef.current;
+        const visible = sessionStart
+          ? res.data.filter((m: ChatMessage) => m.timestamp >= sessionStart)
+          : res.data;
+        setChatMessages(visible);
+      }
+    });
     getStaff().then((res) => { if (!cancelled && res.data) setAllStaff(res.data); });
     return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  // Realtime simples para o chat "Linha Direta"
+  // Sempre que qualquer mensagem nova for inserida em chat_messages,
+  // recarregamos a lista e aplicamos o filtro por sessão atual.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const channel = supabase
+      .channel('chat-messages-global')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages'
+        },
+        async () => {
+          const res = await getChatMessages();
+          if (res.data) {
+            const sessionStart = chatSessionStartRef.current;
+            const visible = sessionStart
+              ? res.data.filter((m: ChatMessage) => m.timestamp >= sessionStart)
+              : res.data;
+            setChatMessages(visible);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated]);
 
   // Refetch avisos ao abrir o Mural (garante visibilidade para portaria/síndico)
@@ -464,9 +505,29 @@ const App: React.FC = () => {
   const [activeNoticeTab, setActiveNoticeTab] = useState<'wall' | 'chat'>('wall');
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // === LINHA DIRETA (CHAT GLOBAL) ===
+  // Registra o início da sessão de chat para que o histórico
+  // antigo (mensagens de testes ou de outras sessões) NÃO apareça.
+  // Assim, o modal abre sempre "vazio" e só mostra mensagens
+  // trocadas a partir do login atual.
+  const chatSessionStartRef = useRef<string | null>(null);
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Sempre que o usuário autenticar, marcamos o início da sessão
+  // de chat. Ao deslogar, limpamos o estado e o marcador.
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (!chatSessionStartRef.current) {
+        chatSessionStartRef.current = new Date().toISOString();
+      }
+    } else {
+      chatSessionStartRef.current = null;
+      setChatMessages([]);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (activeTab === 'notices' && chatEndRef.current) {
@@ -478,16 +539,60 @@ const App: React.FC = () => {
     if (!chatInput.trim()) return;
     const text = chatInput.trim();
     setChatInput('');
-    const newMsg: ChatMessage = { id: `temp-${Date.now()}`, text, senderRole: role, timestamp: new Date().toISOString(), read: false };
+
+    const nowIso = new Date().toISOString();
+    // Garante que sempre temos um "marco" de início da sessão,
+    // mesmo que o usuário tenha acabado de logar e a ref ainda
+    // não tenha sido inicializada pelo efeito.
+    if (!chatSessionStartRef.current) {
+      chatSessionStartRef.current = nowIso;
+    }
+
+    const newMsg: ChatMessage = {
+      id: `temp-${Date.now()}`,
+      text,
+      senderRole: role,
+      timestamp: nowIso,
+      read: false
+    };
+
     const res = await saveChatMessage(newMsg);
     if (res.success) {
       const { data } = await getChatMessages();
-      if (data) setChatMessages(data);
+      if (data) {
+        const sessionStart = chatSessionStartRef.current;
+        const visible = sessionStart
+          ? data.filter(m => m.timestamp >= sessionStart)
+          : data;
+        setChatMessages(visible);
+      }
     } else {
+      // Em caso de erro, devolve o texto para o input
       setChatInput(text);
       console.error('Erro ao enviar mensagem:', res.error);
     }
   };
+
+  const handleRefreshChatMessages = useCallback(async () => {
+    const res = await getChatMessages();
+    if (res.data) {
+      const sessionStart = chatSessionStartRef.current;
+      const visible = sessionStart
+        ? res.data.filter((m: ChatMessage) => m.timestamp >= sessionStart)
+        : res.data;
+      setChatMessages(visible);
+    }
+  }, []);
+
+  const handleClearChatMessages = useCallback(async () => {
+    if (!window.confirm('Apagar todas as mensagens do chat? Esta ação não pode ser desfeita.')) return;
+    const res = await deleteAllChatMessages();
+    if (res.success) {
+      setChatMessages([]);
+    } else {
+      console.error('Erro ao apagar mensagens:', res.error);
+    }
+  }, []);
 
   const [areasData, setAreasData] = useState<{ id: string; name: string; capacity: number; rules: string | null }[]>([]);
   const [reservationsData, setReservationsData] = useState<{ id: string; areaId: string; areaName: string; residentId: string; residentName: string; unit: string; date: string; startTime: string; endTime: string; status: string }[]>([]);
@@ -1580,7 +1685,7 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'notices': const filteredNotices = allNotices.filter(n => { if (noticeFilter === 'urgent') return n.category === 'Urgente'; if (noticeFilter === 'unread') return !n.read; return true; }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return <NoticesView filteredNotices={filteredNotices} setNoticeFilter={setNoticeFilter} noticeFilter={noticeFilter} activeNoticeTab={activeNoticeTab} setActiveNoticeTab={setActiveNoticeTab} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} chatMessages={chatMessages} role={role} chatInput={chatInput} setChatInput={setChatInput} handleSendChatMessage={handleSendChatMessage} chatEndRef={chatEndRef} handleAcknowledgeNotice={handleAcknowledgeNotice} />;
+      case 'notices': const filteredNotices = allNotices.filter(n => { if (noticeFilter === 'urgent') return n.category === 'Urgente'; if (noticeFilter === 'unread') return !n.read; return true; }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return <NoticesView filteredNotices={filteredNotices} setNoticeFilter={setNoticeFilter} noticeFilter={noticeFilter} activeNoticeTab={activeNoticeTab} setActiveNoticeTab={setActiveNoticeTab} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} chatMessages={chatMessages} role={role} chatInput={chatInput} setChatInput={setChatInput} handleSendChatMessage={handleSendChatMessage} chatEndRef={chatEndRef} handleAcknowledgeNotice={handleAcknowledgeNotice} onRefreshChat={handleRefreshChatMessages} onClearChat={handleClearChatMessages} />;
       case 'reservations': return <ReservationsView dayReservations={dayReservations} reservationFilter={reservationFilter} setReservationFilter={setReservationFilter} setIsReservationModalOpen={setIsReservationModalOpen} areasStatus={areasStatus} handleReservationAction={handleReservationAction} />;
       case 'residents': 
         if (role === 'MORADOR') {
@@ -2498,7 +2603,7 @@ const App: React.FC = () => {
       <ImportBoletosModal isOpen={isImportBoletosModalOpen} onClose={() => setIsImportBoletosModalOpen(false)} onImport={handleImportBoletos} existingBoletos={allBoletos} allResidents={allResidents} />
       <CameraScanModal isOpen={isCameraScanModalOpen} onClose={() => setIsCameraScanModalOpen(false)} onScanSuccess={handleCameraScanSuccess} allResidents={allResidents} />
       <ImportStaffModal isOpen={isImportStaffModalOpen} onClose={() => setIsImportStaffModalOpen(false)} onImport={handleImportStaff} existingStaff={allStaff} />
-      <NewOccurrenceModal isOpen={isOccurrenceModalOpen} onClose={() => setIsOccurrenceModalOpen(false)} description={occurrenceDescription} setDescription={setOccurrenceDescription} onSave={async () => {
+      <NewOccurrenceModal isOpen={isOccurrenceModalOpen} onClose={() => setIsOccurrenceModalOpen(false)} description={occurrenceDescription} setDescription={setOccurrenceDescription} onSave={async (imageDataUrl?: string | null) => {
         if (!occurrenceDescription.trim()) {
           toast.error('Por favor, descreva a ocorrência');
           return;
@@ -2511,7 +2616,8 @@ const App: React.FC = () => {
           description: occurrenceDescription,
           status: 'Aberto',
           date: new Date().toISOString(),
-          reportedBy: role === 'PORTEIRO' ? 'Porteiro' : role === 'SINDICO' ? 'Síndico' : 'Morador'
+          reportedBy: role === 'PORTEIRO' ? 'Porteiro' : role === 'SINDICO' ? 'Síndico' : 'Morador',
+          imageUrl: imageDataUrl ?? null
         };
         
         const result = await saveOccurrence(newOccurrence);

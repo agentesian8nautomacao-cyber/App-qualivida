@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { X, Edit2, MessageCircle, Mail, Package as PackageIcon, CheckCircle2, Check, ShieldCheck, UserCircle, Plus, Clock, ArrowUpRight, LogOut, AlertTriangle, Save, Trash2, Bell } from 'lucide-react';
+import { X, Edit2, MessageCircle, Mail, Package as PackageIcon, CheckCircle2, Check, ShieldCheck, UserCircle, Plus, Clock, ArrowUpRight, LogOut, AlertTriangle, Save, Trash2, Bell, Camera, Image as ImageIcon } from 'lucide-react';
 import { Resident, Package, VisitorLog, Occurrence, Notice } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
 import { openWhatsApp } from '../../utils/phoneNormalizer';
@@ -260,9 +260,20 @@ export const OccurrenceDetailModal = ({ occurrence, onClose, onSave, setOccurren
                   ))}
                </div>
             </div>
-            <div>
-               <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Descrição (Editável)</label>
-               <textarea value={occurrence.description} onChange={(e) => setOccurrence({...occurrence, description: e.target.value})} className="w-full h-28 sm:h-32 p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-medium text-xs sm:text-sm outline-none border-2 border-transparent focus:border-black/5 resize-none shadow-inner" />
+            <div className="space-y-3">
+               <div>
+                 <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Descrição (Editável)</label>
+                 <textarea value={occurrence.description} onChange={(e) => setOccurrence({...occurrence, description: e.target.value})} className="w-full h-28 sm:h-32 p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-medium text-xs sm:text-sm outline-none border-2 border-transparent focus:border-black/5 resize-none shadow-inner" />
+               </div>
+               {occurrence.imageUrl && (
+                 <div className="mt-1 rounded-[20px] sm:rounded-[24px] overflow-hidden border border-zinc-100">
+                   <img
+                     src={occurrence.imageUrl}
+                     alt="Registro da ocorrência"
+                     className="w-full max-h-64 object-cover"
+                   />
+                 </div>
+               )}
             </div>
             <button onClick={onSave} className="w-full py-4 sm:py-5 md:py-6 bg-black text-white rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-2xl flex items-center justify-center gap-2 sm:gap-3"><Save className="w-4 h-4" /> <span className="whitespace-nowrap">Salvar Alterações</span></button>
          </div>
@@ -324,14 +335,105 @@ export const ResidentFormModal = ({ isOpen, onClose, data, setData, onSave, role
 // --- MODAL CRIAR OCORRENCIA ---
 export const NewOccurrenceModal = ({ isOpen, onClose, description, setDescription, onSave }: any) => {
   if (!isOpen) return null;
+  const [imagePreview, setImagePreview] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setImagePreview(null);
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setImagePreview(dataUrl || null);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-white text-black rounded-[32px] sm:rounded-[40px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-10 animate-in zoom-in duration-300">
-         <header className="flex justify-between items-center gap-3 sm:gap-4 mb-6 sm:mb-8"><h4 className="text-xl sm:text-2xl font-black uppercase">Reportar Ocorrência</h4><button onClick={onClose} className="p-2 sm:p-3 bg-zinc-100 rounded-xl sm:rounded-2xl flex-shrink-0"><X className="w-4 h-4 sm:w-5 sm:h-5"/></button></header>
+         <header className="flex justify-between items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
+           <h4 className="text-xl sm:text-2xl font-black uppercase">Reportar Ocorrência</h4>
+           <button onClick={onClose} className="p-2 sm:p-3 bg-zinc-100 rounded-xl sm:rounded-2xl flex-shrink-0">
+             <X className="w-4 h-4 sm:w-5 sm:h-5"/>
+           </button>
+         </header>
          <div className="space-y-3 sm:space-y-4">
-            <textarea placeholder="Descreva o ocorrido..." value={description} onChange={e => setDescription(e.target.value)} className="w-full h-28 sm:h-32 p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl outline-none font-medium text-xs sm:text-sm resize-none border border-transparent focus:border-red-100" />
-            <button onClick={onSave} className="w-full py-3 sm:py-4 bg-red-600 text-white rounded-xl sm:rounded-2xl font-black uppercase text-[9px] sm:text-[10px] shadow-xl mt-4">Registrar</button>
+            <textarea
+              placeholder="Descreva o ocorrido..."
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className="w-full h-28 sm:h-32 p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl outline-none font-medium text-xs sm:text-sm resize-none border border-transparent focus:border-red-100"
+            />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                  Foto / Anexo (opcional)
+                </span>
+                {imagePreview && (
+                  <button
+                    type="button"
+                    onClick={() => setImagePreview(null)}
+                    className="text-[10px] font-black uppercase tracking-widest text-red-500 flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" /> Remover
+                  </button>
+                )}
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed border-zinc-200 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 transition-colors"
+                >
+                  <Camera className="w-4 h-4" />
+                  Abrir câmera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 text-[10px] font-black uppercase tracking-widest text-zinc-600 hover:bg-zinc-50 transition-colors"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  Galeria / Arquivo
+                </button>
+              </div>
+
+              {imagePreview && (
+                <div className="mt-2 rounded-2xl border border-zinc-100 overflow-hidden bg-zinc-50">
+                  <img
+                    src={imagePreview}
+                    alt="Prévia da ocorrência"
+                    className="w-full h-40 object-cover"
+                  />
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => onSave(imagePreview)}
+              className="w-full py-3 sm:py-4 bg-red-600 text-white rounded-xl sm:rounded-2xl font-black uppercase text-[9px] sm:text-[10px] shadow-xl mt-4"
+            >
+              Registrar
+            </button>
          </div>
       </div>
     </div>

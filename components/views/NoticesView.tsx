@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Pin, Crown, BadgeInfo, Check, CheckCheck, MessageSquareText, ChevronUp, X, Paperclip, SendHorizontal } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Pin, Crown, BadgeInfo, Check, CheckCheck, MessageSquareText, ChevronUp, X, Paperclip, SendHorizontal, RefreshCw, Trash2 } from 'lucide-react';
 import { Notice, ChatMessage, UserRole } from '../../types';
 
 interface NoticesViewProps {
@@ -18,6 +18,8 @@ interface NoticesViewProps {
   handleSendChatMessage: () => void;
   chatEndRef: React.RefObject<HTMLDivElement>;
   handleAcknowledgeNotice: (id: string) => void;
+  onRefreshChat?: () => void;
+  onClearChat?: () => void;
 }
 
 const NoticesView: React.FC<NoticesViewProps> = ({
@@ -34,9 +36,24 @@ const NoticesView: React.FC<NoticesViewProps> = ({
   setChatInput,
   handleSendChatMessage,
   chatEndRef,
-  handleAcknowledgeNotice
+  handleAcknowledgeNotice,
+  onRefreshChat,
+  onClearChat
 }) => {
   const lastMessage = chatMessages[chatMessages.length - 1];
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const suffix = chatInput.trim() ? ` [Anexo: ${file.name}]` : `[Anexo: ${file.name}]`;
+    setChatInput(chatInput.trim() ? chatInput + suffix : suffix);
+    e.target.value = '';
+  };
 
   return (
     <div className="relative h-[calc(100vh-140px)] flex flex-col md:flex-row gap-6 animate-in fade-in duration-500 overflow-hidden">
@@ -222,14 +239,34 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                   <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest">Online Agora</p>
                </div>
             </div>
-            {/* Mobile Close Button */}
-            <button 
-               className="md:hidden p-2 rounded-full"
-               style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-secondary)' }}
-               onClick={(e) => { e.stopPropagation(); setIsChatOpen(false); }}
-            >
-               <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+               <button
+                  type="button"
+                  className="p-2.5 rounded-full transition-colors hover:bg-[var(--border-color)]"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onClick={(e) => { e.stopPropagation(); onRefreshChat?.(); }}
+                  title="Atualizar mensagens"
+               >
+                  <RefreshCw className="w-5 h-5" />
+               </button>
+               <button
+                  type="button"
+                  className="p-2.5 rounded-full transition-colors hover:bg-[var(--border-color)]"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onClick={(e) => { e.stopPropagation(); onClearChat?.(); }}
+                  title="Apagar todas as mensagens"
+               >
+                  <Trash2 className="w-5 h-5" />
+               </button>
+               {/* Mobile Close Button */}
+               <button 
+                  className="md:hidden p-2 rounded-full"
+                  style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-secondary)' }}
+                  onClick={(e) => { e.stopPropagation(); setIsChatOpen(false); }}
+               >
+                  <X className="w-5 h-5" />
+               </button>
+            </div>
          </div>
 
          {/* Messages Stream */}
@@ -281,8 +318,22 @@ const NoticesView: React.FC<NoticesViewProps> = ({
 
          {/* Input Area */}
          <div className={`p-4 border-t border-[var(--border-color)] md:rounded-bl-[40px] ${!isChatOpen ? 'hidden md:block' : 'block'}`} style={{ backgroundColor: 'var(--glass-bg)' }}>
+            <input
+               ref={fileInputRef}
+               type="file"
+               className="hidden"
+               accept="*/*"
+               onChange={handleFileSelect}
+               aria-label="Anexar arquivo"
+            />
             <div className="relative flex items-center gap-2">
-               <button className="p-3 transition-colors rounded-full hover:bg-[var(--border-color)]" style={{ color: 'var(--text-secondary)' }}>
+               <button
+                  type="button"
+                  className="p-3 transition-colors rounded-full hover:bg-[var(--border-color)]"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onClick={handleAttachClick}
+                  title="Anexar arquivo"
+               >
                   <Paperclip className="w-5 h-5" />
                </button>
                <div className="flex-1 relative">

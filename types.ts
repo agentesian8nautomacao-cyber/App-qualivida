@@ -56,6 +56,7 @@ export interface Occurrence {
   status: 'Aberto' | 'Em Andamento' | 'Resolvido';
   date: string;
   reportedBy: string; // Nome ou cargo de quem reportou
+  imageUrl?: string | null; // Foto/anexo opcional da ocorrência
 }
 
 export interface Staff {

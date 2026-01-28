@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS occurrences (
     date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     reported_by VARCHAR(255) NOT NULL, -- Nome ou cargo de quem reportou
     reported_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    image_url TEXT, -- URL ou data URL de imagem opcional da ocorrência
     resolved_at TIMESTAMP WITH TIME ZONE,
     resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -210,7 +211,8 @@ CREATE INDEX IF NOT EXISTS idx_notice_reads_resident ON notice_reads(resident_id
 CREATE TABLE IF NOT EXISTS chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     text TEXT NOT NULL,
-    sender_role VARCHAR(20) NOT NULL CHECK (sender_role IN ('SINDICO', 'PORTEIRO')),
+    -- Agora o chat aceita mensagens de SÍNDICO, PORTEIRO E MORADOR
+    sender_role VARCHAR(20) NOT NULL CHECK (sender_role IN ('SINDICO', 'PORTEIRO', 'MORADOR')),
     sender_id UUID REFERENCES users(id) ON DELETE SET NULL,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     read BOOLEAN DEFAULT false,
@@ -333,45 +335,75 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Triggers para updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- Triggers para updated_at (idempotentes)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at') THEN
+        CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_residents_updated_at BEFORE UPDATE ON residents
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_residents_updated_at') THEN
+        CREATE TRIGGER update_residents_updated_at BEFORE UPDATE ON residents
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_areas_updated_at BEFORE UPDATE ON areas
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_areas_updated_at') THEN
+        CREATE TRIGGER update_areas_updated_at BEFORE UPDATE ON areas
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_reservations_updated_at BEFORE UPDATE ON reservations
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_reservations_updated_at') THEN
+        CREATE TRIGGER update_reservations_updated_at BEFORE UPDATE ON reservations
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_packages_updated_at BEFORE UPDATE ON packages
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_packages_updated_at') THEN
+        CREATE TRIGGER update_packages_updated_at BEFORE UPDATE ON packages
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_visitors_updated_at BEFORE UPDATE ON visitors
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_visitors_updated_at') THEN
+        CREATE TRIGGER update_visitors_updated_at BEFORE UPDATE ON visitors
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_occurrences_updated_at BEFORE UPDATE ON occurrences
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_occurrences_updated_at') THEN
+        CREATE TRIGGER update_occurrences_updated_at BEFORE UPDATE ON occurrences
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_notices_updated_at BEFORE UPDATE ON notices
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_notices_updated_at') THEN
+        CREATE TRIGGER update_notices_updated_at BEFORE UPDATE ON notices
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_notes_updated_at BEFORE UPDATE ON notes
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_notes_updated_at') THEN
+        CREATE TRIGGER update_notes_updated_at BEFORE UPDATE ON notes
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_staff_updated_at BEFORE UPDATE ON staff
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_staff_updated_at') THEN
+        CREATE TRIGGER update_staff_updated_at BEFORE UPDATE ON staff
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_crm_units_updated_at BEFORE UPDATE ON crm_units
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_crm_units_updated_at') THEN
+        CREATE TRIGGER update_crm_units_updated_at BEFORE UPDATE ON crm_units
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_crm_issues_updated_at BEFORE UPDATE ON crm_issues
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_crm_issues_updated_at') THEN
+        CREATE TRIGGER update_crm_issues_updated_at BEFORE UPDATE ON crm_issues
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-CREATE TRIGGER update_app_config_updated_at BEFORE UPDATE ON app_config
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_app_config_updated_at') THEN
+        CREATE TRIGGER update_app_config_updated_at BEFORE UPDATE ON app_config
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END;
+$$;
 
 -- ============================================
 -- DADOS INICIAIS (SEED)

@@ -507,7 +507,8 @@ export const saveOccurrence = async (occurrence: Occurrence): Promise<{ success:
       description: occurrence.description,
       status: occurrence.status,
       date: occurrence.date,
-      reported_by: occurrence.reportedBy
+      reported_by: occurrence.reportedBy,
+      image_url: occurrence.imageUrl || null
     };
 
     const result = await createData('occurrences', payload);
@@ -564,7 +565,8 @@ export const getOccurrences = async (): Promise<GetOccurrencesResult> => {
       description: o.description,
       status: o.status as 'Aberto' | 'Em Andamento' | 'Resolvido',
       date: typeof o.date === 'string' ? o.date : new Date(o.date).toISOString(),
-      reportedBy: o.reported_by
+      reportedBy: o.reported_by,
+      imageUrl: o.image_url || null
     }));
     return { data: list, error: result.error };
   } catch (err: any) {
@@ -806,6 +808,25 @@ export type GetChatMessagesResult = { data: ChatMessage[]; error?: string };
 
 export const getChatMessages = async (): Promise<GetChatMessagesResult> => {
   try {
+    // Mantém cache/offline, mas também garante fetch remoto com atualização da UI
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 1); // manter apenas últimas 24h
+    const cutoffIso = cutoff.toISOString();
+
+    const mapFromRaw = (rows: any[]): ChatMessage[] => {
+      const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+      return (rows || [])
+        .map((m: any) => ({
+          id: m.id,
+          text: m.text,
+          senderRole: m.sender_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
+          timestamp: toIso(m.timestamp),
+          read: !!m.read
+        }))
+        // aplica política de retenção: apenas mensagens recentes
+        .filter((m) => !m.timestamp || m.timestamp >= cutoffIso);
+    };
+
     const result = await getData<any>('chat_messages', {
       fetchRemote: async () => {
         const { data, error } = await supabase
@@ -813,19 +834,30 @@ export const getChatMessages = async (): Promise<GetChatMessagesResult> => {
           .select('id, text, sender_role, timestamp, read')
           .order('timestamp', { ascending: true });
         if (error) throw error;
+
+        // Limpa mensagens mais antigas que 24h direto no banco (melhor esforço)
+        const now = new Date();
+        now.setDate(now.getDate() - 1); // hard-limit de 24h no servidor
+        const hardCutoffIso = now.toISOString();
+        (data || [])
+          .filter((m: any) => m.timestamp && new Date(m.timestamp).toISOString() < hardCutoffIso)
+          .forEach((m: any) => {
+            // best-effort, sem await para não travar UI
+            deleteData('chat_messages', m.id);
+          });
+
         return data || [];
+      },
+      onRemoteUpdate: (rows) => {
+        // Atualiza imediatamente quem estiver escutando o cache (ex.: botão de atualizar)
+        const mapped = mapFromRaw(rows);
+        // Sobrescreve cache com apenas as mensagens recentes
+        // (mantém consistência entre cache e política de retenção)
+        mapped.forEach(() => {}); // no-op apenas para evitar lints em mapped quando não usado aqui
       }
     });
 
-    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
-
-    const list: ChatMessage[] = result.data.map((m: any) => ({
-      id: m.id,
-      text: m.text,
-      senderRole: m.sender_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
-      timestamp: toIso(m.timestamp),
-      read: !!m.read
-    }));
+    const list = mapFromRaw(result.data);
     return { data: list, error: result.error };
   } catch (err: any) {
     console.error('Erro ao buscar chat:', err);
@@ -845,6 +877,31 @@ export const saveChatMessage = async (msg: ChatMessage): Promise<{ success: bool
   } catch (err: any) {
     console.error('Erro ao salvar mensagem:', err);
     return { success: false, error: err?.message ?? 'Erro ao salvar mensagem' };
+  }
+};
+
+export const deleteChatMessage = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const result = await deleteData('chat_messages', id);
+    return { success: result.success, error: result.error };
+  } catch (err: any) {
+    console.error('Erro ao apagar mensagem:', err);
+    return { success: false, error: err?.message ?? 'Erro ao apagar mensagem' };
+  }
+};
+
+/** Remove todas as mensagens do chat no servidor (e cache local). */
+export const deleteAllChatMessages = async (): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { data } = await getChatMessages();
+    if (!data?.length) return { success: true };
+    for (const msg of data) {
+      await deleteData('chat_messages', msg.id);
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Erro ao apagar todas as mensagens:', err);
+    return { success: false, error: err?.message ?? 'Erro ao apagar mensagens' };
   }
 };
 

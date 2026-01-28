@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes, createHash } from 'crypto';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -80,6 +81,43 @@ export async function POST(request: Request) {
     });
   }
 
+  // Rate limit básico por usuário: no máximo 1 solicitação a cada 2 minutos
+  const { data: lastToken } = await supabase
+    .from('password_reset_tokens')
+    .select('id, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastToken) {
+    const lastCreatedAt = new Date((lastToken as any).created_at).getTime();
+    const now = Date.now();
+    const twoMinutesMs = 2 * 60 * 1000;
+    if (now - lastCreatedAt < twoMinutesMs) {
+      console.info('[AUTH-EVENT] Password reset request rate-limited', {
+        userId: user.id,
+        username: user.username,
+        email: user.email,
+        at: new Date().toISOString(),
+      });
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Se o usuário existir e tiver email cadastrado, você receberá instruções de recuperação. Se já solicitou recentemente, aguarde alguns minutos.',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...cors },
+      });
+    }
+  }
+
+  // Invalidar tokens anteriores ainda não utilizados para este usuário
+  await supabase
+    .from('password_reset_tokens')
+    .update({ used: true })
+    .eq('user_id', user.id)
+    .eq('used', false);
+
   if (!resendApiKey || !appUrl) {
     return new Response(JSON.stringify({
       success: false,
@@ -90,18 +128,20 @@ export async function POST(request: Request) {
     });
   }
 
-  const { randomBytes } = await import('crypto');
   const buf = randomBytes(32);
   const token = Array.from(buf).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-  const expiresAt = new Date();
-  expiresAt.setHours(expiresAt.getHours() + 24);
+  // Nunca armazenar o token em texto puro: salvar apenas o hash
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+
+  // Expiração curta (15 minutos) para maior segurança
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   const { error: tokenError } = await supabase
     .from('password_reset_tokens')
     .insert({
       user_id: user.id,
-      token,
+      token: tokenHash,
       expires_at: expiresAt.toISOString(),
       used: false,
     });
@@ -116,11 +156,19 @@ export async function POST(request: Request) {
     });
   }
 
+  console.info('[AUTH-EVENT] Password reset requested', {
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+    expiresAt: expiresAt.toISOString(),
+    at: new Date().toISOString(),
+  });
+
   if (resendApiKey && appUrl) {
     try {
       const { Resend } = await import('resend');
       const resend = new Resend(resendApiKey);
-      const resetLink = `${appUrl.replace(/\/$/, '')}/?reset=1&token=${encodeURIComponent(token)}`;
+      const resetLink = `${appUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
       await resend.emails.send({
         from: resendFrom,
         to: user.email,
@@ -131,7 +179,7 @@ export async function POST(request: Request) {
           <p><a href="${resetLink}" style="display:inline-block;padding:10px 20px;background:#000;color:#fff;text-decoration:none;border-radius:8px;">Redefinir senha</a></p>
           <p>Ou copie e cole no navegador:</p>
           <p style="word-break:break-all;color:#666;">${resetLink}</p>
-          <p>O link expira em 24 horas. Se não solicitou, ignore este e-mail.</p>
+          <p>O link expira em 15 minutos. Se não solicitou, ignore este e-mail.</p>
         `,
       });
     } catch (e) {

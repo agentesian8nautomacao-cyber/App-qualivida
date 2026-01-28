@@ -27,11 +27,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     const reset = params.get('reset');
-    if (reset === '1' && token) {
+    const isResetPath = window.location.pathname === '/reset-password';
+
+    // Aceita tanto o padrão antigo (?reset=1&token=) quanto o novo (/reset-password?token=)
+    if (token && (reset === '1' || isResetPath)) {
       setResetFromLink({ token });
       setShowForgotPassword(true);
       setSelectedRole('PORTEIRO');
-      window.history.replaceState({}, '', window.location.pathname || '/');
+      // Após detectar o link, normaliza a URL para a raiz sem parâmetros
+      window.history.replaceState({}, '', '/');
     }
   }, []);
 

@@ -27,10 +27,34 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     }
   }, [initialStep, initialToken]);
 
+  const validatePasswordStrength = (password: string): { ok: boolean; error?: string } => {
+    if (!password || password.length < 8) {
+      return { ok: false, error: 'A senha deve ter pelo menos 8 caracteres.' };
+    }
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasDigit = /[0-9]/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    if (!hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+      return {
+        ok: false,
+        error: 'A senha deve incluir letras maiúsculas, minúsculas, números e caractere especial.'
+      };
+    }
+    return { ok: true };
+  };
+
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!usernameOrEmail.trim()) {
-      setMessage({ type: 'error', text: 'Por favor, informe seu usuário ou email.' });
+    const value = usernameOrEmail.trim();
+    if (!value) {
+      setMessage({ type: 'error', text: 'Por favor, informe o e-mail cadastrado.' });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value.toLowerCase())) {
+      setMessage({ type: 'error', text: 'Informe um e-mail válido.' });
       return;
     }
 
@@ -42,7 +66,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
       const res = await fetch(`${base}/api/request-password-reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrUsername: usernameOrEmail.trim() }),
+        body: JSON.stringify({ emailOrUsername: value }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
 
@@ -58,7 +82,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
       /* fallback abaixo */
     }
 
-    const result = await generatePasswordResetToken(usernameOrEmail.trim());
+    const result = await generatePasswordResetToken(value);
     setLoading(false);
 
     if (result.success) {
@@ -75,13 +99,16 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!token.trim()) {
-      setMessage({ type: 'error', text: 'Por favor, informe o token de recuperação.' });
+    const effectiveToken = (initialToken || token).trim();
+
+    if (!effectiveToken) {
+      setMessage({ type: 'error', text: 'Token de recuperação inválido ou ausente.' });
       return;
     }
 
-    if (!newPassword.trim() || newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'A senha deve ter pelo menos 6 caracteres.' });
+    const strength = validatePasswordStrength(newPassword.trim());
+    if (!strength.ok) {
+      setMessage({ type: 'error', text: strength.error || 'A senha não atende aos requisitos mínimos.' });
       return;
     }
 
@@ -93,7 +120,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    const result = await resetPasswordWithToken(token.trim(), newPassword);
+    const result = await resetPasswordWithToken(effectiveToken, newPassword);
 
     setLoading(false);
 
@@ -136,8 +163,8 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
             theme === 'light' ? 'text-gray-600' : 'text-zinc-400'
           }`}>
             {step === 'request' 
-              ? 'Digite seu usuário ou email para receber instruções de recuperação.'
-              : 'Digite o token recebido e sua nova senha.'}
+              ? 'Informe o e-mail cadastrado para receber o link de recuperação. Se o e-mail existir, você receberá instruções em alguns instantes.'
+              : 'Defina uma nova senha forte para sua conta.'}
           </p>
 
           {/* Mensagens */}
@@ -168,8 +195,8 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
                   theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
                 }`} />
                 <input 
-                  type="text" 
-                  placeholder="Usuário ou Email" 
+                  type="email" 
+                  placeholder="E-mail cadastrado" 
                   value={usernameOrEmail}
                   onChange={(e) => {
                     setUsernameOrEmail(e.target.value);
@@ -213,27 +240,30 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
           {/* Formulário de redefinição */}
           {step === 'reset' && (
             <form onSubmit={handleResetPassword} className="space-y-6">
-              <div className="relative">
-                <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                  theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
-                }`} />
-                <input 
-                  type="text" 
-                  placeholder="Token de Recuperação" 
-                  value={token}
-                  onChange={(e) => {
-                    setToken(e.target.value);
-                    setMessage(null);
-                  }}
-                  className={`w-full pl-8 pr-4 py-3 bg-transparent border-b text-sm outline-none transition-all font-medium ${
-                    theme === 'light'
-                      ? 'border-gray-300/50 text-gray-900 placeholder:text-gray-400 focus:border-gray-600'
-                      : 'border-white/10 text-white placeholder:text-zinc-700 focus:border-white'
-                  }`}
-                  required
-                  disabled={loading}
-                />
-              </div>
+              {/* Campo de token só aparece quando não veio de link direto */}
+              {!initialToken && (
+                <div className="relative">
+                  <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                    theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
+                  }`} />
+                  <input 
+                    type="text" 
+                    placeholder="Token de Recuperação" 
+                    value={token}
+                    onChange={(e) => {
+                      setToken(e.target.value);
+                      setMessage(null);
+                    }}
+                    className={`w-full pl-8 pr-4 py-3 bg-transparent border-b text-sm outline-none transition-all font-medium ${
+                      theme === 'light'
+                        ? 'border-gray-300/50 text-gray-900 placeholder:text-gray-400 focus:border-gray-600'
+                        : 'border-white/10 text-white placeholder:text-zinc-700 focus:border-white'
+                    }`}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+              )}
 
               <div className="relative">
                 <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
@@ -241,7 +271,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
                 }`} />
                 <input 
                   type={showNewPassword ? 'text' : 'password'}
-                  placeholder="Nova Senha (mínimo 6 caracteres)" 
+                  placeholder="Nova Senha (mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo)" 
                   value={newPassword}
                   onChange={(e) => {
                     setNewPassword(e.target.value);
@@ -253,7 +283,6 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
                       : 'border-white/10 text-white placeholder:text-zinc-700 focus:border-white'
                   }`}
                   required
-                  minLength={6}
                   disabled={loading}
                 />
                 <button
@@ -285,7 +314,6 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
                       : 'border-white/10 text-white placeholder:text-zinc-700 focus:border-white'
                   }`}
                   required
-                  minLength={6}
                   disabled={loading}
                 />
                 <button

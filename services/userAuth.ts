@@ -94,6 +94,23 @@ export const isUserBlocked = (username: string): { blocked: boolean; remainingMi
 };
 
 /**
+ * Verifica força mínima da nova senha:
+ * - Mínimo 8 caracteres
+ * - Pelo menos 1 letra maiúscula
+ * - Pelo menos 1 letra minúscula
+ * - Pelo menos 1 número
+ * - Pelo menos 1 caractere especial
+ */
+const isStrongPassword = (password: string): boolean => {
+  if (!password || password.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasDigit = /[0-9]/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  return hasUpper && hasLower && hasDigit && hasSpecial;
+};
+
+/**
  * Faz hash da senha usando SHA-256 (Web Crypto API) quando disponível.
  * Em contexto não seguro (ex: http em rede local no celular), crypto.subtle
  * não está disponível, então usamos um fallback simples para não quebrar o login.
@@ -355,6 +372,14 @@ export const generatePasswordResetToken = async (usernameOrEmail: string): Promi
   email?: string;
 }> => {
   try {
+    // Ambiente precisa suportar Web Crypto seguro para não armazenar token em texto puro
+    if (typeof crypto === 'undefined' || !crypto.subtle || !(location.protocol === 'https:' || location.hostname === 'localhost')) {
+      return {
+        success: false,
+        message: 'Recuperação de senha indisponível neste ambiente. Use o link enviado por e-mail em um navegador seguro.'
+      };
+    }
+
     // Buscar usuário por username ou email
     const { data: user, error } = await supabase
       .from('users')
@@ -371,20 +396,62 @@ export const generatePasswordResetToken = async (usernameOrEmail: string): Promi
       };
     }
 
-    // Gerar token único
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    // Rate limit básico por usuário (fallback local): máximo 1 solicitação a cada 2 minutos
+    const { data: lastToken } = await supabase
+      .from('password_reset_tokens')
+      .select('id, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastToken) {
+      const lastCreatedAt = new Date((lastToken as any).created_at).getTime();
+      const now = Date.now();
+      const twoMinutesMs = 2 * 60 * 1000;
+      if (now - lastCreatedAt < twoMinutesMs) {
+        console.info('[AUTH-EVENT] Password reset request (fallback) rate-limited', {
+          userId: user.id,
+          username: user.username,
+          email: user.email,
+          at: new Date().toISOString()
+        });
+        return {
+          success: true,
+          message: 'Se o usuário existir e tiver email cadastrado, você receberá instruções de recuperação. Se já solicitou recentemente, aguarde alguns minutos.'
+        };
+      }
+    }
+
+    // Invalidar tokens anteriores ainda não utilizados
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('user_id', user.id)
+      .eq('used', false);
+
+    // Gerar token único (valor bruto só é exibido no console em DEV)
+    const rawBytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = Array.from(rawBytes)
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
-    
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // Token válido por 24 horas
 
-    // Inserir token no banco
+    // Gerar hash SHA-256 do token para salvar no banco
+    const encoder = new TextEncoder();
+    const dataToHash = encoder.encode(token);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataToHash);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Expiração curta (15 minutos)
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    // Inserir token (hash) no banco
     const { error: tokenError } = await supabase
       .from('password_reset_tokens')
       .insert({
         user_id: user.id,
-        token,
+        token: tokenHash,
         expires_at: expiresAt.toISOString(),
         used: false
       });
@@ -397,9 +464,16 @@ export const generatePasswordResetToken = async (usernameOrEmail: string): Promi
       };
     }
 
-    // Em produção, você enviaria um email aqui
-    // Por enquanto, retornamos o token (apenas para desenvolvimento)
-    console.log('🔐 TOKEN DE RECUPERAÇÃO (DEV ONLY):', token);
+    console.info('[AUTH-EVENT] Password reset requested (fallback)', {
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      expiresAt: expiresAt.toISOString(),
+      at: new Date().toISOString()
+    });
+
+    // Em desenvolvimento, exibimos o token bruto no console para permitir teste manual
+    console.log('🔐 TOKEN DE RECUPERAÇÃO (DEV ONLY - NÃO ARMAZENADO EM TEXTO PURO NO BANCO):', token);
     console.log('📧 Email do usuário:', user.email);
 
     return {
@@ -425,27 +499,42 @@ export const validateResetToken = async (token: string): Promise<{
   message?: string;
 }> => {
   try {
-    const { data, error } = await supabase
+    // Gerar hash do token informado pelo usuário
+    if (typeof crypto === 'undefined' || !crypto.subtle) {
+      console.error('Web Crypto API indisponível para validar token de recuperação.');
+      return {
+        valid: false,
+        message: 'Não foi possível validar o link de recuperação. Use um navegador seguro (HTTPS) e tente novamente.'
+      };
+    }
+
+    const encoder = new TextEncoder();
+    const tokenBytes = encoder.encode(token);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', tokenBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const { data: tokenRow, error } = await supabase
       .from('password_reset_tokens')
       .select('id, user_id, expires_at, used')
-      .eq('token', token)
+      .eq('token', tokenHash)
       .single();
 
-    if (error || !data) {
+    if (error || !tokenRow) {
       return {
         valid: false,
         message: 'Token inválido ou não encontrado.'
       };
     }
 
-    if (data.used) {
+    if (tokenRow.used) {
       return {
         valid: false,
         message: 'Este token já foi utilizado.'
       };
     }
 
-    if (new Date(data.expires_at) < new Date()) {
+    if (new Date(tokenRow.expires_at) < new Date()) {
       return {
         valid: false,
         message: 'Este token expirou. Solicite uma nova recuperação de senha.'
@@ -454,7 +543,7 @@ export const validateResetToken = async (token: string): Promise<{
 
     return {
       valid: true,
-      userId: data.user_id
+      userId: tokenRow.user_id
     };
   } catch (error) {
     console.error('Erro ao validar token:', error);
@@ -476,6 +565,14 @@ export const resetPasswordWithToken = async (
   message: string;
 }> => {
   try {
+    // Regras de senha fortes também no backend (defesa em profundidade)
+    if (!isStrongPassword(newPassword)) {
+      return {
+        success: false,
+        message: 'A nova senha deve ter pelo menos 8 caracteres, incluindo letras maiúsculas, minúsculas, números e caractere especial.'
+      };
+    }
+
     // Validar token
     const tokenValidation = await validateResetToken(token);
     if (!tokenValidation.valid || !tokenValidation.userId) {
@@ -518,6 +615,12 @@ export const resetPasswordWithToken = async (
     if (user) {
       resetLoginAttempts(user.username);
     }
+
+    console.info('[AUTH-EVENT] Password reset completed', {
+      userId: tokenValidation.userId,
+      username: user?.username,
+      at: new Date().toISOString()
+    });
 
     return {
       success: true,
