@@ -87,6 +87,8 @@ const calculatePermanence = (receivedAt: string) => {
 const App: React.FC = () => {
   const { config } = useAppConfig();
   const toast = useToast();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [hasInteractedWithSplash, setHasInteractedWithSplash] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [role, setRole] = useState<UserRole>('PORTEIRO');
   const [currentResident, setCurrentResident] = useState<Resident | null>(null);
@@ -2170,11 +2172,25 @@ const App: React.FC = () => {
     content = (
       <div
         className="w-screen h-screen bg-black flex items-center justify-center relative cursor-pointer"
-        onClick={handleSkipSplash}
+        onClick={() => {
+          // Se o navegador bloqueou o autoplay (vídeo parado), o primeiro clique serve para tocar com áudio
+          if (!hasInteractedWithSplash && videoRef.current && videoRef.current.paused) {
+            setHasInteractedWithSplash(true);
+            videoRef.current.muted = false;
+            videoRef.current
+              .play()
+              .catch((err) => console.warn('[App] Erro ao tentar iniciar vídeo após interação:', err));
+            return;
+          }
+          // Depois disso, qualquer clique pula para o login
+          handleSkipSplash();
+        }}
       >
         <video
+          ref={videoRef}
           src="/GestaoQualivida.mp4"
           autoPlay
+          muted
           className="w-full h-full object-cover"
           onClick={(e) => e.stopPropagation()}
           onEnded={handleSkipSplash}
