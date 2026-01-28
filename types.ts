@@ -1,6 +1,6 @@
 
 export type UserRole = 'MORADOR' | 'PORTEIRO' | 'SINDICO';
-export type QuickViewCategory = 'packages' | 'visitors' | 'occurrences' | 'reservations' | 'notes' | 'notices' | null;
+export type QuickViewCategory = 'packages' | 'visitors' | 'occurrences' | 'reservations' | 'notices' | null;
 
 export interface PackageItem {
   id: string;
@@ -89,14 +89,6 @@ export interface ChatMessage {
   read: boolean;
 }
 
-export interface Note {
-  id: string;
-  content: string;
-  date: string;
-  completed: boolean;
-  scheduled?: string;
-  category?: string;
-}
 
 export interface VisitorLog {
   id: string;
@@ -161,6 +153,7 @@ export interface Notification {
   message: string;
   type: 'package' | 'visitor' | 'occurrence' | 'other';
   related_id?: string; // ID do registro relacionado (ex: package.id)
+  image_url?: string | null; // Imagem da encomenda quando registro via foto (opcional)
   read: boolean;
   created_at: string;
 }

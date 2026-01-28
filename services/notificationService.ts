@@ -30,6 +30,7 @@ export const getNotifications = async (moradorId: string): Promise<{ data: Notif
       message: n.message,
       type: n.type || 'package',
       related_id: n.related_id || undefined,
+      image_url: n.image_url ?? undefined,
       read: n.read || false,
       created_at: n.created_at
     }));
@@ -66,6 +67,7 @@ export const getUnreadNotifications = async (moradorId: string): Promise<{ data:
       message: n.message,
       type: n.type || 'package',
       related_id: n.related_id || undefined,
+      image_url: n.image_url ?? undefined,
       read: n.read || false,
       created_at: n.created_at
     }));
@@ -124,20 +126,23 @@ export const markAllNotificationsAsRead = async (moradorId: string): Promise<{ s
 
 /**
  * Cria uma nova notificação
+ * @param imageUrl - URL da imagem da encomenda (quando registro via foto). Opcional.
  */
 export const createNotification = async (
   moradorId: string,
   title: string,
   message: string,
   type: Notification['type'] = 'package',
-  relatedId?: string
+  relatedId?: string,
+  imageUrl?: string | null
 ): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     console.log('[createNotification] Iniciando criação de notificação:', {
       moradorId,
       title,
       type,
-      relatedId
+      relatedId,
+      hasImage: Boolean(imageUrl)
     });
 
     const insertData: any = {
@@ -150,6 +155,9 @@ export const createNotification = async (
 
     if (relatedId) {
       insertData.related_id = relatedId;
+    }
+    if (imageUrl) {
+      insertData.image_url = imageUrl;
     }
 
     console.log('[createNotification] Dados para inserção:', insertData);
@@ -216,7 +224,8 @@ export const countUnreadNotifications = async (moradorId: string): Promise<{ cou
 };
 
 /**
- * Deleta uma notificação
+ * Deleta uma notificação (hard delete no banco; persiste de imediato).
+ * Garantir RLS na tabela `notifications` permitindo DELETE para o morador dono.
  */
 export const deleteNotification = async (notificationId: string): Promise<{ success: boolean; error?: string }> => {
   try {

@@ -29,7 +29,6 @@ interface AiReportsViewProps {
   allPackages: any[];
   visitorLogs: any[];
   allOccurrences: any[];
-  allNotes: any[];
   dayReservations: any[];
 }
 
@@ -37,7 +36,6 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
   allPackages,
   visitorLogs,
   allOccurrences,
-  allNotes,
   dayReservations
 }) => {
   const { config } = useAppConfig();
@@ -57,7 +55,6 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
     const resolvedOccurrences = allOccurrences.filter(o => o.status === 'Resolvido').length;
     const totalOccurrences = allOccurrences.length;
     const resolutionRate = totalOccurrences > 0 ? Math.round((resolvedOccurrences / totalOccurrences) * 100) : 100;
-    const pendingNotes = allNotes.filter(n => !n.completed).length;
 
     return {
       totalVisitors,
@@ -69,10 +66,9 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
       resolvedOccurrences,
       totalOccurrences,
       resolutionRate,
-      pendingNotes,
       totalReservations: dayReservations.length
     };
-  }, [visitorLogs, allPackages, allOccurrences, allNotes, dayReservations]);
+  }, [visitorLogs, allPackages, allOccurrences, dayReservations]);
 
   const hasGeminiKey = !!(process.env.API_KEY && String(process.env.API_KEY).trim());
 
@@ -94,13 +90,9 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
         - Ocorrências: ${metrics.totalOccurrences} (Abertas: ${metrics.openOccurrences}, Resolvidas: ${metrics.resolvedOccurrences})
         - Taxa de Resolução: ${metrics.resolutionRate}%
         - Reservas de Área Comum: ${metrics.totalReservations}
-        - Notas Pendentes: ${metrics.pendingNotes}
         
         DETALHES OCORRÊNCIAS:
         ${allOccurrences.map(o => `- ${o.description} (Status: ${o.status}, Unidade: ${o.unit})`).join('\n')}
-
-        NOTAS OPERACIONAIS PENDENTES:
-        ${allNotes.filter(n => !n.completed).map(n => `- ${n.content} (${n.category || 'Geral'})`).join('\n')}
       `;
 
       const response = await ai.models.generateContent({

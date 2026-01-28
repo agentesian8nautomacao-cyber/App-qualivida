@@ -94,19 +94,22 @@ const NoticesView: React.FC<NoticesViewProps> = ({
             <div className="columns-1 lg:columns-2 gap-6 space-y-6">
                {filteredNotices.map((notice) => {
                   const isSindico = notice.authorRole === 'SINDICO';
+                  const isMorador = notice.authorRole === 'MORADOR';
+                  const roleLabel = isSindico ? 'Administração' : isMorador ? 'Morador' : 'Operacional';
+                  const roleStyles = isSindico
+                     ? { bg: 'bg-amber-500/10 dark:bg-amber-950/10 border-amber-500/40', stripe: 'from-amber-400 via-yellow-200 to-amber-600', icon: 'bg-amber-500/10 text-amber-400', label: 'text-amber-600 dark:text-amber-500', btn: 'bg-amber-500 text-white hover:bg-amber-400 dark:text-black dark:hover:bg-amber-400' }
+                     : isMorador
+                        ? { bg: 'bg-emerald-500/10 dark:bg-emerald-950/10 border-emerald-500/40', stripe: 'from-emerald-400 via-green-200 to-emerald-600', icon: 'bg-emerald-500/10 text-emerald-400', label: 'text-emerald-600 dark:text-emerald-500', btn: 'bg-emerald-500 text-white hover:bg-emerald-400 dark:text-black dark:hover:bg-emerald-400' }
+                        : { bg: 'bg-cyan-500/10 dark:bg-cyan-950/10 border-cyan-500/40', stripe: 'from-cyan-400 via-blue-200 to-cyan-600', icon: 'bg-cyan-500/10 text-cyan-400', label: 'text-cyan-600 dark:text-cyan-500', btn: 'bg-cyan-500 text-white hover:bg-cyan-400 dark:text-black dark:hover:bg-cyan-400' };
                   
                   return (
                      <div 
                         key={notice.id}
-                        className={`break-inside-avoid relative overflow-hidden rounded-[32px] border backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 shadow-2xl group ${
-                           isSindico 
-                              ? 'bg-amber-500/10 dark:bg-amber-950/10 border-amber-500/40 dark:border-amber-500/20 shadow-amber-500/10 dark:shadow-amber-500/5' 
-                              : 'bg-cyan-500/10 dark:bg-cyan-950/10 border-cyan-500/40 dark:border-cyan-500/20 shadow-cyan-500/10 dark:shadow-cyan-500/5'
-                        } ${notice.read ? 'opacity-60 grayscale-[0.3]' : 'opacity-100'}`}
-                        style={{ backgroundColor: isSindico ? 'rgba(245, 158, 11, 0.1)' : 'rgba(6, 182, 212, 0.1)' }}
+                        className={`break-inside-avoid relative overflow-hidden rounded-[32px] border backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 shadow-2xl group ${roleStyles.bg} ${notice.read ? 'opacity-60 grayscale-[0.3]' : 'opacity-100'}`}
+                        style={{ backgroundColor: isSindico ? 'rgba(245, 158, 11, 0.1)' : isMorador ? 'rgba(16, 185, 129, 0.1)' : 'rgba(6, 182, 212, 0.1)' }}
                      >
                         {/* Role Indicator Stripe */}
-                        <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${isSindico ? 'from-amber-400 via-yellow-200 to-amber-600' : 'from-cyan-400 via-blue-200 to-cyan-600'} opacity-80`} />
+                        <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${roleStyles.stripe} opacity-80`} />
 
                         {/* Pinned Icon */}
                         {notice.pinned && (
@@ -117,12 +120,12 @@ const NoticesView: React.FC<NoticesViewProps> = ({
 
                         <div className="p-8">
                            <div className="flex items-center gap-3 mb-6">
-                              <div className={`p-2 rounded-xl ${isSindico ? 'bg-amber-500/10 text-amber-400' : 'bg-cyan-500/10 text-cyan-400'}`}>
+                              <div className={`p-2 rounded-xl ${roleStyles.icon}`}>
                                  {isSindico ? <Crown className="w-4 h-4" /> : <BadgeInfo className="w-4 h-4" />}
                               </div>
                               <div>
-                                 <span className={`text-[9px] font-black uppercase tracking-widest block ${isSindico ? 'text-amber-600 dark:text-amber-500' : 'text-cyan-600 dark:text-cyan-500'}`}>
-                                    {isSindico ? 'Administração' : 'Operacional'}
+                                 <span className={`text-[9px] font-black uppercase tracking-widest block ${roleStyles.label}`}>
+                                    {roleLabel}
                                  </span>
                                  <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{notice.author} • {new Date(notice.date).toLocaleDateString()}</span>
                               </div>
@@ -137,7 +140,7 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                               className={`w-full py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${
                                  notice.read 
                                     ? 'bg-[var(--glass-bg)] cursor-default border border-[var(--border-color)]' 
-                                    : `hover:scale-[1.02] active:scale-95 shadow-lg ${isSindico ? 'bg-amber-500 text-white hover:bg-amber-400 dark:text-black dark:hover:bg-amber-400' : 'bg-cyan-500 text-white hover:bg-cyan-400 dark:text-black dark:hover:bg-cyan-400'}`
+                                    : `hover:scale-[1.02] active:scale-95 shadow-lg ${roleStyles.btn}`
                               }`}
                               style={notice.read ? { color: 'var(--text-secondary)' } : {}}
                            >

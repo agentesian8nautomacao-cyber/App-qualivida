@@ -14,6 +14,7 @@ interface BoletosViewProps {
   onDeleteBoleto?: (boleto: Boleto) => void;
   onImportClick?: () => void;
   showImportButton?: boolean;
+  isResidentView?: boolean;
 }
 
 const BoletosView: React.FC<BoletosViewProps> = ({
@@ -25,7 +26,8 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   onDownloadBoleto,
   onDeleteBoleto,
   onImportClick,
-  showImportButton = true
+  showImportButton = true,
+  isResidentView = false
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'Pendente' | 'Pago' | 'Vencido'>('all');
 
@@ -109,6 +111,84 @@ const BoletosView: React.FC<BoletosViewProps> = ({
     return { total, pendentes, pagos, vencidos, totalAmount, pendenteAmount };
   }, [allBoletos]);
 
+  // Versão simplificada para moradores
+  if (isResidentView) {
+    const sortedBoletos = [...allBoletos].sort((a, b) => {
+      // Ordenar por data de referência (mais recente primeiro)
+      return new Date(b.referenceMonth).getTime() - new Date(a.referenceMonth).getTime();
+    });
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+        <header>
+          <h3 className="text-3xl font-black uppercase tracking-tighter">Boletos</h3>
+          <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">Taxa de Condomínio</p>
+        </header>
+
+        {sortedBoletos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-4">
+            <FileText className="w-16 h-16 opacity-20" />
+            <h3 className="text-xl font-black uppercase tracking-tight opacity-40">
+              Nenhum boleto disponível
+            </h3>
+            <p className="text-sm opacity-30 text-center max-w-md">
+              Seus boletos aparecerão aqui quando estiverem disponíveis
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {sortedBoletos.map((boleto) => (
+              <div
+                key={boleto.id}
+                className="premium-glass rounded-2xl p-6 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all group"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <FileText className="w-5 h-5 opacity-40" />
+                      <div>
+                        <h4 className="text-lg font-black uppercase tracking-tight">
+                          Boleto - {boleto.referenceMonth}
+                        </h4>
+                        <p className="text-xs opacity-40 font-bold uppercase tracking-wider">
+                          {formatUnit(boleto.unit)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    {boleto.pdfUrl && (
+                      <>
+                        {onViewBoleto && (
+                          <button
+                            onClick={() => onViewBoleto(boleto)}
+                            className="px-6 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50 flex items-center gap-2 text-xs font-black uppercase tracking-wider"
+                            style={{ color: 'var(--text-primary)' }}
+                          >
+                            <Eye className="w-4 h-4" /> Visualizar
+                          </button>
+                        )}
+                        {onDownloadBoleto && (
+                          <button
+                            onClick={() => onDownloadBoleto(boleto)}
+                            className="px-6 py-3 rounded-xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider"
+                          >
+                            <Download className="w-4 h-4" /> Download
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Versão completa para administradores
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">

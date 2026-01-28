@@ -40,7 +40,6 @@ const defaultConfig: AppConfig = {
   keyboardShortcuts: [
     { key: 'Ctrl+C', action: 'packages', description: 'Abrir Encomendas' },
     { key: 'Ctrl+V', action: 'visitors', description: 'Abrir Visitantes' },
-    { key: 'Ctrl+T', action: 'notes', description: 'Abrir Notas' },
     { key: 'Ctrl+D', action: 'dashboard', description: 'Voltar ao Dashboard' },
     { key: 'Ctrl+S', action: 'settings', description: 'Abrir Configurações' }
   ],

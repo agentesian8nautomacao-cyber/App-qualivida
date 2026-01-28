@@ -7,12 +7,11 @@ import LogoSplash from './components/LogoSplash';
 import ResidentRegister from './components/ResidentRegister';
 import ScreenSaver from './components/ScreenSaver';
 import VideoIntro from './components/VideoIntro';
-import { UserRole, Package, Resident, Note, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto, Notification } from './types';
+import { UserRole, Package, Resident, VisitorLog, PackageItem, Occurrence, Notice, ChatMessage, QuickViewCategory, Staff, Boleto, Notification } from './types';
 
 // Components
 import RecentEventsBar from './components/RecentEventsBar';
 import QuickViewModal from './components/QuickViewModal';
-import DraggableFab from './components/DraggableFab';
 
 // Views
 import DashboardView from './components/views/DashboardView';
@@ -23,7 +22,6 @@ import VisitorsView from './components/views/VisitorsView';
 import PackagesView from './components/views/PackagesView';
 import ResidentsView from './components/views/ResidentsView';
 import OccurrencesView from './components/views/OccurrencesView';
-import NotesView from './components/views/NotesView';
 import AiView from './components/views/AiView';
 import StaffView from './components/views/StaffView';
 import AiReportsView from './components/views/AiReportsView';
@@ -47,19 +45,18 @@ import {
   getResidents, getPackages, savePackage, updatePackage, deletePackage,
   saveResident, deleteResident,
   getVisitors, saveVisitor, updateVisitor,
-  getOccurrences, saveOccurrence, updateOccurrence,
+  getOccurrences, saveOccurrence, updateOccurrence, deleteOccurrence,
   getBoletos, saveBoleto, updateBoleto, deleteBoleto,
-  getNotes, saveNote, updateNote, deleteNote,
   getNotices, saveNotice, updateNotice, deleteNotice,
   getChatMessages, saveChatMessage,
   getStaff, saveStaff, deleteStaff,
   getAreas, getReservations, saveReservation, updateReservation
 } from './services/dataService';
-import { getNotifications, countUnreadNotifications } from './services/notificationService';
+import { getNotifications, deleteNotification, markNotificationAsRead, markAllNotificationsAsRead } from './services/notificationService';
 import { supabase, isSupabasePlaceholder } from './services/supabase';
 
 // Modals
-import { NewReservationModal, NewVisitorModal, NewPackageModal, NewNoteModal, StaffFormModal } from './components/modals/ActionModals';
+import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal } from './components/modals/ActionModals';
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
 import ImportBoletosModal from './components/modals/ImportBoletosModal';
@@ -378,33 +375,46 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
-    getVisitors().then((res) => { if (!cancelled && res.data) setVisitorLogs(res.data); });
+    // Se for morador, filtrar visitantes apenas da sua unidade
+    const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
+    getVisitors(unitFilter).then((res) => { if (!cancelled && res.data) setVisitorLogs(res.data); });
     getOccurrences().then((res) => { if (!cancelled && res.data) setAllOccurrences(res.data); });
     getBoletos().then((res) => { if (!cancelled && res.data) setAllBoletos(res.data); });
     return () => { cancelled = true; };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, role, currentResident]);
 
-  // Carregar notas, avisos, chat, staff do Supabase
+  // Carregar avisos, chat, staff do Supabase
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
-    getNotes().then((res) => { if (!cancelled && res.data) setAllNotes(res.data); });
-    getNotices().then((res) => { if (!cancelled && res.data) setAllNotices(res.data); });
+    getNotices((data) => { if (!cancelled && data) setAllNotices(data); }).then((res) => {
+      if (!cancelled && res.data) setAllNotices(res.data);
+    });
     getChatMessages().then((res) => { if (!cancelled && res.data) setChatMessages(res.data); });
     getStaff().then((res) => { if (!cancelled && res.data) setAllStaff(res.data); });
     return () => { cancelled = true; };
   }, [isAuthenticated]);
 
+  // Refetch avisos ao abrir o Mural (garante visibilidade para portaria/síndico)
+  useEffect(() => {
+    if (!isAuthenticated || activeTab !== 'notices') return;
+    getNotices((data) => setAllNotices(data || [])).then((res) => {
+      if (res.data) setAllNotices(res.data);
+    });
+  }, [isAuthenticated, activeTab]);
+
   const [allOccurrences, setAllOccurrences] = useState<Occurrence[]>([]);
   const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>([]);
-  const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [allNotices, setAllNotices] = useState<Notice[]>([]);
   const [allBoletos, setAllBoletos] = useState<Boleto[]>([]);
   const [boletoSearch, setBoletoSearch] = useState('');
 
-  // Estado de notificações
+  // Estado de notificações (fonte única de verdade; evita reidratação ao voltar na aba)
   const [allNotifications, setAllNotifications] = useState<Notification[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const recentlyDeletedNotificationIds = useRef<Set<string>>(new Set());
+  const recentlyMarkedAsReadIds = useRef<Set<string>>(new Set());
 
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [staffSearch, setStaffSearch] = useState('');
@@ -565,10 +575,9 @@ const App: React.FC = () => {
       hasActiveVisitor: visitorLogs.some(v => v.status === 'active'),
       hasOpenOccurrences: allOccurrences.some(o => o.status === 'Aberto'),
       hasUpcomingReservation: dayReservations.some(r => r.date === today && (r.status === 'scheduled' || r.status === 'active')),
-      hasActiveNote: allNotes.some(n => !n.completed),
       hasNewNotice: allNotices.some(n => isWithin(n.date, 1440))
     };
-  }, [allPackages, visitorLogs, allOccurrences, allNotes, allNotices, dayReservations]);
+  }, [allPackages, visitorLogs, allOccurrences, allNotices, dayReservations]);
 
   const quickViewData = useMemo(() => {
     if (!quickViewCategory) return [];
@@ -584,11 +593,10 @@ const App: React.FC = () => {
           .filter(r => r.date === today && (r.status === 'scheduled' || r.status === 'active'))
           .map(r => ({ id: r.id, area: r.area, unit: r.unit, time: r.time, residentName: r.resident, date: r.date }));
       }
-      case 'notes': return allNotes.filter(n => !n.completed);
       case 'notices': return allNotices.slice(0, 3);
       default: return [];
     }
-  }, [quickViewCategory, allPackages, visitorLogs, allOccurrences, allNotes, allNotices, dayReservations]);
+  }, [quickViewCategory, allPackages, visitorLogs, allOccurrences, allNotices, dayReservations]);
 
   const [isNewPackageModalOpen, setIsNewPackageModalOpen] = useState(false);
   const [packageStep, setPackageStep] = useState(1);
@@ -641,14 +649,13 @@ const App: React.FC = () => {
       packages: allPackages.filter(p => p.recipient.toLowerCase().includes(q) || p.unit.toLowerCase().includes(q) || p.type.toLowerCase().includes(q) || p.status.toLowerCase().includes(q) || (p.displayTime && p.displayTime.toLowerCase().includes(q))).slice(0, 4),
       visitors: visitorLogs.filter(v => (v.visitorNames?.toLowerCase().includes(q) || v.unit.toLowerCase().includes(q) || v.residentName.toLowerCase().includes(q) || v.status.toLowerCase().includes(q)) && v.status === 'active').slice(0, 4),
       occurrences: allOccurrences.filter(o => o.description.toLowerCase().includes(q) || o.unit.toLowerCase().includes(q) || o.residentName.toLowerCase().includes(q) || o.status.toLowerCase().includes(q)).slice(0, 4),
-      notes: allNotes.filter(n => n.content.toLowerCase().includes(q) || (n.category && n.category.toLowerCase().includes(q))).slice(0, 4),
       reservations: dayReservations.filter(r => resFilter(r)).slice(0, 4)
     };
-  }, [globalSearchQuery, allResidents, allPackages, visitorLogs, allOccurrences, allNotes, dayReservations]);
+  }, [globalSearchQuery, allResidents, allPackages, visitorLogs, allOccurrences, dayReservations]);
 
   const hasAnyGlobalResult = useMemo(() => {
     if (!globalResults) return false;
-    return (globalResults.residents.length > 0 || globalResults.packages.length > 0 || globalResults.visitors.length > 0 || globalResults.occurrences.length > 0 || globalResults.notes.length > 0 || globalResults.reservations.length > 0);
+    return (globalResults.residents.length > 0 || globalResults.packages.length > 0 || globalResults.visitors.length > 0 || globalResults.occurrences.length > 0 || globalResults.reservations.length > 0);
   }, [globalResults]);
 
   useEffect(() => {
@@ -680,16 +687,18 @@ const App: React.FC = () => {
     loadPackages();
   }, [isAuthenticated, role, activeTab]);
 
-  // Carregar notificações quando morador estiver autenticado
+  // Carregar notificações quando morador estiver autenticado (única carga; sem refetch ao trocar de aba)
   useEffect(() => {
     if (!isAuthenticated || role !== 'MORADOR' || !currentResident) return;
 
     const loadNotifications = async () => {
+      setNotificationsLoading(true);
       const result = await getNotifications(currentResident.id);
       if (result.data) {
         setAllNotifications(result.data);
         setUnreadNotificationCount(result.data.filter(n => !n.read).length);
       }
+      setNotificationsLoading(false);
     };
 
     loadNotifications();
@@ -726,6 +735,7 @@ const App: React.FC = () => {
             message: payload.new.message,
             type: payload.new.type || 'package',
             related_id: payload.new.related_id || undefined,
+            image_url: payload.new.image_url ?? undefined,
             read: payload.new.read || false,
             created_at: payload.new.created_at
           };
@@ -755,16 +765,40 @@ const App: React.FC = () => {
           filter: `morador_id=eq.${currentResident.id}`
         },
         (payload) => {
-          // Atualizar notificação se foi marcada como lida
-          setAllNotifications(prev =>
-            prev.map(n => n.id === payload.new.id ? {
-              ...n,
-              read: payload.new.read || false
-            } : n)
-          );
-          setUnreadNotificationCount(prev => 
-            payload.new.read ? Math.max(0, prev - 1) : prev
-          );
+          const id = payload.new?.id;
+          const nowRead = payload.new?.read === true;
+          if (recentlyMarkedAsReadIds.current.has(id)) return;
+          let shouldDecrement = false;
+          setAllNotifications(prev => {
+            const n = prev.find(x => x.id === id);
+            shouldDecrement = Boolean(n && !n.read && nowRead);
+            return prev.map(x => x.id === id ? { ...x, read: nowRead || false } : x);
+          });
+          if (shouldDecrement) {
+            queueMicrotask(() => setUnreadNotificationCount(c => Math.max(0, c - 1)));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `morador_id=eq.${currentResident.id}`
+        },
+        (payload) => {
+          const id = (payload as { old?: { id?: string } }).old?.id;
+          if (!id) return;
+          if (recentlyDeletedNotificationIds.current.has(id)) {
+            recentlyDeletedNotificationIds.current.delete(id);
+            return;
+          }
+          const wasUnread = (payload as { old?: { read?: boolean } }).old?.read === false;
+          setAllNotifications(prev => prev.filter(n => n.id !== id));
+          if (wasUnread) {
+            setUnreadNotificationCount(prev => Math.max(0, prev - 1));
+          }
         }
       )
       .subscribe((status) => {
@@ -782,13 +816,51 @@ const App: React.FC = () => {
     };
   }, [isAuthenticated, role, currentResident]);
 
+  const handleDeleteNotification = useCallback(async (notificationId: string) => {
+    const result = await deleteNotification(notificationId);
+    if (!result.success) {
+      toast.error('Erro ao excluir notificação: ' + (result.error || 'Erro desconhecido'));
+      return;
+    }
+    const notification = allNotifications.find(n => n.id === notificationId);
+    const wasUnread = notification?.read === false;
+    recentlyDeletedNotificationIds.current.add(notificationId);
+    setTimeout(() => recentlyDeletedNotificationIds.current.delete(notificationId), 5000);
+    setAllNotifications(prev => prev.filter(n => n.id !== notificationId));
+    if (wasUnread) {
+      setUnreadNotificationCount(prev => Math.max(0, prev - 1));
+    }
+  }, [allNotifications, toast]);
+
+  const handleMarkNotificationAsRead = useCallback(async (notificationId: string) => {
+    const result = await markNotificationAsRead(notificationId);
+    if (result.success) {
+      recentlyMarkedAsReadIds.current.add(notificationId);
+      setTimeout(() => recentlyMarkedAsReadIds.current.delete(notificationId), 5000);
+      setAllNotifications(prev =>
+        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      );
+      setUnreadNotificationCount(prev => Math.max(0, prev - 1));
+    }
+  }, []);
+
+  const handleMarkAllNotificationsAsRead = useCallback(async () => {
+    if (!currentResident) return;
+    const result = await markAllNotificationsAsRead(currentResident.id);
+    if (result.success) {
+      setAllNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadNotificationCount(0);
+    }
+  }, [currentResident]);
+
   const handleVisitorCheckOut = async (id: string) => {
     const visitor = visitorLogs.find((v) => v.id === id);
     if (!visitor) return;
     const updatedVisitor = { ...visitor, status: 'completed' as const, exitTime: new Date().toISOString() };
     const result = await updateVisitor(updatedVisitor);
     if (result.success) {
-      const { data } = await getVisitors();
+      const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
+      const { data } = await getVisitors(unitFilter);
       if (data) setVisitorLogs(data);
     } else {
       console.error('Erro ao atualizar visitante:', result.error);
@@ -812,7 +884,8 @@ const App: React.FC = () => {
     };
     const result = await saveVisitor(newVisitor);
     if (result.success) {
-      const { data } = await getVisitors();
+      const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
+      const { data } = await getVisitors(unitFilter);
       if (data) setVisitorLogs(data);
       resetVisitorModal();
     } else {
@@ -883,15 +956,16 @@ const App: React.FC = () => {
 
       const result = await savePackage(newPkg);
       if (result.success && result.id) {
-        // Recarregar pacotes do banco para garantir que todos os dados estejam atualizados (incluindo image_url)
+        const savedId = result.id;
+        // Recarregar pacotes para garantir histórico completo (evitar substituição indevida)
         const packagesResult = await getPackages();
-        if (packagesResult.data) {
-          setAllPackages(packagesResult.data);
-        } else {
-          // Fallback: adicionar o pacote localmente se não conseguir recarregar
-          newPkg.id = result.id;
-          setAllPackages([newPkg, ...allPackages]);
+        let nextList = packagesResult.data ?? [];
+        const alreadyIncludes = nextList.some((p) => p.id === savedId);
+        if (!alreadyIncludes) {
+          const merged: Package = { ...newPkg, id: savedId };
+          nextList = [merged, ...nextList];
         }
+        setAllPackages(nextList);
         
         // Feedback de sucesso
         // A notificação automática no app já foi criada pelo savePackage
@@ -1000,6 +1074,26 @@ const App: React.FC = () => {
     } else {
       console.error('Erro ao resolver ocorrência:', result.error);
       toast.error('Erro ao resolver ocorrência: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+  const handleDeleteOccurrence = async (id: string) => {
+    const occurrence = allOccurrences.find((occ) => occ.id === id);
+    if (!occurrence) return;
+    
+    // Confirmar exclusão apenas se não estiver resolvida (segurança extra)
+    if (occurrence.status !== 'Resolvido') {
+      toast.error('Apenas ocorrências resolvidas podem ser excluídas');
+      return;
+    }
+    
+    const result = await deleteOccurrence(id);
+    if (result.success) {
+      setAllOccurrences(prev => prev.filter(occ => occ.id !== id));
+      setSelectedOccurrenceForDetail(prev => (prev?.id === id ? null : prev));
+      toast.success('Ocorrência excluída com sucesso');
+    } else {
+      console.error('Erro ao excluir ocorrência:', result.error);
+      toast.error('Erro ao excluir ocorrência: ' + (result.error || 'Erro desconhecido'));
     }
   };
   const handleSaveOccurrenceDetails = async () => {
@@ -1245,16 +1339,6 @@ const App: React.FC = () => {
     }
   };
 
-  const [isNewNoteModalOpen, setIsNewNoteModalOpen] = useState(false);
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [newNoteContent, setNewNoteContent] = useState('');
-  const [noteCategories, setNoteCategories] = useState([ { name: 'Geral', color: 'bg-zinc-100' }, { name: 'Manutenção', color: 'bg-amber-100' }, { name: 'Segurança', color: 'bg-red-100' }, { name: 'Entrega', color: 'bg-blue-100' } ]);
-  const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [isManagingCategories, setIsManagingCategories] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newNoteCategory, setNewNoteCategory] = useState('Geral');
-  const [newNoteScheduled, setNewNoteScheduled] = useState('');
-  const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isOccurrenceModalOpen, setIsOccurrenceModalOpen] = useState(false);
   const [occurrenceDescription, setOccurrenceDescription] = useState('');
 
@@ -1338,30 +1422,6 @@ const App: React.FC = () => {
     sessionStorage.removeItem('userRole');
   };
 
-  const handleSaveNote = async () => {
-    if (!newNoteContent.trim()) return;
-    const iso = new Date().toISOString();
-    if (editingNoteId) {
-      const note = allNotes.find((n) => n.id === editingNoteId);
-      if (!note) return;
-      const res = await updateNote({ ...note, content: newNoteContent, category: newNoteCategory, scheduled: newNoteScheduled });
-      if (!res.success) {
-        toast.error('Erro ao atualizar nota: ' + (res.error || 'Erro desconhecido'));
-        return;
-      }
-    } else {
-      const res = await saveNote({ id: `temp-${Date.now()}`, content: newNoteContent, date: iso, completed: false, category: newNoteCategory, scheduled: newNoteScheduled });
-      if (!res.success) {
-        toast.error('Erro ao criar nota: ' + (res.error || 'Erro desconhecido'));
-        return;
-      }
-    }
-    const { data } = await getNotes();
-    if (data) setAllNotes(data);
-    setNewNoteContent(''); setNewNoteCategory('Geral'); setNewNoteScheduled(''); setIsScheduleOpen(false); setEditingNoteId(null); setIsNewNoteModalOpen(false);
-  };
-  const handleAddCategory = () => { if (!newCatName.trim()) return; const colors = ['bg-zinc-100', 'bg-amber-100', 'bg-red-100', 'bg-blue-100', 'bg-purple-100', 'bg-green-100']; const randomColor = colors[Math.floor(Math.random() * colors.length)]; setNoteCategories([...noteCategories, { name: newCatName.trim(), color: randomColor }]); setNewCatName(''); setIsAddingCategory(false); };
-  const handleRemoveCategory = (name: string) => { if (name === 'Geral') return; setNoteCategories(noteCategories.filter(cat => cat.name !== name)); if (newNoteCategory === name) setNewNoteCategory('Geral'); };
 
   const handleSaveStaff = async () => {
     if (!staffFormData.name || !staffFormData.role) return;
@@ -1442,11 +1502,6 @@ const App: React.FC = () => {
           setSelectedVisitorForDetail={setSelectedVisitorForDetail}
           setSelectedOccurrenceForDetail={setSelectedOccurrenceForDetail}
           setReservationFilter={setReservationFilter}
-          setEditingNoteId={setEditingNoteId}
-          setNewNoteContent={setNewNoteContent}
-          setNewNoteCategory={setNewNoteCategory}
-          setNewNoteScheduled={setNewNoteScheduled}
-          setIsNewNoteModalOpen={setIsNewNoteModalOpen}
         />
       );
     }
@@ -1905,25 +1960,24 @@ const App: React.FC = () => {
       case 'boletos': 
         if (role === 'MORADOR' && currentResident) {
           const myBoletos = allBoletos.filter(b => b.unit === currentResident.unit);
-          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} showImportButton={false} />;
+          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} showImportButton={false} isResidentView={true} />;
         }
-        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} onDeleteBoleto={handleDeleteBoleto} onImportClick={() => setIsImportBoletosModalOpen(true)} showImportButton={true} />;
+        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} onDeleteBoleto={handleDeleteBoleto} onImportClick={() => setIsImportBoletosModalOpen(true)} showImportButton={true} isResidentView={false} />;
       case 'visitors': 
-        if (role === 'MORADOR') {
-          return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
-              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
-              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
-                Esta página é de acesso exclusivo do Porteiro.
-              </p>
-            </div>
-          );
-        }
-        return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} />;
+        return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} role={role} />;
       case 'notifications':
         if (role === 'MORADOR' && currentResident) {
-          return <NotificationsView moradorId={currentResident.id} allPackages={allPackages.filter(p => p.unit === currentResident.unit)} onViewPackage={setSelectedPackageForDetail} />;
+          return (
+            <NotificationsView
+              notifications={allNotifications}
+              loading={notificationsLoading}
+              allPackages={allPackages.filter(p => p.unit === currentResident.unit)}
+              onViewPackage={setSelectedPackageForDetail}
+              onMarkAsRead={handleMarkNotificationAsRead}
+              onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+              onDeleteNotification={handleDeleteNotification}
+            />
+          );
         }
         return (
           <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -1936,7 +1990,27 @@ const App: React.FC = () => {
         );
       case 'packages': 
         if (role === 'MORADOR' && currentResident) {
-          const myPackages = allPackages.filter(p => p.unit === currentResident.unit);
+          // Normalizar unidades para comparação (remover espaços, converter para maiúsculas)
+          const normalizeUnit = (unit: string) => unit?.trim().toUpperCase() || '';
+          const residentUnit = normalizeUnit(currentResident.unit);
+          
+          // Filtrar encomendas do morador e ordenar por data (mais recente primeiro)
+          const myPackages = allPackages
+            .filter(p => normalizeUnit(p.unit) === residentUnit)
+            .sort((a, b) => {
+              const dateA = new Date(a.receivedAt).getTime();
+              const dateB = new Date(b.receivedAt).getTime();
+              return dateB - dateA; // Mais recente primeiro
+            });
+          
+          // Log para debug
+          console.log('[PackagesView - Morador]', {
+            residentUnit,
+            totalPackages: allPackages.length,
+            myPackagesCount: myPackages.length,
+            myPackages: myPackages.map(p => ({ id: p.id, unit: p.unit, status: p.status, receivedAt: p.receivedAt }))
+          });
+          
           return <PackagesView allPackages={myPackages} allResidents={[]} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onDeletePackage={handleDeletePackage} onCameraScan={undefined} />;
         }
         if (role === 'SINDICO') {
@@ -1987,6 +2061,7 @@ const App: React.FC = () => {
               setOccurrenceSearch={setOccurrenceSearch}
               setIsOccurrenceModalOpen={setIsOccurrenceModalOpen}
               handleResolveOccurrence={handleResolveOccurrence}
+              handleDeleteOccurrence={handleDeleteOccurrence}
             />
           );
         }
@@ -1997,21 +2072,9 @@ const App: React.FC = () => {
             setOccurrenceSearch={setOccurrenceSearch}
             setIsOccurrenceModalOpen={setIsOccurrenceModalOpen}
             handleResolveOccurrence={handleResolveOccurrence}
+            handleDeleteOccurrence={handleDeleteOccurrence}
           />
         );
-      case 'notes': 
-        if (role === 'MORADOR') {
-          return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
-              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
-              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
-                Esta página é de acesso exclusivo do Porteiro.
-              </p>
-            </div>
-          );
-        }
-        return <NotesView allNotes={allNotes} setEditingNoteId={setEditingNoteId} setNewNoteContent={setNewNoteContent} setIsNewNoteModalOpen={setIsNewNoteModalOpen} setAllNotes={setAllNotes} />;
       case 'ai': 
         // ASSISTENTE IA: Acesso exclusivo para PORTEIRO e SINDICO - Moradores NÃO têm acesso
         if (role === 'MORADOR') {
@@ -2030,7 +2093,6 @@ const App: React.FC = () => {
             allPackages={allPackages} 
             visitorLogs={visitorLogs} 
             allOccurrences={allOccurrences} 
-            allNotes={allNotes}
             allResidents={allResidents}
             dayReservations={dayReservations}
             allNotices={allNotices}
@@ -2077,7 +2139,6 @@ const App: React.FC = () => {
             allPackages={allPackages} 
             visitorLogs={visitorLogs} 
             allOccurrences={allOccurrences} 
-            allNotes={allNotes} 
             dayReservations={dayReservations} 
           />
         );
@@ -2132,20 +2193,14 @@ const App: React.FC = () => {
       >
         {renderContent()}
       </Layout>
-      {role === 'PORTEIRO' && <DraggableFab onClick={() => { setEditingNoteId(null); setNewNoteContent(''); setIsNewNoteModalOpen(true); }} />}
       <QuickViewModal 
         category={quickViewCategory} data={quickViewData} onClose={() => setQuickViewCategory(null)} onGoToPage={(tab) => setActiveTab(tab)}
-        onMarkAsDone={async (note) => {
-          const res = await updateNote({ ...note, completed: true });
-          if (res.success) { const { data } = await getNotes(); if (data) setAllNotes(data); }
-        }}
         onAddNew={() => { if (quickViewCategory === 'visitors') { setQuickViewCategory(null); resetVisitorModal(); setIsVisitorModalOpen(true); } }}
         onSelectItem={(item) => { 
           if (quickViewCategory === 'packages') { setSelectedPackageForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'visitors') { setSelectedVisitorForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'occurrences') { setSelectedOccurrenceForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'reservations') { setActiveTab('reservations'); setQuickViewCategory(null); }
-          else if (quickViewCategory === 'notes') { setEditingNoteId(item.id); setNewNoteContent(item.content); setNewNoteCategory(item.category || 'Geral'); setNewNoteScheduled(item.scheduled || ''); setIsNewNoteModalOpen(true); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'notices') { setSelectedNoticeForEdit(item); setQuickViewCategory(null); }
         }}
       />
@@ -2154,7 +2209,6 @@ const App: React.FC = () => {
       <NewReservationModal isOpen={isReservationModalOpen} onClose={() => setIsReservationModalOpen(false)} data={newReservationData} setData={setNewReservationData} areasStatus={areasStatus} searchQuery={reservationSearchQuery} setSearchQuery={setReservationSearchQuery} showSuggestions={showResSuggestions} setShowSuggestions={setShowResSuggestions} filteredResidents={filteredResForReservation} hasConflict={hasTimeConflict} onConfirm={handleCreateReservation} />
       <NewVisitorModal isOpen={isVisitorModalOpen} onClose={resetVisitorModal} step={newVisitorStep} setStep={setNewVisitorStep} data={newVisitorData} setData={setNewVisitorData} searchResident={searchResident} setSearchResident={setSearchResident} filteredResidents={filteredResidents} accessTypes={visitorAccessTypes} handleRemoveAccessType={handleRemoveAccessType} isAddingAccessType={isAddingAccessType} setIsAddingAccessType={setIsAddingAccessType} newAccessTypeInput={newAccessTypeInput} setNewAccessTypeInput={setNewAccessTypeInput} handleAddAccessType={handleAddAccessType} onConfirm={handleRegisterVisitor} />
       <NewPackageModal isOpen={isNewPackageModalOpen} onClose={resetPackageModal} step={packageStep} setStep={setPackageStep} searchResident={searchResident} setSearchResident={setSearchResident} selectedResident={selectedResident} setSelectedResident={setSelectedResident} filteredResidents={filteredResidents} allResidents={allResidents} residentsLoading={residentsLoading} residentsError={residentsError} onRetryResidents={() => fetchResidents(false)} packageSaving={packageSaving} pendingImage={pendingPackageImage} pendingQrData={pendingPackageQrData} packageType={packageType} setPackageType={setPackageType} packageCategories={packageCategories} isAddingPkgCategory={isAddingPkgCategory} setIsAddingPkgCategory={setIsAddingPkgCategory} newPkgCatName={newPkgCatName} setNewPkgCatName={setNewPkgCatName} handleAddPkgCategory={handleAddPkgCategory} numItems={numItems} packageItems={packageItems} handleAddItemRow={handleAddItemRow} handleRemoveItemRow={handleRemoveItemRow} updateItem={updateItem} packageMessage={packageMessage} setPackageMessage={setPackageMessage} onConfirm={handleRegisterPackageFinal} />
-      <NewNoteModal isOpen={isNewNoteModalOpen} onClose={() => { setIsNewNoteModalOpen(false); setEditingNoteId(null); setIsAddingCategory(false); setIsManagingCategories(false); }} editingId={editingNoteId} categories={noteCategories} newCategory={newNoteCategory} setNewCategory={setNewNoteCategory} isManaging={isManagingCategories} setIsManaging={setIsManagingCategories} removeCategory={handleRemoveCategory} isAdding={isAddingCategory} setIsAdding={setIsAddingCategory} newCatName={newCatName} setNewCatName={setNewCatName} addCategory={handleAddCategory} content={newNoteContent} setContent={setNewNoteContent} isScheduleOpen={isScheduleOpen} setIsScheduleOpen={setIsScheduleOpen} scheduled={newNoteScheduled} setScheduled={setNewNoteScheduled} allNotes={allNotes} setAllNotes={setAllNotes} onSave={handleSaveNote} />
       <StaffFormModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)} data={staffFormData} setData={setStaffFormData} onSave={handleSaveStaff} />
 
       <ResidentProfileModal resident={selectedResidentProfile} onClose={() => setSelectedResidentProfile(null)} onEdit={() => { handleOpenResidentModal(selectedResidentProfile); setSelectedResidentProfile(null); }} onDelete={selectedResidentProfile ? () => handleDeleteResident(selectedResidentProfile.id) : undefined} allPackages={allPackages} visitorLogs={visitorLogs} onPackageSelect={setSelectedPackageForDetail} onCheckOutVisitor={handleVisitorCheckOut} />

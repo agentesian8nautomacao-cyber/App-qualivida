@@ -127,8 +127,7 @@ const Layout: React.FC<LayoutProps> = ({
     
     // Apenas Porteiro
     { id: 'packages', label: 'Encomendas', icon: Package, roles: ['PORTEIRO'] },
-    { id: 'visitors', label: 'Visitantes', icon: UserCircle, roles: ['PORTEIRO'] },
-    { id: 'notes', label: 'Bloco de Notas', icon: MessageSquare, roles: ['PORTEIRO'] },
+    { id: 'visitors', label: 'Visitantes', icon: UserCircle, roles: ['MORADOR', 'PORTEIRO'] },
     
     // Apenas Síndico
     { id: 'staff', label: 'Funcionários', icon: ClipboardList, roles: ['SINDICO'] },

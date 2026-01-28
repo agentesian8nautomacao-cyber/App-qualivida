@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS notices (
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     author VARCHAR(255) NOT NULL,
-    author_role VARCHAR(20) NOT NULL CHECK (author_role IN ('SINDICO', 'PORTEIRO')),
+    author_role VARCHAR(20) NOT NULL CHECK (author_role IN ('SINDICO', 'PORTEIRO', 'MORADOR')),
     author_id UUID REFERENCES users(id) ON DELETE SET NULL,
     date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     category VARCHAR(50) CHECK (category IN ('Urgente', 'Manutenção', 'Social', 'Institucional')),

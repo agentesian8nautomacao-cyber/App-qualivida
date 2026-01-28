@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Search, Plus, Check } from 'lucide-react';
+import { Search, Plus, Check, X } from 'lucide-react';
 import { Occurrence } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
 
@@ -10,6 +10,7 @@ interface OccurrencesViewProps {
   setOccurrenceSearch: (val: string) => void;
   setIsOccurrenceModalOpen: (val: boolean) => void;
   handleResolveOccurrence: (id: string) => void;
+  handleDeleteOccurrence: (id: string) => void;
 }
 
 const OccurrencesView: React.FC<OccurrencesViewProps> = ({
@@ -17,7 +18,8 @@ const OccurrencesView: React.FC<OccurrencesViewProps> = ({
   occurrenceSearch,
   setOccurrenceSearch,
   setIsOccurrenceModalOpen,
-  handleResolveOccurrence
+  handleResolveOccurrence,
+  handleDeleteOccurrence
 }) => {
   const displayOccurrences = allOccurrences.filter(occ => 
     occ.residentName.toLowerCase().includes(occurrenceSearch.toLowerCase()) ||
@@ -57,14 +59,25 @@ const OccurrencesView: React.FC<OccurrencesViewProps> = ({
               <span className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase ${occ.status === 'Aberto' ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
                 {occ.status}
               </span>
-              {occ.status === 'Aberto' && (
-                <button 
-                  onClick={() => handleResolveOccurrence(occ.id)}
-                  className="px-4 py-1.5 bg-zinc-100 text-black rounded-xl text-[9px] font-black uppercase hover:bg-zinc-200 transition-all flex items-center gap-2 shadow-sm border border-black/5"
-                >
-                  <Check className="w-3 h-3" /> Resolver
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {occ.status === 'Aberto' && (
+                  <button 
+                    onClick={() => handleResolveOccurrence(occ.id)}
+                    className="px-4 py-1.5 bg-zinc-100 text-black rounded-xl text-[9px] font-black uppercase hover:bg-zinc-200 transition-all flex items-center gap-2 shadow-sm border border-black/5"
+                  >
+                    <Check className="w-3 h-3" /> Resolver
+                  </button>
+                )}
+                {occ.status === 'Resolvido' && (
+                  <button 
+                    onClick={() => handleDeleteOccurrence(occ.id)}
+                    className="p-1.5 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500/20 transition-all flex items-center justify-center shadow-sm border border-red-500/20"
+                    title="Excluir ocorrência"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

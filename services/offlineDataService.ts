@@ -71,11 +71,23 @@ export async function getData<T extends { id: string; updated_at?: string }>(
 
 export type WriteResult = { success: boolean; id?: string; error?: string; queued?: boolean };
 
-function ensureId(payload: any): string {
-  if (payload?.id && typeof payload.id === 'string') {
-    return payload.id;
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
   }
-  const id = `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function ensureId(payload: any): string {
+  const raw = payload?.id;
+  if (typeof raw === 'string' && raw.length > 0 && !raw.startsWith('temp-')) {
+    return raw;
+  }
+  const id = generateUUID();
   payload.id = id;
   return id;
 }
@@ -281,6 +293,13 @@ async function processOutboxEntry(entry: OutboxRecord): Promise<void> {
   const table = entry.table;
   const payload = entry.payload || {};
   const id = payload.id || entry.id;
+
+  // Descartar INSERTs antigos com id temp-* (inválidos para UUID). Evita retry infinito.
+  if (entry.operation === 'INSERT' && typeof id === 'string' && id.startsWith('temp-')) {
+    console.warn('[offlineDataService] Descartando INSERT obsoleto com id temp-*:', id);
+    await markOutboxAsSynced(entry.id);
+    return;
+  }
 
   // Política: last write wins baseada em updated_at do payload.
   // O Supabase/Postgres mantém updated_at como fonte de verdade.

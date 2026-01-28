@@ -1,63 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { Bell, Package, CheckCircle2, X, Eye, Clock, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, Package, CheckCircle2, X, Eye, Clock } from 'lucide-react';
 import { Notification, Package as PackageType } from '../../types';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from '../../services/notificationService';
-import { useToast } from '../../contexts/ToastContext';
 
 interface NotificationsViewProps {
-  moradorId: string;
+  notifications: Notification[];
+  loading: boolean;
   allPackages: PackageType[];
   onViewPackage?: (pkg: PackageType) => void;
+  onMarkAsRead: (id: string) => Promise<void>;
+  onMarkAllAsRead: () => Promise<void>;
+  onDeleteNotification: (id: string) => Promise<void>;
 }
 
 const NotificationsView: React.FC<NotificationsViewProps> = ({
-  moradorId,
+  notifications,
+  loading,
   allPackages,
-  onViewPackage
+  onViewPackage,
+  onMarkAsRead,
+  onMarkAllAsRead,
+  onDeleteNotification
 }) => {
-  const toast = useToast();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('unread');
 
-  useEffect(() => {
-    loadNotifications();
-  }, [moradorId]);
-
-  const loadNotifications = async () => {
-    setLoading(true);
-    const result = await getNotifications(moradorId);
-    if (result.data) {
-      setNotifications(result.data);
-    }
-    setLoading(false);
-  };
-
-  const handleMarkAsRead = async (notificationId: string) => {
-    const result = await markNotificationAsRead(notificationId);
-    if (result.success) {
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
-      );
-    }
-  };
-
-  const handleMarkAllAsRead = async () => {
-    const result = await markAllNotificationsAsRead(moradorId);
-    if (result.success) {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    }
-  };
-
-  const handleDeleteNotification = async (notificationId: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (notificationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (window.confirm('Tem certeza que deseja excluir esta notificação?')) {
-      const result = await deleteNotification(notificationId);
-      if (result.success) {
-        setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      } else {
-        toast.error('Erro ao excluir notificação: ' + (result.error || 'Erro desconhecido'));
-      }
+      onDeleteNotification(notificationId);
     }
   };
 
@@ -68,6 +37,16 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
         onViewPackage(relatedPackage);
       }
     }
+  };
+
+  /** Imagem da notificação: da própria notificação ou do pacote relacionado (fallback para antigas) */
+  const getNotificationImage = (notification: Notification): string | undefined => {
+    if (notification.image_url) return notification.image_url;
+    if (notification.type === 'package' && notification.related_id) {
+      const pkg = allPackages.find(p => p.id === notification.related_id);
+      return pkg?.imageUrl ?? undefined;
+    }
+    return undefined;
   };
 
   const filteredNotifications = filter === 'unread'
@@ -118,7 +97,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
         </div>
         {unreadCount > 0 && (
           <button
-            onClick={handleMarkAllAsRead}
+            onClick={onMarkAllAsRead}
             className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[10px] sm:text-xs font-semibold uppercase tracking-wider transition-all focus:ring-2 focus:ring-[var(--text-primary)]/20 whitespace-nowrap"
             style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
           >
@@ -181,7 +160,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
             >
               {/* Botão X para deletar */}
               <button
-                onClick={(e) => handleDeleteNotification(notification.id, e)}
+                onClick={(e) => handleDeleteClick(notification.id, e)}
                 className="absolute top-3 right-3 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20 hover:text-red-400"
                 style={{ color: 'var(--text-secondary)' }}
                 title="Excluir notificação"
@@ -225,6 +204,22 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                   >
                     {notification.message}
                   </p>
+                  {(() => {
+                    const imgUrl = getNotificationImage(notification);
+                    return imgUrl ? (
+                      <div className="rounded-xl border overflow-hidden mb-2 max-w-[200px] sm:max-w-[240px]" style={{ borderColor: 'var(--border-color)' }}>
+                        <img
+                          src={imgUrl}
+                          alt="Foto da encomenda"
+                          className="w-full h-auto max-h-32 sm:max-h-40 object-contain"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : null;
+                  })()}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
                     <div className="flex items-center gap-2 text-[9px] sm:text-[10px] opacity-50" style={{ color: 'var(--text-secondary)' }}>
                       <Clock className="w-3 h-3" />
@@ -248,7 +243,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleMarkAsRead(notification.id);
+                            onMarkAsRead(notification.id);
                           }}
                           className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap"
                           style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}

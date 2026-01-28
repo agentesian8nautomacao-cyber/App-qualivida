@@ -9,7 +9,6 @@ interface RecentEventsBarProps {
     hasActiveVisitor: boolean;
     hasOpenOccurrences: boolean;
     hasUpcomingReservation: boolean;
-    hasActiveNote: boolean;
     hasNewNotice: boolean;
   };
   onOpenQuickView: (cat: QuickViewCategory) => void;
@@ -64,15 +63,6 @@ const RecentEventsBar: React.FC<RecentEventsBarProps> = ({ eventStates, onOpenQu
           <span className="hidden lg:block ml-2 text-[10px] font-black uppercase tracking-widest">Agenda</span>
         </button>
 
-        {/* Slot Notas */}
-        <button 
-          onClick={() => onOpenQuickView('notes')}
-          className={`flex-1 flex items-center justify-center py-4 px-2 transition-all group relative border-r border-white/5 ${eventStates.hasActiveNote ? 'text-white' : 'text-white/40 hover:text-white'}`}
-          title="Ver Notas Pendentes"
-        >
-          <Edit3 className="w-5 h-5" />
-          <span className="hidden lg:block ml-2 text-[10px] font-black uppercase tracking-widest">Notas</span>
-        </button>
 
         {/* Slot Mural */}
         <button 

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, Camera, Image as ImageIcon, Users, ChevronDown, ChevronUp, Trash2, Download, Filter } from 'lucide-react';
 import { Package, Resident } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
@@ -40,16 +40,32 @@ const PackagesView: React.FC<PackagesViewProps> = ({
       return false;
     }
     
-    // Aplicar busca por texto
-    const searchLower = packageSearch.toLowerCase();
-    return (
-      p.recipient.toLowerCase().includes(searchLower) ||
-      p.type.toLowerCase().includes(searchLower) ||
-      p.unit.toLowerCase().includes(searchLower) ||
-      p.displayTime.toLowerCase().includes(searchLower) ||
-      p.status.toLowerCase().includes(searchLower)
-    );
+    // Aplicar busca por texto (se houver busca)
+    if (packageSearch.trim()) {
+      const searchLower = packageSearch.toLowerCase();
+      return (
+        p.recipient.toLowerCase().includes(searchLower) ||
+        p.type.toLowerCase().includes(searchLower) ||
+        p.unit.toLowerCase().includes(searchLower) ||
+        (p.displayTime && p.displayTime.toLowerCase().includes(searchLower)) ||
+        p.status.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Se não houver busca, retornar todas que passaram no filtro de status
+    return true;
   });
+
+  // Log para debug
+  useEffect(() => {
+    console.log('[PackagesView]', {
+      totalAllPackages: allPackages.length,
+      displayPackagesCount: displayPackages.length,
+      statusFilter,
+      packageSearch,
+      samplePackages: displayPackages.slice(0, 3).map(p => ({ id: p.id, unit: p.unit, status: p.status }))
+    });
+  }, [allPackages.length, displayPackages.length, statusFilter, packageSearch]);
 
   const pendingCount = allPackages.filter(p => p.status === 'Pendente').length;
   const deliveredCount = allPackages.filter(p => p.status === 'Entregue').length;

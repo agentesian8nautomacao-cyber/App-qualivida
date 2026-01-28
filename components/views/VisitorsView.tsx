@@ -3,6 +3,8 @@ import React from 'react';
 import { Search, Plus, MapPin, Clock, Car, LogOut } from 'lucide-react';
 import { formatUnit } from '../../utils/unitFormatter';
 
+import { UserRole } from '../../types';
+
 interface VisitorsViewProps {
   visitorLogs: any[];
   visitorSearch: string;
@@ -12,6 +14,7 @@ interface VisitorsViewProps {
   setVisitorTab: (tab: 'active' | 'history' | 'service') => void;
   handleVisitorCheckOut: (id: string) => void;
   calculatePermanence: (receivedAt: string) => string;
+  role?: UserRole;
 }
 
 const VisitorsView: React.FC<VisitorsViewProps> = ({
@@ -22,8 +25,10 @@ const VisitorsView: React.FC<VisitorsViewProps> = ({
   visitorTab,
   setVisitorTab,
   handleVisitorCheckOut,
-  calculatePermanence
+  calculatePermanence,
+  role = 'PORTEIRO'
 }) => {
+  const canCreateVisitor = role !== 'MORADOR';
   const displayVisitors = visitorLogs.filter(v => {
     const matchSearch = (v.visitorNames || '').toLowerCase().includes(visitorSearch.toLowerCase()) || 
                         (v.residentName || '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
@@ -53,12 +58,14 @@ const VisitorsView: React.FC<VisitorsViewProps> = ({
                 className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
              />
           </div>
-          <button 
-            onClick={() => setIsVisitorModalOpen(true)}
-            className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Novo Acesso
-          </button>
+          {canCreateVisitor && (
+            <button 
+              onClick={() => setIsVisitorModalOpen(true)}
+              className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Novo Acesso
+            </button>
+          )}
         </div>
       </header>
 
@@ -124,7 +131,7 @@ const VisitorsView: React.FC<VisitorsViewProps> = ({
                  )}
               </div>
 
-              {visitor.status === 'active' && (
+              {visitor.status === 'active' && canCreateVisitor && (
                 <button 
                   onClick={() => handleVisitorCheckOut(visitor.id)}
                   className="w-full py-4 bg-zinc-100 dark:bg-white/10 text-black dark:text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"

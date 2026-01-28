@@ -13,7 +13,6 @@ const KeyboardShortcutsSection: React.FC = () => {
     { value: 'packages', label: 'Encomendas' },
     { value: 'visitors', label: 'Visitantes' },
     { value: 'occurrences', label: 'Ocorrências' },
-    { value: 'notes', label: 'Notas' },
     { value: 'notices', label: 'Mural' },
     { value: 'reservations', label: 'Reservas' },
     { value: 'residents', label: 'Moradores' },

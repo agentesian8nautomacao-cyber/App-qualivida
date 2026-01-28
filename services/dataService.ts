@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem, Note, Notice, ChatMessage, Staff } from '../types';
+import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem, Notice, ChatMessage, Staff } from '../types';
 import { createNotification } from './notificationService';
 import { getData, createData, updateData, deleteData, type GetDataOptions } from './offlineDataService';
 
@@ -54,7 +54,7 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
     // Log final do recipientId
     console.log('[savePackage] recipientId final:', recipientId || 'NULL - Notificação não será criada');
 
-    // Preparar dados para inserção
+    // Preparar dados para inserção. Não incluir id: cada encomenda é novo registro (UUID em createData).
     const insertData: any = {
       recipient_id: recipientId,
       recipient_name: pkg.recipient,
@@ -112,7 +112,8 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
           '📦 Nova encomenda na portaria',
           notificationMessage,
           'package',
-          packageId
+          packageId,
+          pkg.imageUrl ?? undefined
         );
 
         if (notificationResult.success) {
@@ -235,6 +236,21 @@ export const getPackages = async (): Promise<GetPackagesResult> => {
       receivedByName: p.received_by_name || null,
       items: packageItemsMap[p.id] || []
     }));
+
+    // Garantir ordenação por data (mais recente primeiro) - redundante mas garante consistência
+    packages.sort((a, b) => {
+      const dateA = new Date(a.receivedAt).getTime();
+      const dateB = new Date(b.receivedAt).getTime();
+      return dateB - dateA; // Mais recente primeiro
+    });
+
+    // Log para debug
+    console.log('[getPackages]', {
+      totalPackages: packages.length,
+      fromCache: result.fromCache,
+      error: result.error,
+      samplePackages: packages.slice(0, 3).map(p => ({ id: p.id, unit: p.unit, status: p.status, receivedAt: p.receivedAt }))
+    });
 
     return { data: packages, error: result.error };
   } catch (err: any) {
@@ -425,14 +441,20 @@ export const updateVisitor = async (visitor: VisitorLog): Promise<{ success: boo
 
 export type GetVisitorsResult = { data: VisitorLog[]; error?: string };
 
-export const getVisitors = async (): Promise<GetVisitorsResult> => {
+export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsResult> => {
   try {
     const result = await getData<any>('visitors', {
       fetchRemote: async () => {
-        const { data, error } = await supabase
+        let query = supabase
           .from('visitors')
-          .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status')
-          .order('entry_time', { ascending: false });
+          .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status');
+        
+        // Se fornecido, filtrar por unidade (para moradores verem apenas seus visitantes)
+        if (filterByUnit) {
+          query = query.eq('unit', filterByUnit);
+        }
+        
+        const { data, error } = await query.order('entry_time', { ascending: false });
         if (error) throw error;
         return data || [];
       }
@@ -507,6 +529,16 @@ export const updateOccurrence = async (occurrence: Occurrence): Promise<{ succes
   } catch (err: any) {
     console.error('Erro ao atualizar ocorrência:', err);
     return { success: false, error: err.message || 'Erro ao atualizar ocorrência' };
+  }
+};
+
+export const deleteOccurrence = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const result = await deleteData('occurrences', id);
+    return { success: result.success, error: result.error };
+  } catch (err: any) {
+    console.error('Erro ao deletar ocorrência:', err);
+    return { success: false, error: err.message || 'Erro ao deletar ocorrência' };
   }
 };
 
@@ -666,83 +698,6 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
   }
 };
 
-// ============================================
-// SERVIÇOS PARA NOTAS
-// ============================================
-
-export type GetNotesResult = { data: Note[]; error?: string };
-
-export const getNotes = async (): Promise<GetNotesResult> => {
-  try {
-    const result = await getData<any>('notes', {
-      fetchRemote: async () => {
-        const { data, error } = await supabase
-          .from('notes')
-          .select('id, content, date, completed, scheduled, category')
-          .order('date', { ascending: false });
-        if (error) throw error;
-        return data || [];
-      }
-    });
-
-    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
-
-    const list: Note[] = result.data.map((n: any) => ({
-      id: n.id,
-      content: n.content,
-      date: toIso(n.date),
-      completed: !!n.completed,
-      scheduled: n.scheduled ? toIso(n.scheduled) : undefined,
-      category: n.category ?? undefined
-    }));
-    return { data: list, error: result.error };
-  } catch (err: any) {
-    console.error('Erro ao buscar notas:', err);
-    return { data: [], error: err?.message ?? 'Erro ao carregar notas' };
-  }
-};
-
-export const saveNote = async (note: Note): Promise<{ success: boolean; error?: string; id?: string }> => {
-  try {
-    const result = await createData('notes', {
-      content: note.content,
-      date: note.date,
-      completed: note.completed ?? false,
-      scheduled: note.scheduled || null,
-      category: note.category || null
-    });
-    return { success: result.success, id: result.id, error: result.error };
-  } catch (err: any) {
-    console.error('Erro ao salvar nota:', err);
-    return { success: false, error: err?.message ?? 'Erro ao salvar nota' };
-  }
-};
-
-export const updateNote = async (note: Note): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const result = await updateData('notes', {
-      id: note.id,
-      content: note.content,
-      completed: note.completed ?? false,
-      scheduled: note.scheduled || null,
-      category: note.category || null
-    });
-    return { success: result.success, error: result.error };
-  } catch (err: any) {
-    console.error('Erro ao atualizar nota:', err);
-    return { success: false, error: err.message || 'Erro ao atualizar nota' };
-  }
-};
-
-export const deleteNote = async (id: string): Promise<{ success: boolean; error?: string }> => {
-  try {
-    const result = await deleteData('notes', id);
-    return { success: result.success, error: result.error };
-  } catch (err: any) {
-    console.error('Erro ao deletar nota:', err);
-    return { success: false, error: err.message || 'Erro ao deletar nota' };
-  }
-};
 
 // ============================================
 // SERVIÇOS PARA AVISOS (NOTICES)
@@ -750,7 +705,31 @@ export const deleteNote = async (id: string): Promise<{ success: boolean; error?
 
 export type GetNoticesResult = { data: Notice[]; error?: string };
 
-export const getNotices = async (): Promise<GetNoticesResult> => {
+const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+
+function mapNoticesFromRaw(raw: any[]): Notice[] {
+  return raw.map((n: any) => ({
+    id: n.id,
+    title: n.title,
+    content: n.content,
+    author: n.author,
+    authorRole: n.author_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
+    date: toIso(n.date),
+    category: n.category ?? undefined,
+    priority: (n.priority as 'high' | 'normal') ?? 'normal',
+    pinned: !!n.pinned,
+    read: false
+  }));
+}
+
+/**
+ * Busca avisos do mural. Todos os perfis (Morador, Portaria, Síndico) devem
+ * receber os mesmos avisos. onRemoteUpdate atualiza o estado quando o fetch
+ * remoto terminar (ex.: ao abrir a aba Mural).
+ */
+export const getNotices = async (
+  onRemoteUpdate?: (notices: Notice[]) => void
+): Promise<GetNoticesResult> => {
   try {
     const result = await getData<any>('notices', {
       fetchRemote: async () => {
@@ -760,23 +739,12 @@ export const getNotices = async (): Promise<GetNoticesResult> => {
           .order('date', { ascending: false });
         if (error) throw error;
         return data || [];
-      }
+      },
+      onRemoteUpdate:
+        onRemoteUpdate ? (raw) => onRemoteUpdate(mapNoticesFromRaw(raw)) : undefined
     });
 
-    const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
-
-    const list: Notice[] = result.data.map((n: any) => ({
-      id: n.id,
-      title: n.title,
-      content: n.content,
-      author: n.author,
-      authorRole: n.author_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
-      date: toIso(n.date),
-      category: n.category ?? undefined,
-      priority: (n.priority as 'high' | 'normal') ?? 'normal',
-      pinned: !!n.pinned,
-      read: false
-    }));
+    const list = mapNoticesFromRaw(result.data);
     return { data: list, error: result.error };
   } catch (err: any) {
     console.error('Erro ao buscar avisos:', err);

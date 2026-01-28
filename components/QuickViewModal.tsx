@@ -29,11 +29,10 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
     visitors: { title: 'Visitantes no Prédio', icon: UserCircle, color: 'text-purple-500', tab: 'visitors' },
     occurrences: { title: 'Ocorrências Ativas', icon: AlertCircle, color: 'text-red-500', tab: 'occurrences' },
     reservations: { title: 'Agenda de Hoje', icon: Calendar, color: 'text-amber-500', tab: 'reservations' },
-    notes: { title: 'Lembretes do Turno', icon: Edit3, color: 'text-zinc-400', tab: 'notes' },
     notices: { title: 'Últimos Comunicados', icon: Bell, color: 'text-green-500', tab: 'notices' },
   }[category];
 
-  const isClickable = category === 'packages' || category === 'visitors' || category === 'occurrences' || category === 'reservations' || category === 'notes' || category === 'notices';
+  const isClickable = category === 'packages' || category === 'visitors' || category === 'occurrences' || category === 'reservations' || category === 'notices';
 
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
@@ -77,15 +76,6 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({
                 <div className="flex items-center gap-2">
                    <span className="text-[10px] font-black opacity-30">{item.time || item.displayTime || ''}</span>
                    
-                   {category === 'notes' && onMarkAsDone && (
-                     <button 
-                       onClick={(e) => { e.stopPropagation(); onMarkAsDone(item); }}
-                       className="p-2 bg-white border border-zinc-200 rounded-full hover:bg-green-500 hover:text-white hover:border-green-500 transition-all mr-1 shadow-sm z-10"
-                       title="Concluir"
-                     >
-                       <Check className="w-3 h-3" />
-                     </button>
-                   )}
 
                    {isClickable && <ChevronRight className="w-4 h-4 opacity-10 group-hover:opacity-100 transition-opacity" />}
                 </div>

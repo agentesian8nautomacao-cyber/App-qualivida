@@ -10,7 +10,6 @@ interface AiViewProps {
   allPackages: any[];
   visitorLogs: any[];
   allOccurrences: any[];
-  allNotes: any[];
   allResidents: any[];
   dayReservations: any[];
   allNotices: any[];
@@ -33,7 +32,6 @@ const AiView: React.FC<AiViewProps> = ({
   allPackages, 
   visitorLogs, 
   allOccurrences, 
-  allNotes,
   allResidents,
   dayReservations,
   allNotices,
@@ -110,8 +108,7 @@ ${voiceSettings.style === 'serious'
     const openOccurrences = allOccurrences.filter(o => o.status === 'Aberto');
     const urgentNotices = allNotices.filter(n => n.category === 'Urgente' || n.priority === 'high');
     
-    // Processamento de Notas e Chat para Contexto Rico
-    const operationalNotes = allNotes.filter(n => !n.completed).map(n => `[NOTA] ${n.content} (${n.category})`).join('\n');
+    // Processamento de Chat para Contexto Rico
     const recentChat = chatMessages.slice(-10).map(m => `[CHAT ${m.senderRole}]: ${m.text}`).join('\n');
 
     return `
@@ -119,21 +116,18 @@ ${voiceSettings.style === 'serious'
       
       1. COMUNICAÇÃO INTERNA (CRÍTICO):
       ${recentChat ? recentChat : 'Nenhuma mensagem recente.'}
-      
-      2. NOTAS OPERACIONAIS:
-      ${operationalNotes ? operationalNotes : 'Nenhuma nota pendente.'}
 
-      3. STATUS ATUAL:
+      2. STATUS ATUAL:
       - Visitantes: ${activeVisitors.length} ativos.
       - Encomendas: ${pendingPackages.length} pendentes.
       - Alertas de Segurança: ${openOccurrences.map(o => o.description).join(', ')}.
       - Avisos do Síndico: ${urgentNotices.map(n => n.title).join(', ')}.
 
       INSTRUÇÃO:
-      Use o histórico de CHAT e NOTAS para entender ordens e contextos não estruturados. 
+      Use o histórico de CHAT para entender ordens e contextos não estruturados. 
       Se o Síndico pediu algo no chat, isso é uma regra ativa.
     `;
-  }, [allPackages, visitorLogs, allOccurrences, allNotes, chatMessages, allNotices]);
+  }, [allPackages, visitorLogs, allOccurrences, chatMessages, allNotices]);
 
   // --- FUNÇÕES DE CHAT (GEMINI 3 PRO) ---
   const handleSendMessage = async () => {
