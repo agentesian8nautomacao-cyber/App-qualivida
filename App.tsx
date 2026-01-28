@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import Layout from './components/Layout';
 import Login from './components/Login';
 import ResidentRegister from './components/ResidentRegister';
@@ -99,6 +99,8 @@ const App: React.FC = () => {
   const [showResidentRegister, setShowResidentRegister] = useState(false);
   // Splash de abertura com o vídeo institucional
   const [showLogoSplash, setShowLogoSplash] = useState<boolean>(true);
+  // Controle de áudio do vídeo (muted por padrão para autoplay funcionar)
+  const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
 
   const handleSkipSplash = useCallback(() => {
     console.log('[App] Pulando vídeo de abertura');
@@ -2169,37 +2171,64 @@ const App: React.FC = () => {
     // Mostrar vídeo de abertura para usuários não autenticados
     console.log('[App] Renderizando vídeo de abertura', { showLogoSplash });
     content = (
-      <div
-        className="w-screen h-screen bg-black flex items-center justify-center relative cursor-pointer"
-        onClick={() => {
-          // Se o vídeo estiver mudo, o primeiro clique só ativa o áudio e mantém o splash
-          if (videoRef.current && videoRef.current.muted) {
-            videoRef.current.muted = false;
-            videoRef.current
-              .play()
-              .catch((err) => console.warn('[App] Erro ao tentar reproduzir vídeo com áudio:', err));
-            return;
-          }
-          // Se já não estiver mais mudo, o clique passa a pular para o login
-          handleSkipSplash();
-        }}
-      >
+      <div className="w-screen h-screen bg-black flex items-center justify-center relative">
         <video
           ref={videoRef}
           src="/GestaoQualivida.mp4"
           autoPlay
-          muted
+          muted={isVideoMuted}
+          playsInline
           className="w-full h-full object-cover"
-          onClick={(e) => e.stopPropagation()}
           onEnded={handleSkipSplash}
         />
+        {/* Indicador de áudio mudo com instrução para clicar */}
+        {isVideoMuted && (
+          <div
+            className="absolute inset-0 flex items-center justify-center cursor-pointer"
+            onClick={() => {
+              if (videoRef.current) {
+                // Ativa o áudio
+                videoRef.current.muted = false;
+                setIsVideoMuted(false);
+                // Reinicia o vídeo do começo para melhor experiência
+                videoRef.current.currentTime = 0;
+                videoRef.current
+                  .play()
+                  .catch((err) => console.warn('[App] Erro ao tentar reproduzir vídeo com áudio:', err));
+              }
+            }}
+          >
+            <div className="bg-black/60 backdrop-blur-sm px-6 py-4 rounded-2xl flex flex-col items-center gap-2 animate-pulse">
+              <VolumeX className="w-10 h-10 text-white" />
+              <span className="text-white text-sm font-medium">Toque para ativar o áudio</span>
+            </div>
+          </div>
+        )}
+        {/* Botão de controle de áudio (canto inferior esquerdo) */}
+        <button
+          type="button"
+          className="absolute bottom-4 left-4 bg-white/80 text-black p-3 rounded-full shadow-lg hover:bg-white transition"
+          onClick={() => {
+            if (videoRef.current) {
+              const newMutedState = !isVideoMuted;
+              videoRef.current.muted = newMutedState;
+              setIsVideoMuted(newMutedState);
+              if (!newMutedState) {
+                videoRef.current
+                  .play()
+                  .catch((err) => console.warn('[App] Erro ao tentar reproduzir vídeo com áudio:', err));
+              }
+            }
+          }}
+          title={isVideoMuted ? 'Ativar áudio' : 'Silenciar'}
+        >
+          {isVideoMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+        </button>
+        {/* Botão Pular (canto superior direito) */}
         <button
           type="button"
           className="absolute top-4 right-4 bg-white/80 text-black px-4 py-2 rounded-lg text-sm font-semibold shadow-lg hover:bg-white transition"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSkipSplash();
-          }}
+          onClick={handleSkipSplash}
         >
           Pular
         </button>
