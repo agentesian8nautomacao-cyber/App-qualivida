@@ -2194,7 +2194,7 @@ const App: React.FC = () => {
     console.log('[App] Renderizando LogoSplash', { showLogoSplash });
     content = (
       <LogoSplash
-        durationMs={4000}
+        durationMs={8000}
         onComplete={() => {
           console.log('[App] LogoSplash completado');
           try {
