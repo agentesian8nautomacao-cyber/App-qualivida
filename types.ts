@@ -45,6 +45,12 @@ export interface Resident {
   email: string;
   phone: string;
   whatsapp: string;
+  /** Placa do veículo principal do morador (opcional). */
+  vehiclePlate?: string;
+  /** Modelo do veículo principal do morador (opcional). */
+  vehicleModel?: string;
+  /** Cor do veículo principal do morador (opcional). */
+  vehicleColor?: string;
   extraData?: Record<string, any>; // Campos adicionais do arquivo de importação
 }
 

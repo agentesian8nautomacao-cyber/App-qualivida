@@ -124,7 +124,7 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/90 backdrop-blur-2xl" onClick={onClose} />
-      <div className="relative w-full max-w-xl bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-12 animate-in zoom-in duration-500 overflow-hidden">
+      <div className="relative w-full max-w-xl bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-12 animate-in zoom-in duration-500 max-h-[90vh] overflow-y-auto custom-scrollbar">
         <header className="flex justify-between items-start gap-4 mb-6 sm:mb-8 md:mb-10">
           <div className="flex items-center gap-3 sm:gap-4 md:gap-6 min-w-0 flex-1">
             <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-xl sm:rounded-2xl bg-zinc-50 flex items-center justify-center shadow-inner flex-shrink-0"><PackageIcon className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 opacity-40" /></div>

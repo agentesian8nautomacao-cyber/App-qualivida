@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
+        includeAssets: ['favicon.ico', 'robots.txt', '1024.png'],
         manifest: {
           name: 'Qualivida Gestão',
           short_name: 'Qualivida',
@@ -41,12 +41,6 @@ export default defineConfig(({ mode }) => {
               sizes: '1024x1024',
               type: 'image/png',
               purpose: 'any maskable'
-            },
-            {
-              src: '/play_store_512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any'
             }
           ]
         },

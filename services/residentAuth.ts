@@ -69,6 +69,13 @@ export const registerResident = async (
         email: resident.email || null,
         phone: resident.phone || null,
         whatsapp: resident.whatsapp || null,
+        // Persistir dados extras, incluindo veículo, em extra_data (JSONB)
+        extra_data: {
+          ...(resident.extraData || {}),
+          vehiclePlate: resident.vehiclePlate || undefined,
+          vehicleModel: resident.vehicleModel || undefined,
+          vehicleColor: resident.vehicleColor || undefined
+        },
         password_hash: passwordHash
       } as any) // Usar 'as any' temporariamente para contornar cache do schema
       .select()
@@ -112,6 +119,9 @@ export const registerResident = async (
         email: data.email || '',
         phone: data.phone || '',
         whatsapp: data.whatsapp || '',
+        vehiclePlate: data.extra_data?.vehiclePlate || data.extra_data?.vehicle_plate || '',
+        vehicleModel: data.extra_data?.vehicleModel || data.extra_data?.vehicle_model || '',
+        vehicleColor: data.extra_data?.vehicleColor || data.extra_data?.vehicle_color || '',
         extraData: data.extra_data
       },
       success: true
@@ -197,6 +207,9 @@ export const loginResident = async (
         email: data.email || '',
         phone: data.phone || '',
         whatsapp: data.whatsapp || '',
+        vehiclePlate: data.extra_data?.vehiclePlate || data.extra_data?.vehicle_plate || '',
+        vehicleModel: data.extra_data?.vehicleModel || data.extra_data?.vehicle_model || '',
+        vehicleColor: data.extra_data?.vehicleColor || data.extra_data?.vehicle_color || '',
         extraData: data.extra_data
       },
       success: true
@@ -240,6 +253,9 @@ export const getResidentByUnit = async (unit: string): Promise<Resident | null> 
       email: data.email || '',
       phone: data.phone || '',
       whatsapp: data.whatsapp || '',
+      vehiclePlate: data.extra_data?.vehiclePlate || data.extra_data?.vehicle_plate || '',
+      vehicleModel: data.extra_data?.vehicleModel || data.extra_data?.vehicle_model || '',
+      vehicleColor: data.extra_data?.vehicleColor || data.extra_data?.vehicle_color || '',
       extraData: data.extra_data
     };
   } catch (err) {

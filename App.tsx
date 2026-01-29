@@ -46,7 +46,7 @@ import {
   getOccurrences, saveOccurrence, updateOccurrence, deleteOccurrence,
   getBoletos, saveBoleto, updateBoleto, deleteBoleto,
   getNotices, saveNotice, updateNotice, deleteNotice,
-  getChatMessages, saveChatMessage, deleteAllChatMessages,
+  getChatMessages, getChatMessagesFromServer, saveChatMessage, deleteAllChatMessages,
   getStaff, saveStaff, deleteStaff, getPorteiroLoginInfo,
   getAreas, getReservations, saveReservation, updateReservation
 } from './services/dataService';
@@ -191,7 +191,14 @@ const App: React.FC = () => {
   const [adminPasswordData, setAdminPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [isChangingAdminPassword, setIsChangingAdminPassword] = useState(false);
   const [isEditingResidentProfile, setIsEditingResidentProfile] = useState(false);
-  const [residentProfileData, setResidentProfileData] = useState({ email: '', phone: '', whatsapp: '' });
+  const [residentProfileData, setResidentProfileData] = useState({
+    email: '',
+    phone: '',
+    whatsapp: '',
+    vehiclePlate: '',
+    vehicleModel: '',
+    vehicleColor: ''
+  });
   const [residentPasswordData, setResidentPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [isChangingResidentPassword, setIsChangingResidentPassword] = useState(false);
   // Estados para visibilidade de senhas (olhinho)
@@ -279,7 +286,10 @@ const App: React.FC = () => {
       setResidentProfileData({
         email: currentResident.email || '',
         phone: currentResident.phone || '',
-        whatsapp: currentResident.whatsapp || ''
+        whatsapp: currentResident.whatsapp || '',
+        vehiclePlate: currentResident.vehiclePlate || '',
+        vehicleModel: currentResident.vehicleModel || '',
+        vehicleColor: currentResident.vehicleColor || ''
       });
       setIsEditingResidentProfile(true);
     }
@@ -291,7 +301,10 @@ const App: React.FC = () => {
       ...currentResident,
       email: residentProfileData.email,
       phone: residentProfileData.phone,
-      whatsapp: residentProfileData.whatsapp
+      whatsapp: residentProfileData.whatsapp,
+      vehiclePlate: residentProfileData.vehiclePlate,
+      vehicleModel: residentProfileData.vehicleModel,
+      vehicleColor: residentProfileData.vehicleColor
     };
     const result = await saveResident(updatedResident);
     if (result.success) {
@@ -457,7 +470,7 @@ const App: React.FC = () => {
           table: 'chat_messages'
         },
         async () => {
-          const res = await getChatMessages();
+          const res = await getChatMessagesFromServer();
           if (res.data) {
             const sessionStart = chatSessionStartRef.current;
             const visible = sessionStart
@@ -467,18 +480,30 @@ const App: React.FC = () => {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('[Realtime] Chat conectado');
+        if (status === 'CHANNEL_ERROR') console.warn('[Realtime] Chat: erro no canal');
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [isAuthenticated]);
 
-  // Refetch avisos ao abrir o Mural (garante visibilidade para portaria/síndico)
+  // Refetch avisos e chat ao abrir o Mural (garante visibilidade e mensagens atualizadas)
   useEffect(() => {
     if (!isAuthenticated || activeTab !== 'notices') return;
     getNotices((data) => setAllNotices(data || [])).then((res) => {
       if (res.data) setAllNotices(res.data);
+    });
+    getChatMessagesFromServer().then((res) => {
+      if (res.data) {
+        const sessionStart = chatSessionStartRef.current;
+        const visible = sessionStart
+          ? res.data.filter((m: ChatMessage) => m.timestamp >= sessionStart)
+          : res.data;
+        setChatMessages(visible);
+      }
     });
   }, [isAuthenticated, activeTab]);
 
@@ -558,7 +583,7 @@ const App: React.FC = () => {
 
     const res = await saveChatMessage(newMsg);
     if (res.success) {
-      const { data } = await getChatMessages();
+      const { data } = await getChatMessagesFromServer();
       if (data) {
         const sessionStart = chatSessionStartRef.current;
         const visible = sessionStart
@@ -574,7 +599,7 @@ const App: React.FC = () => {
   };
 
   const handleRefreshChatMessages = useCallback(async () => {
-    const res = await getChatMessages();
+    const res = await getChatMessagesFromServer();
     if (res.data) {
       const sessionStart = chatSessionStartRef.current;
       const visible = sessionStart
@@ -817,18 +842,24 @@ const App: React.FC = () => {
     fetchResidents(true);
   }, [isNewPackageModalOpen, isAuthenticated, fetchResidents]);
 
-  // Recarregar pacotes quando morador acessa a aba de notificações para garantir que imagens estejam atualizadas
+  // Recarregar pacotes e notificações quando morador acessa a aba de notificações (fallback se Realtime não entregar)
   useEffect(() => {
-    if (!isAuthenticated || role !== 'MORADOR' || activeTab !== 'notifications') return;
+    if (!isAuthenticated || role !== 'MORADOR' || activeTab !== 'notifications' || !currentResident) return;
     
     const loadPackages = async () => {
       const result = await getPackages();
+      if (result.data) setAllPackages(result.data);
+    };
+    const loadNotifications = async () => {
+      const result = await getNotifications(currentResident.id);
       if (result.data) {
-        setAllPackages(result.data);
+        setAllNotifications(result.data);
+        setUnreadNotificationCount(result.data.filter(n => !n.read).length);
       }
     };
     loadPackages();
-  }, [isAuthenticated, role, activeTab]);
+    loadNotifications();
+  }, [isAuthenticated, role, activeTab, currentResident]);
 
   // Carregar notificações quando morador estiver autenticado (única carga; sem refetch ao trocar de aba)
   useEffect(() => {
@@ -894,8 +925,7 @@ const App: React.FC = () => {
             return [newNotification, ...prev];
           });
           setUnreadNotificationCount(prev => prev + 1);
-          
-          // Exibir alerta visual (opcional - pode ser um toast)
+          toast.success(newNotification.title || 'Nova notificação');
           console.log('[Realtime] ✅ Notificação adicionada à lista:', newNotification);
         }
       )
@@ -957,6 +987,22 @@ const App: React.FC = () => {
       console.log('[Realtime] Removendo listener de notificações');
       supabase.removeChannel(channel);
     };
+  }, [isAuthenticated, role, currentResident]);
+
+  // Refetch notificações quando o morador volta à aba/janela do app (fallback se Realtime não entregar)
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'MORADOR' || !currentResident) return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      getNotifications(currentResident.id).then((result) => {
+        if (result.data) {
+          setAllNotifications(result.data);
+          setUnreadNotificationCount(result.data.filter(n => !n.read).length);
+        }
+      });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [isAuthenticated, role, currentResident]);
 
   const handleDeleteNotification = useCallback(async (notificationId: string) => {
@@ -1761,7 +1807,7 @@ const App: React.FC = () => {
                 </div>
 
                 {isEditingResidentProfile ? (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
@@ -1803,6 +1849,54 @@ const App: React.FC = () => {
                         />
                       </div>
                     </div>
+
+                    <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-3" style={{ color: 'var(--text-secondary)' }}>
+                        Dados do veículo
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Placa
+                          </label>
+                          <input
+                            type="text"
+                            value={residentProfileData.vehiclePlate}
+                            onChange={(e) => setResidentProfileData({ ...residentProfileData, vehiclePlate: e.target.value.toUpperCase() })}
+                            className="w-full px-4 py-2 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)] tracking-[0.2em]"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                            placeholder="ABC1D23"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Modelo
+                          </label>
+                          <input
+                            type="text"
+                            value={residentProfileData.vehicleModel}
+                            onChange={(e) => setResidentProfileData({ ...residentProfileData, vehicleModel: e.target.value })}
+                            className="w-full px-4 py-2 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                            placeholder="Ex: Corolla XEi"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Cor
+                          </label>
+                          <input
+                            type="text"
+                            value={residentProfileData.vehicleColor}
+                            onChange={(e) => setResidentProfileData({ ...residentProfileData, vehicleColor: e.target.value })}
+                            className="w-full px-4 py-2 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                            placeholder="Ex: Prata"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex gap-3 pt-4">
                       <button
                         onClick={handleSaveResidentProfile}
@@ -1814,7 +1908,14 @@ const App: React.FC = () => {
                       <button
                         onClick={() => {
                           setIsEditingResidentProfile(false);
-                          setResidentProfileData({ email: '', phone: '', whatsapp: '' });
+                          setResidentProfileData({
+                            email: '',
+                            phone: '',
+                            whatsapp: '',
+                            vehiclePlate: '',
+                            vehicleModel: '',
+                            vehicleColor: ''
+                          });
                         }}
                         className="px-6 py-2 rounded-xl border font-bold uppercase tracking-widest text-sm transition-all hover:scale-105 active:scale-95"
                         style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
@@ -1937,6 +2038,39 @@ const App: React.FC = () => {
                         <p style={{ color: 'var(--text-primary)' }}>{currentResident.whatsapp || 'Não informado'}</p>
                       </div>
                     </div>
+
+                    <div className="mt-6 pt-6 border-t space-y-3" style={{ borderColor: 'var(--border-color)' }}>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60" style={{ color: 'var(--text-secondary)' }}>
+                        Dados do veículo
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                            Placa
+                          </p>
+                          <p style={{ color: 'var(--text-primary)' }}>
+                            {currentResident.vehiclePlate || 'Não informado'}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                            Modelo
+                          </p>
+                          <p style={{ color: 'var(--text-primary)' }}>
+                            {currentResident.vehicleModel || 'Não informado'}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                            Cor
+                          </p>
+                          <p style={{ color: 'var(--text-primary)' }}>
+                            {currentResident.vehicleColor || 'Não informado'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border-color)' }}>
                       <button
                         onClick={() => setIsChangingResidentPassword(true)}

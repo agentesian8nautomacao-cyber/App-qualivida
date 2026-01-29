@@ -359,6 +359,20 @@ export const saveResident = async (resident: Resident): Promise<{ success: boole
       whatsapp: resident.whatsapp || null
     };
 
+    // Só envia extra_data se tivermos alguma informação extra definida.
+    // Isso evita sobrescrever JSON existente quando outras telas (ex: admin)
+    // ainda não trabalham com extraData.
+    if (resident.extraData !== undefined || resident.vehiclePlate || resident.vehicleModel || resident.vehicleColor) {
+      const baseExtra = resident.extraData || {};
+      const mergedExtra = {
+        ...baseExtra,
+        vehiclePlate: resident.vehiclePlate || baseExtra.vehiclePlate,
+        vehicleModel: resident.vehicleModel || baseExtra.vehicleModel,
+        vehicleColor: resident.vehicleColor || baseExtra.vehicleColor
+      };
+      payload.extra_data = mergedExtra;
+    }
+
     const result = isNew 
       ? await createData('residents', payload)
       : await updateData('residents', payload);
@@ -806,26 +820,40 @@ export const deleteNotice = async (id: string): Promise<{ success: boolean; erro
 
 export type GetChatMessagesResult = { data: ChatMessage[]; error?: string };
 
+function chatMapFromRaw(rows: any[]): ChatMessage[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 1);
+  const cutoffIso = cutoff.toISOString();
+  const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
+  return (rows || [])
+    .map((m: any) => ({
+      id: m.id,
+      text: m.text,
+      senderRole: m.sender_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
+      timestamp: toIso(m.timestamp),
+      read: !!m.read
+    }))
+    .filter((m) => !m.timestamp || m.timestamp >= cutoffIso);
+}
+
+/** Busca mensagens direto no Supabase (para Realtime e botão Atualizar). Não usa cache. */
+export const getChatMessagesFromServer = async (): Promise<GetChatMessagesResult> => {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, text, sender_role, timestamp, read')
+      .order('timestamp', { ascending: true });
+    if (error) throw error;
+    return { data: chatMapFromRaw(data || []) };
+  } catch (err: any) {
+    console.error('Erro ao buscar chat do servidor:', err);
+    return { data: [], error: err?.message ?? 'Erro ao carregar chat' };
+  }
+};
+
 export const getChatMessages = async (): Promise<GetChatMessagesResult> => {
   try {
-    // Mantém cache/offline, mas também garante fetch remoto com atualização da UI
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 1); // manter apenas últimas 24h
-    const cutoffIso = cutoff.toISOString();
-
-    const mapFromRaw = (rows: any[]): ChatMessage[] => {
-      const toIso = (v: any) => (v ? (typeof v === 'string' ? v : new Date(v).toISOString()) : '');
-      return (rows || [])
-        .map((m: any) => ({
-          id: m.id,
-          text: m.text,
-          senderRole: m.sender_role as 'MORADOR' | 'SINDICO' | 'PORTEIRO',
-          timestamp: toIso(m.timestamp),
-          read: !!m.read
-        }))
-        // aplica política de retenção: apenas mensagens recentes
-        .filter((m) => !m.timestamp || m.timestamp >= cutoffIso);
-    };
+    const mapFromRaw = (rows: any[]): ChatMessage[] => chatMapFromRaw(rows);
 
     const result = await getData<any>('chat_messages', {
       fetchRemote: async () => {
