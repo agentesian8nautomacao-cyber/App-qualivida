@@ -342,14 +342,8 @@ const App: React.FC = () => {
     }
   };
   
-  // Verificar se deve mostrar cadastro de morador baseado na URL ou query param
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isResidentLink = urlParams.get('resident') === 'true' || urlParams.get('morador') === 'true';
-    if (isResidentLink) {
-      setShowResidentRegister(true);
-    }
-  }, []);
+  // Link ?morador=true ou ?resident=true: apenas preseleciona perfil Morador no Login (cadastro só por "Criar conta")
+  // (não abre mais ResidentRegister automaticamente)
 
   // Atalhos de teclado
   useKeyboardShortcuts({ onNavigate: setActiveTab });
@@ -1584,10 +1578,8 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (selectedRole: UserRole, options?: { mustChangePassword?: boolean }) => {
-    if (selectedRole === 'MORADOR') {
-      setShowResidentRegister(true);
-      return;
-    }
+    // MORADOR: permanece no modal Login; cadastro só abre via "Criar conta"
+    if (selectedRole === 'MORADOR') return;
 
     setRole(selectedRole);
     setCurrentResident(null);
@@ -2645,7 +2637,15 @@ const App: React.FC = () => {
       />
     );
   } else if (!isAuthenticated) {
-    content = <Login onLogin={handleLogin} theme={theme} toggleTheme={toggleTheme} />;
+    content = (
+      <Login
+        onLogin={handleLogin}
+        onMoradorLogin={handleResidentLogin}
+        onRequestResidentRegister={() => setShowResidentRegister(true)}
+        theme={theme}
+        toggleTheme={toggleTheme}
+      />
+    );
   } else {
     content = (
       <>

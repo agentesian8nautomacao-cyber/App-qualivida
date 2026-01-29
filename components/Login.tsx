@@ -1,17 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, ArrowRight, User, Lock, Eye, EyeOff, Sun, Moon } from 'lucide-react';
+import { ArrowRight, User, Lock, Eye, EyeOff, Sun, Moon, Building2 } from 'lucide-react';
 import { UserRole } from '../types';
 import { loginUser, saveUserSession } from '../services/userAuth';
 import ForgotPassword from './ForgotPassword';
 
-interface LoginProps {
+export interface LoginProps {
   onLogin: (role: UserRole, options?: { mustChangePassword?: boolean }) => void;
+  onMoradorLogin?: (unit: string, password: string) => Promise<void>;
+  onRequestResidentRegister?: () => void;
   theme?: 'dark' | 'light';
   toggleTheme?: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResidentRegister, theme = 'dark', toggleTheme }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('PORTEIRO');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -28,14 +30,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
     const token = params.get('token');
     const reset = params.get('reset');
     const isResetPath = window.location.pathname === '/reset-password';
+    const isResidentLink = params.get('resident') === 'true' || params.get('morador') === 'true';
 
     // Aceita tanto o padrão antigo (?reset=1&token=) quanto o novo (/reset-password?token=)
     if (token && (reset === '1' || isResetPath)) {
       setResetFromLink({ token });
       setShowForgotPassword(true);
       setSelectedRole('PORTEIRO');
-      // Após detectar o link, normaliza a URL para a raiz sem parâmetros
       window.history.replaceState({}, '', '/');
+    } else if (isResidentLink) {
+      setSelectedRole('MORADOR');
     }
   }, []);
 
@@ -84,18 +88,24 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
     if (e) e.preventDefault();
     if (loading) return;
     
-    // Resetar erro anterior
     setError(null);
     
-    // Validar campos
     if (!username.trim() || !password.trim()) {
-      setError('Por favor, preencha usuário e senha');
+      setError(selectedRole === 'MORADOR' ? 'Por favor, preencha unidade e senha' : 'Por favor, preencha usuário e senha');
       return;
     }
 
-    // Não validar para MORADOR (redireciona para cadastro)
+    // Login do morador: Unidade + Senha → onMoradorLogin (cadastro só via "Criar conta")
     if (selectedRole === 'MORADOR') {
-      onLogin(selectedRole);
+      if (!onMoradorLogin) return;
+      setLoading(true);
+      try {
+        await onMoradorLogin(username.trim(), password);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Unidade ou senha incorretos');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     
@@ -248,11 +258,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
               />
               <button 
                 type="button"
-                onClick={() => {
-                  handleRoleChange('MORADOR');
-                  // Chamar onLogin diretamente para mostrar cadastro sem reload
-                  onLogin('MORADOR');
-                }}
+                onClick={() => handleRoleChange('MORADOR')}
                 className={`relative z-10 flex-1 py-3 text-[10px] font-black uppercase transition-colors duration-200 ${
                   selectedRole === 'MORADOR' 
                     ? (theme === 'light' ? 'text-gray-900' : 'text-black')
@@ -299,18 +305,24 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
               
               <div className="space-y-4">
                 <div className="relative">
-                  <User className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                    theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
-                  }`} />
+                  {selectedRole === 'MORADOR' ? (
+                    <Building2 className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                      theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
+                    }`} />
+                  ) : (
+                    <User className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
+                      theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
+                    }`} />
+                  )}
                   <input 
                     type="text" 
-                    placeholder="Usuário" 
+                    placeholder={selectedRole === 'MORADOR' ? 'Unidade (ex: 03/005, 3/5)' : 'Usuário'} 
                     value={username}
                     onChange={(e) => {
                       setUsername(e.target.value);
-                      setError(null); // Limpar erro ao digitar
+                      setError(null);
                     }}
-                    autoComplete="username"
+                    autoComplete={selectedRole === 'MORADOR' ? 'username' : 'username'}
                     className={`w-full pl-8 pr-4 py-3 bg-transparent border-b text-sm outline-none transition-all font-medium ${
                       theme === 'light'
                         ? 'border-gray-300/50 text-gray-900 placeholder:text-gray-400 focus:border-gray-600'
@@ -368,14 +380,26 @@ const Login: React.FC<LoginProps> = ({ onLogin, theme = 'dark', toggleTheme }) =
                   }`} />
                 ) : (
                   <>
-                    Entrar no Sistema
+                    {selectedRole === 'MORADOR' ? 'Entrar' : 'Entrar no Sistema'}
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
               </button>
 
-              {/* Link "Esqueci minha senha" */}
-              {selectedRole !== 'MORADOR' && (
+              {/* Morador: opção de cadastro; outros perfis: esqueci minha senha */}
+              {selectedRole === 'MORADOR' ? (
+                onRequestResidentRegister && (
+                  <button
+                    type="button"
+                    onClick={onRequestResidentRegister}
+                    className={`w-full text-sm text-center underline transition-colors mt-4 ${
+                      theme === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    Não tem cadastro? Criar conta
+                  </button>
+                )
+              ) : (
                 <button
                   type="button"
                   onClick={() => setShowForgotPassword(true)}
