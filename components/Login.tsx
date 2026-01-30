@@ -24,6 +24,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
   const [error, setError] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetFromLink, setResetFromLink] = useState<{ token: string } | null>(null);
+  const [recoveryLinkExpired, setRecoveryLinkExpired] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -31,6 +32,17 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
     const reset = params.get('reset');
     const isResetPath = window.location.pathname === '/reset-password';
     const isResidentLink = params.get('resident') === 'true' || params.get('morador') === 'true';
+
+    // Supabase Auth pode redirecionar com erro no hash: #error=access_denied&error_code=otp_expired
+    const hash = window.location.hash || '';
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+    const errorCode = hashParams.get('error_code') || hashParams.get('error');
+    const otpExpired = errorCode === 'otp_expired' || (hashParams.get('error_description') || '').toLowerCase().includes('expired');
+    if (hash && (otpExpired || errorCode === 'access_denied')) {
+      setRecoveryLinkExpired(true);
+      setShowForgotPassword(true);
+      window.history.replaceState({}, '', window.location.pathname || '/');
+    }
 
     // Aceita tanto o padrão antigo (?reset=1&token=) quanto o novo (/reset-password?token=)
     if (token && (reset === '1' || isResetPath)) {
@@ -157,11 +169,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
         theme === 'light' ? 'bg-gray-50' : 'bg-[#050505]'
       }`}>
         <ForgotPassword
-          onBack={() => { setShowForgotPassword(false); setResetFromLink(null); }}
+          onBack={() => { setShowForgotPassword(false); setResetFromLink(null); setRecoveryLinkExpired(false); }}
           theme={theme}
           initialToken={resetFromLink?.token}
           initialStep={resetFromLink ? 'reset' : undefined}
           isResident={selectedRole === 'MORADOR'}
+          recoveryLinkExpiredMessage={recoveryLinkExpired ? 'Este link expirou ou já foi usado. Solicite um novo link abaixo (use o mesmo e-mail).' : undefined}
         />
       </div>
     );

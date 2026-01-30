@@ -11,9 +11,11 @@ interface ForgotPasswordProps {
   initialStep?: 'request' | 'reset';
   /** true quando o usuário veio da aba Morador */
   isResident?: boolean;
+  /** Mensagem quando o link de recuperação expirou ou já foi usado (vindo do hash da URL) */
+  recoveryLinkExpiredMessage?: string;
 }
 
-const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', initialToken, initialStep, isResident = false }) => {
+const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', initialToken, initialStep, isResident = false, recoveryLinkExpiredMessage }) => {
   const [step, setStep] = useState<'request' | 'reset'>(initialStep || 'request');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [token, setToken] = useState(initialToken || '');
@@ -22,7 +24,9 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    recoveryLinkExpiredMessage ? { type: 'error', text: recoveryLinkExpiredMessage } : null
+  );
   const [recoveryFromAuth, setRecoveryFromAuth] = useState(false);
 
   useEffect(() => {
@@ -128,7 +132,9 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     if (recoveryFromAuth) {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (!error) {
-        await supabase.rpc('sync_resident_password_after_reset', { new_password: newPassword }).catch(() => {});
+        try {
+          await supabase.rpc('sync_resident_password_after_reset', { new_password: newPassword });
+        } catch (_) {}
       }
       setLoading(false);
       if (!error) {
@@ -191,6 +197,14 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
               ? (isResident ? 'Informe a unidade ou e-mail cadastrado para receber o link de recuperação por e-mail.' : 'Informe o e-mail ou usuário cadastrado para receber o link de recuperação por e-mail. Se o e-mail existir, você receberá o link em alguns instantes.')
               : 'Defina uma nova senha forte para sua conta.'}
           </p>
+
+          {recoveryLinkExpiredMessage && step === 'request' && (
+            <p className={`text-sm mb-4 ${
+              theme === 'light' ? 'text-amber-700' : 'text-amber-400'
+            }`}>
+              O link de recuperação expira em cerca de 1 hora. Use o formulário abaixo para solicitar um novo.
+            </p>
+          )}
 
           {/* Mensagens */}
           {message && (
