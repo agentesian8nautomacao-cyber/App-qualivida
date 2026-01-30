@@ -144,6 +144,32 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setMessage(null);
 
     if (recoveryFromAuth) {
+      // Garantir que a sessão de recovery seja estabelecida a partir do hash da URL
+      // (detectSessionInUrl no cliente já ajuda; initialize() processa redirects; fallback manual se necessário)
+      await supabase.auth.initialize();
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session && typeof window !== 'undefined' && window.location.hash) {
+        const hash = window.location.hash.replace(/^#/, '');
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        if (accessToken && refreshToken) {
+          const { error: setErr } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          if (!setErr) {
+            const next = await supabase.auth.getSession();
+            session = next.data.session;
+            // Remover tokens da URL por segurança (evitar exposição no histórico/back)
+            if (session && window.history?.replaceState) {
+              window.history.replaceState({}, '', window.location.pathname + window.location.search || '/');
+            }
+          }
+        }
+      }
+      if (!session) {
+        setLoading(false);
+        setMessage({ type: 'error', text: 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).' });
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password: normalizedPassword });
       if (!error) {
         try {
@@ -156,11 +182,14 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
         await supabase.auth.signOut();
         setTimeout(() => onBack(), 2000);
       } else {
-        // Supabase Auth pode exigir senha forte (8 chars, maiúscula, etc.); mostrar nossa regra simplificada
-        const isPasswordPolicyError = /senha|password|caractere|caracteres|8|maiúscula|minúscula|special|símbolo|symbol/i.test(error?.message || '');
-        const errorText = isPasswordPolicyError
-          ? 'Use 6 caracteres, apenas letras e números (maiúsculas e minúsculas são iguais). Não use símbolos.'
-          : (error?.message || 'Erro ao redefinir senha.');
+        const errMsg = error?.message || '';
+        const isSessionMissing = /session missing|auth session/i.test(errMsg);
+        const isPasswordPolicyError = !isSessionMissing && /senha|password|caractere|caracteres|8|maiúscula|minúscula|special|símbolo|symbol/i.test(errMsg);
+        const errorText = isSessionMissing
+          ? 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).'
+          : isPasswordPolicyError
+            ? 'Use 6 caracteres, apenas letras e números (maiúsculas e minúsculas são iguais). Não use símbolos.'
+            : errMsg || 'Erro ao redefinir senha.';
         setMessage({ type: 'error', text: errorText });
       }
       return;

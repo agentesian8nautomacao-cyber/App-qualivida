@@ -104,6 +104,12 @@ Ou seja: **não é possível** aumentar o limite só pela tela de Limites de tax
 4. Salve. Após ativar, a mensagem do Supabase confirma: *"O limite de envio de e-mails será aumentado para 30 e poderá ser ajustado após a ativação do SMTP personalizado"*.
 5. Depois disso, em **Authentication → Limites de taxa** você poderá alterar o **Limite de taxa para envio de e-mails** (ex.: 30, 60 e-mails/h).
 
+**Como “desativar” ou deixar o limite bem alto:**  
+O Supabase **não permite desligar** o limite de e-mail; só permite **aumentar** o valor. Para efeito prático de “sem limite”, configure o SMTP personalizado (passos acima) e, em **Authentication → Limites de taxa**, defina **Limite de taxa para envio de e-mails** com o **valor máximo** que o plano permitir (ex.: 100, 500 ou 1000 e-mails/h). Assim o limite deixa de impactar o uso normal.
+
+**Como desativar o SMTP personalizado:**  
+Se quiser voltar a usar o e-mail integrado do Supabase (limite fixo de 2 e-mails/h): **Supabase Dashboard** → **Authentication** → **E-mails** → aba **Configurações SMTP** → desmarque **"Habilitar SMTP personalizado"** e salve. Os e-mails voltarão a ser enviados pelo serviço padrão do Supabase; o limite de taxa de e-mail não poderá mais ser alterado na tela de Limites de taxa.
+
 **O que colocar em cada campo (explicação):**
 
 | Campo no Supabase | O que é | O que colocar |
@@ -211,6 +217,26 @@ Se ao solicitar recuperação de senha aparecer **erro 500** na chamada a `/auth
    - No navegador (DevTools → Network), inspecione a resposta da requisição a `.../auth/v1/recover`; às vezes o corpo da resposta 500 traz mais detalhes (ex.: mensagem do SMTP).
 
 **Resumo:** Corrija **Redirect URLs** (incluir `https://app-qualivida.vercel.app/reset-password`) e, se usar SMTP personalizado, confira as credenciais e o remetente. Use os Auth Logs para confirmar o que o Supabase está retornando.
+
+---
+
+### 6.2. "Auth session missing!"
+
+Esse erro aparecia quando o usuário tentava **redefinir a senha** na tela após clicar no link de recuperação e **a sessão não era estabelecida** a partir do hash da URL (`#type=recovery&access_token=...&refresh_token=...`).
+
+**Correção aplicada no app:**
+
+1. **Cliente Supabase** (`services/supabase.ts`): `detectSessionInUrl: true` — o cliente passa a detectar e estabelecer a sessão automaticamente quando a página carrega com o hash de recovery na URL.
+2. **Tela de redefinição** (`components/ForgotPassword.tsx`): antes de chamar `updateUser`, o app:
+   - chama `supabase.auth.initialize()` para garantir que a sessão seja carregada do redirect;
+   - se ainda não houver sessão, tenta restaurar manualmente a partir do hash (extrai `access_token` e `refresh_token` e chama `setSession`);
+   - após estabelecer a sessão a partir do hash, remove os tokens da URL com `history.replaceState` por segurança.
+
+**O que o app faz em caso de falha:** Se não existir sessão (link expirado, já usado ou hash inválido), ou se o Supabase retornar "Auth session missing!", é exibida a mensagem: *"O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail)."* O usuário pode voltar ao passo de solicitação e pedir um novo e-mail.
+
+**Causas comuns quando o erro ainda ocorre:** Link de recuperação com validade expirada (ex.: 1 h); link já utilizado para trocar a senha; abrir o link em outro navegador/dispositivo sem a sessão.
+
+**Resumo:** Com `detectSessionInUrl: true` e o fallback manual no ForgotPassword, a sessão de recovery é estabelecida corretamente. Se o link for inválido ou expirado, o usuário deve solicitar um **novo link** (mesmo e-mail) e usar dentro do prazo, na mesma aba/navegador em que vai definir a nova senha.
 
 ---
 
