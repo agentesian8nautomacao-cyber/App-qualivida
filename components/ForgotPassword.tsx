@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Mail, Lock, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react';
-import { generatePasswordResetToken, resetPasswordWithToken } from '../services/userAuth';
+import { supabase } from '../services/supabase';
+import { requestPasswordReset, getEmailForReset, resetPasswordWithToken } from '../services/userAuth';
 
 interface ForgotPasswordProps {
   onBack: () => void;
   theme?: 'dark' | 'light';
   initialToken?: string;
   initialStep?: 'request' | 'reset';
+  /** true quando o usuário veio da aba Morador */
+  isResident?: boolean;
 }
 
-const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', initialToken, initialStep }) => {
+const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', initialToken, initialStep, isResident = false }) => {
   const [step, setStep] = useState<'request' | 'reset'>(initialStep || 'request');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [token, setToken] = useState(initialToken || '');
@@ -19,6 +22,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [recoveryFromAuth, setRecoveryFromAuth] = useState(false);
 
   useEffect(() => {
     if (initialStep === 'reset' && initialToken) {
@@ -26,6 +30,25 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
       setToken(initialToken);
     }
   }, [initialStep, initialToken]);
+
+  useEffect(() => {
+    const isRecoveryHash = typeof window !== 'undefined' && window.location.hash.includes('type=recovery');
+    if (isRecoveryHash) {
+      setStep('reset');
+      setRecoveryFromAuth(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (step !== 'reset') return;
+    if (recoveryFromAuth) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const isRecovery = typeof window !== 'undefined' && window.location.hash.includes('type=recovery');
+      if (session?.user && isRecovery) {
+        setRecoveryFromAuth(true);
+      }
+    });
+  }, [step, recoveryFromAuth]);
 
   const validatePasswordStrength = (password: string): { ok: boolean; error?: string } => {
     if (!password || password.length < 8) {
@@ -48,12 +71,13 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     e.preventDefault();
     const value = usernameOrEmail.trim();
     if (!value) {
-      setMessage({ type: 'error', text: 'Por favor, informe o e-mail cadastrado.' });
+      setMessage({ type: 'error', text: isResident ? 'Por favor, informe a unidade ou e-mail cadastrado.' : 'Por favor, informe o e-mail ou usuário cadastrado.' });
       return;
     }
 
+    // Aceita e-mail ou nome de usuário; se for e-mail, valida formato
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(value.toLowerCase())) {
+    if (value.includes('@') && !emailRegex.test(value.toLowerCase())) {
       setMessage({ type: 'error', text: 'Informe um e-mail válido.' });
       return;
     }
@@ -61,50 +85,28 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    try {
-      const base = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
-      const res = await fetch(`${base}/api/request-password-reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrUsername: value }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+    const successMessage = 'Se o e-mail estiver cadastrado, você receberá um link de recuperação por e-mail. Verifique a caixa de entrada e o spam.';
 
-      if (res.ok && data.success) {
-        setLoading(false);
-        setMessage({
-          type: 'success',
-          text: data.message || 'Se o usuário existir e tiver email cadastrado, você receberá um link por email. Verifique a caixa de entrada e o spam.',
-        });
-        return;
-      }
-    } catch {
-      /* fallback abaixo */
+    const emailToUse = value.includes('@') ? value.trim().toLowerCase() : (await getEmailForReset(value)) || '';
+
+    if (!emailToUse) {
+      setLoading(false);
+      setMessage({ type: 'error', text: isResident ? 'Unidade ou e-mail não encontrado. Verifique e tente novamente.' : 'E-mail ou usuário não encontrado. Verifique e tente novamente.' });
+      return;
     }
 
-    const result = await generatePasswordResetToken(value);
+    // Único fluxo: Supabase Auth envia o link de recuperação por e-mail
+    const authResult = await requestPasswordReset(emailToUse);
     setLoading(false);
-
-    if (result.success) {
-      setMessage({
-        type: 'success',
-        text: 'API de email não configurada. Em desenvolvimento: verifique o console do navegador para o token e use o passo "Redefinir senha".',
-      });
-      setTimeout(() => setStep('reset'), 1500);
+    if (authResult.success) {
+      setMessage({ type: 'success', text: successMessage });
     } else {
-      setMessage({ type: 'error', text: result.message || 'Erro ao solicitar recuperação.' });
+      setMessage({ type: 'error', text: authResult.error || 'Erro ao solicitar recuperação. Tente novamente mais tarde.' });
     }
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const effectiveToken = (initialToken || token).trim();
-
-    if (!effectiveToken) {
-      setMessage({ type: 'error', text: 'Token de recuperação inválido ou ausente.' });
-      return;
-    }
 
     const strength = validatePasswordStrength(newPassword.trim());
     if (!strength.ok) {
@@ -120,15 +122,32 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    const result = await resetPasswordWithToken(effectiveToken, newPassword);
+    if (recoveryFromAuth) {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      setLoading(false);
+      if (!error) {
+        setMessage({ type: 'success', text: 'Senha redefinida com sucesso! Você já pode fazer login.' });
+        await supabase.auth.signOut();
+        setTimeout(() => onBack(), 2000);
+      } else {
+        setMessage({ type: 'error', text: error.message || 'Erro ao redefinir senha.' });
+      }
+      return;
+    }
 
+    const effectiveToken = (initialToken || token).trim();
+    if (!effectiveToken) {
+      setLoading(false);
+      setMessage({ type: 'error', text: 'Token de recuperação inválido ou ausente.' });
+      return;
+    }
+
+    const result = await resetPasswordWithToken(effectiveToken, newPassword);
     setLoading(false);
 
     if (result.success) {
       setMessage({ type: 'success', text: result.message || 'Senha redefinida com sucesso!' });
-      setTimeout(() => {
-        onBack();
-      }, 2000);
+      setTimeout(() => onBack(), 2000);
     } else {
       setMessage({ type: 'error', text: result.message || 'Erro ao redefinir senha.' });
     }
@@ -163,7 +182,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
             theme === 'light' ? 'text-gray-600' : 'text-zinc-400'
           }`}>
             {step === 'request' 
-              ? 'Informe o e-mail cadastrado para receber o link de recuperação. Se o e-mail existir, você receberá instruções em alguns instantes.'
+              ? (isResident ? 'Informe a unidade ou e-mail cadastrado para receber o link de recuperação por e-mail.' : 'Informe o e-mail ou usuário cadastrado para receber o link de recuperação por e-mail. Se o e-mail existir, você receberá o link em alguns instantes.')
               : 'Defina uma nova senha forte para sua conta.'}
           </p>
 
@@ -195,9 +214,10 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
                   theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
                 }`} />
                 <input 
-                  type="email" 
-                  placeholder="E-mail cadastrado" 
+                  type="text" 
+                  placeholder={isResident ? 'Unidade ou e-mail cadastrado' : 'E-mail ou usuário cadastrado'} 
                   value={usernameOrEmail}
+                  autoComplete="username email"
                   onChange={(e) => {
                     setUsernameOrEmail(e.target.value);
                     setMessage(null);
@@ -240,8 +260,8 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
           {/* Formulário de redefinição */}
           {step === 'reset' && (
             <form onSubmit={handleResetPassword} className="space-y-6">
-              {/* Campo de token só aparece quando não veio de link direto */}
-              {!initialToken && (
+              {/* Token só para fluxo legado; recovery do Supabase Auth não usa token */}
+              {!recoveryFromAuth && !initialToken && (
                 <div className="relative">
                   <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
                     theme === 'light' ? 'text-gray-400' : 'text-zinc-600'

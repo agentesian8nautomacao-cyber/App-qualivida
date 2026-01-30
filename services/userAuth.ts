@@ -169,19 +169,15 @@ export const loginUser = async (
   }
 
   try {
-    // Hash da senha fornecida
-    const hashedPassword = await hashPassword(password);
-
-    // Buscar usuário no banco
-    const { data, error } = await supabase
+    // Buscar usuário por username ou email (para suportar Auth e legado)
+    const { data: row, error } = await supabase
       .from('users')
-      .select('id, username, role, name, email, phone, is_active, password_hash')
-      .eq('username', normalizedUsername)
+      .select('id, auth_id, username, role, name, email, phone, is_active, password_hash')
+      .or(`username.eq.${normalizedUsername},email.eq.${normalizedUsername}`)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
-      // Incrementar tentativas falhas apenas se o usuário existir
+    if (error || !row) {
       incrementFailedAttempts(normalizedUsername);
       return {
         user: null,
@@ -190,35 +186,55 @@ export const loginUser = async (
       };
     }
 
-    // Verificar senha
-    let isValidPassword = false;
-    let usedDefaultPassword = false; // porteiro com senha 123456 deve alterar no primeiro acesso
+    const data = row as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean; password_hash?: string };
 
-    // Se o password_hash começar com "plain:", comparar diretamente (senha em texto plano)
+    // Se o usuário tem auth_id e email, usar Supabase Auth para login
+    if (data.auth_id && data.email) {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password
+      });
+      if (!authError && authData?.user?.id) {
+        resetLoginAttempts(normalizedUsername);
+        const user = await getProfileByAuthId(authData.user.id);
+        if (user) {
+          return { user, error: null };
+        }
+      }
+      // Auth falhou (senha errada ou outro erro); continuar para legado se não tiver password_hash não faz sentido
+      if (data.password_hash === undefined || data.password_hash === null) {
+        return {
+          user: null,
+          error: authError?.message || 'Usuário ou senha inválidos',
+          attemptsRemaining: MAX_LOGIN_ATTEMPTS - getLoginAttempts(normalizedUsername).count
+        };
+      }
+      // Tem password_hash (legado): tentar legado abaixo
+    }
+
+    // Login legado (sem auth_id ou Auth falhou e tem password_hash)
+    const hashedPassword = await hashPassword(password);
+    let isValidPassword = false;
+    let usedDefaultPassword = false;
+
     if (data.password_hash && data.password_hash.startsWith('plain:')) {
-      const plainPassword = data.password_hash.substring(6); // Remove "plain:"
+      const plainPassword = data.password_hash.substring(6);
       isValidPassword = plainPassword === password;
       if (isValidPassword && data.role === 'PORTEIRO' && plainPassword === '123456') usedDefaultPassword = true;
-    }
-    // Se o password_hash for placeholder, aceitar senhas padrão conhecidas
-    else if (data.password_hash === '$2a$10$placeholder_hash_here') {
+    } else if (data.password_hash === '$2a$10$placeholder_hash_here') {
       const defaultPasswords: Record<string, string> = {
         'portaria': '123456',
         'admin': 'admin123',
         'desenvolvedor': 'dev'
       };
       isValidPassword = defaultPasswords[normalizedUsername] === password;
-    } 
-    // Caso contrário, comparar com hash SHA-256
-    else {
+    } else {
       isValidPassword = data.password_hash === hashedPassword;
     }
 
     if (!isValidPassword) {
-      // Senha incorreta, incrementar tentativas
       const attempts = incrementFailedAttempts(normalizedUsername);
       const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
-      
       if (attempts.blockedUntil) {
         const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
         return {
@@ -228,7 +244,6 @@ export const loginUser = async (
           remainingMinutes
         };
       }
-
       return {
         user: null,
         error: `Senha incorreta. ${remaining > 0 ? `${remaining} tentativa(s) restante(s).` : 'Conta será bloqueada.'}`,
@@ -236,15 +251,20 @@ export const loginUser = async (
       };
     }
 
-    // Login bem-sucedido, resetar tentativas
     resetLoginAttempts(normalizedUsername);
-
-    // Retornar dados do usuário (sem o password_hash)
-    const { password_hash: _, ...userData } = data;
+    const userId = data.auth_id || data.id;
     return {
-      user: userData as User,
+      user: {
+        id: userId,
+        username: data.username,
+        role: data.role as 'PORTEIRO' | 'SINDICO',
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        is_active: data.is_active
+      },
       error: null,
-      mustChangePassword: usedDefaultPassword // porteiro com senha 123456 deve alterar no primeiro acesso
+      mustChangePassword: usedDefaultPassword
     };
   } catch (error) {
     console.error('Erro ao fazer login:', error);
@@ -256,13 +276,54 @@ export const loginUser = async (
 };
 
 /**
- * Verifica se há uma sessão ativa de usuário
+ * Busca perfil em public.users por auth_id (id do auth.users).
+ * Retorna User com id = auth_id para uso consistente no app.
+ */
+async function getProfileByAuthId(authId: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, auth_id, username, role, name, email, phone, is_active')
+    .eq('auth_id', authId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean };
+  return {
+    id: row.auth_id || row.id,
+    username: row.username,
+    role: row.role as 'PORTEIRO' | 'SINDICO',
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    is_active: row.is_active
+  };
+}
+
+/**
+ * Restaura sessão a partir do Supabase Auth (útil após reload da página).
+ * Retorna { user, role } se houver sessão Auth e perfil em public.users.
+ */
+export async function restoreAuthSession(): Promise<{ user: User; role: 'PORTEIRO' | 'SINDICO' } | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return null;
+    const user = await getProfileByAuthId(session.user.id);
+    if (!user) return null;
+    saveUserSession(user);
+    return { user, role: user.role };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifica se há uma sessão ativa de usuário (sessionStorage ou Auth).
+ * Síncrono: retorna apenas do sessionStorage. Use restoreAuthSession() no mount para restaurar Auth.
  */
 export const checkUserSession = (): User | null => {
   try {
     const sessionData = sessionStorage.getItem('currentUser');
     if (!sessionData) return null;
-    
     const user = JSON.parse(sessionData) as User;
     return user;
   } catch {
@@ -279,9 +340,10 @@ export const saveUserSession = (user: User): void => {
 };
 
 /**
- * Remove dados do usuário da sessão
+ * Remove dados do usuário da sessão e faz signOut no Supabase Auth
  */
 export const clearUserSession = (): void => {
+  supabase.auth.signOut().catch(() => {});
   sessionStorage.removeItem('currentUser');
   sessionStorage.removeItem('userRole');
 };
@@ -294,31 +356,115 @@ export const updateUserProfile = async (
   updates: { name?: string; email?: string; phone?: string }
 ): Promise<{ success: boolean; error?: string; user?: User }> => {
   try {
+    const updatePayload = {
+      name: updates.name ?? null,
+      email: updates.email ?? null,
+      phone: updates.phone ?? null,
+      updated_at: new Date().toISOString()
+    };
     const { data, error } = await supabase
       .from('users')
-      .update({
-        name: updates.name || null,
-        email: updates.email || null,
-        phone: updates.phone || null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select('id, username, role, name, email, phone, is_active')
-      .single();
+      .update(updatePayload)
+      .or(`id.eq.${userId},auth_id.eq.${userId}`)
+      .select('id, auth_id, username, role, name, email, phone, is_active')
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       console.error('Erro ao atualizar perfil do usuário:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: error?.message || 'Erro ao atualizar perfil' };
     }
 
-    const updatedUser = data as User;
-    // Atualizar sessão com dados atualizados
+    const row = data as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean };
+    const updatedUser: User = {
+      id: row.auth_id || row.id,
+      username: row.username,
+      role: row.role as 'PORTEIRO' | 'SINDICO',
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      is_active: row.is_active
+    };
+    if (updates.email && typeof supabase.auth.updateUser === 'function') {
+      supabase.auth.updateUser({ email: updates.email }).catch(() => {});
+    }
     saveUserSession(updatedUser);
-
     return { success: true, user: updatedUser };
   } catch (err: any) {
     console.error('Erro ao atualizar perfil do usuário:', err);
     return { success: false, error: err?.message || 'Erro ao atualizar perfil' };
+  }
+};
+
+/**
+ * Altera o nome de usuário (login) do síndico/porteiro.
+ * Exige senha atual e garante que o novo usuário não esteja em uso.
+ */
+export const changeUsername = async (
+  userId: string,
+  currentUsername: string,
+  currentPassword: string,
+  newUsername: string
+): Promise<{ success: boolean; error?: string; user?: User }> => {
+  try {
+    const normalizedNew = newUsername.trim().toLowerCase();
+    if (!normalizedNew || normalizedNew.length < 3) {
+      return { success: false, error: 'O novo usuário deve ter pelo menos 3 caracteres.' };
+    }
+
+    // Validar senha atual
+    const loginResult = await loginUser(currentUsername, currentPassword);
+    if (!loginResult.user) {
+      return { success: false, error: 'Senha atual incorreta' };
+    }
+    if (loginResult.user.id !== userId) {
+      return { success: false, error: 'Usuário não autorizado' };
+    }
+
+    const { data: existingList } = await supabase
+      .from('users')
+      .select('id, auth_id')
+      .eq('username', normalizedNew);
+
+    const takenByOther = (existingList || []).some(
+      (r: { id: string; auth_id?: string }) => r.id !== userId && r.auth_id !== userId
+    );
+    if (takenByOther) {
+      return { success: false, error: 'Este nome de usuário já está em uso. Escolha outro.' };
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .update({
+        username: normalizedNew,
+        updated_at: new Date().toISOString()
+      })
+      .or(`id.eq.${userId},auth_id.eq.${userId}`)
+      .select('id, auth_id, username, role, name, email, phone, is_active')
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error('Erro ao atualizar usuário:', error);
+      return { success: false, error: error?.message || 'Erro ao atualizar usuário' };
+    }
+
+    const row = data as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean };
+    const updatedUser: User = {
+      id: row.auth_id || row.id,
+      username: row.username,
+      role: row.role as 'PORTEIRO' | 'SINDICO',
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      is_active: row.is_active
+    };
+    saveUserSession(updatedUser);
+    resetLoginAttempts(currentUsername);
+    resetLoginAttempts(normalizedNew);
+
+    return { success: true, user: updatedUser };
+  } catch (err: any) {
+    console.error('Erro ao alterar usuário:', err);
+    return { success: false, error: err?.message || 'Erro ao alterar usuário' };
   }
 };
 
@@ -333,10 +479,16 @@ export const changeUserPassword = async (
   options?: { storePlain?: boolean }
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Validar senha atual
     const loginResult = await loginUser(username, currentPassword);
     if (!loginResult.user) {
       return { success: false, error: 'Senha atual incorreta' };
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id === loginResult.user.id) {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (!error) return { success: true };
+      console.warn('Auth updateUser falhou, tentando legado:', error);
     }
 
     const newPasswordHash = options?.storePlain
@@ -349,13 +501,12 @@ export const changeUserPassword = async (
         password_hash: newPasswordHash,
         updated_at: new Date().toISOString()
       })
-      .eq('id', loginResult.user.id);
+      .or(`id.eq.${loginResult.user.id},auth_id.eq.${loginResult.user.id}`);
 
     if (error) {
       console.error('Erro ao atualizar senha:', error);
       return { success: false, error: error.message };
     }
-
     return { success: true };
   } catch (err: any) {
     console.error('Erro ao alterar senha:', err);
@@ -364,7 +515,43 @@ export const changeUserPassword = async (
 };
 
 /**
- * Gera token de recuperação de senha
+ * Solicita recuperação de senha via Supabase Auth.
+ * O Supabase envia o e-mail com o link (configuração em Dashboard → Authentication → Email).
+ * redirectTo deve ser a URL da sua app para onde o usuário será redirecionado (ex: /reset-password).
+ */
+export const requestPasswordReset = async (email: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const redirectTo = typeof window !== 'undefined' && window.location?.origin
+      ? `${window.location.origin}/reset-password`
+      : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: redirectTo || undefined
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao solicitar recuperação.' };
+  }
+};
+
+/**
+ * Obtém o e-mail do usuário a partir de username ou e-mail (para recuperação).
+ */
+export const getEmailForReset = async (usernameOrEmail: string): Promise<string | null> => {
+  const q = usernameOrEmail.trim().toLowerCase();
+  const { data } = await supabase
+    .from('users')
+    .select('email')
+    .or(`username.eq.${q},email.eq.${q}`)
+    .eq('is_active', true)
+    .maybeSingle();
+  return data?.email ?? null;
+};
+
+/**
+ * Gera token de recuperação de senha (legado; use requestPasswordReset quando o usuário tiver auth_id)
  */
 export const generatePasswordResetToken = async (usernameOrEmail: string): Promise<{
   success: boolean;
@@ -599,11 +786,16 @@ export const resetPasswordWithToken = async (
       };
     }
 
-    // Marcar token como usado
+    // Marcar token como usado (no banco está o hash do token)
+    const encoder = new TextEncoder();
+    const tokenBytes = encoder.encode(token);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', tokenBytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     await supabase
       .from('password_reset_tokens')
       .update({ used: true })
-      .eq('token', token);
+      .eq('token', tokenHash);
 
     // Limpar tentativas de login para este usuário
     const { data: user } = await supabase

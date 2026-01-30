@@ -58,12 +58,13 @@ import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal, 
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
 import ImportBoletosModal from './components/modals/ImportBoletosModal';
+import ImportPackagesModal from './components/modals/ImportPackagesModal';
 import CameraScanModal from './components/modals/CameraScanModal';
 import ImportStaffModal from './components/modals/ImportStaffModal';
 
 // Services
 import { registerResident, loginResident, updateResidentPassword } from './services/residentAuth';
-import { checkUserSession, User as AdminUser, updateUserProfile, changeUserPassword } from './services/userAuth';
+import { checkUserSession, User as AdminUser, updateUserProfile, changeUserPassword, changeUsername } from './services/userAuth';
 
 // Helper para calcular permanência
 const calculatePermanence = (receivedAt: string) => {
@@ -189,7 +190,8 @@ const App: React.FC = () => {
   const [isEditingAdminProfile, setIsEditingAdminProfile] = useState(false);
   const [adminProfileData, setAdminProfileData] = useState({ name: '', email: '', phone: '' });
   const [adminPasswordData, setAdminPasswordData] = useState({ current: '', new: '', confirm: '' });
-  const [isChangingAdminPassword, setIsChangingAdminPassword] = useState(false);
+  const [adminUsernameData, setAdminUsernameData] = useState({ currentPassword: '', newUsername: '', confirmUsername: '' });
+  const [isAdminCredentialsModalOpen, setIsAdminCredentialsModalOpen] = useState(false);
   const [isEditingResidentProfile, setIsEditingResidentProfile] = useState(false);
   const [residentProfileData, setResidentProfileData] = useState({
     email: '',
@@ -247,12 +249,46 @@ const App: React.FC = () => {
       adminPasswordData.new
     );
     if (result.success) {
-      setIsChangingAdminPassword(false);
       setAdminPasswordData({ current: '', new: '', confirm: '' });
+      setShowAdminPasswords({ current: false, new: false, confirm: false });
+      setIsAdminCredentialsModalOpen(false);
       toast.success('Senha alterada com sucesso!');
     } else {
       toast.error(result.error || 'Erro ao alterar senha');
     }
+  };
+
+  const handleChangeAdminUsername = async () => {
+    if (!currentAdminUser) return;
+    if (adminUsernameData.newUsername.trim().toLowerCase() !== adminUsernameData.confirmUsername.trim().toLowerCase()) {
+      toast.error('Os usuários não coincidem');
+      return;
+    }
+    if (adminUsernameData.newUsername.trim().length < 3) {
+      toast.error('O novo usuário deve ter pelo menos 3 caracteres');
+      return;
+    }
+    const result = await changeUsername(
+      currentAdminUser.id,
+      currentAdminUser.username,
+      adminUsernameData.currentPassword,
+      adminUsernameData.newUsername.trim()
+    );
+    if (result.success && result.user) {
+      setCurrentAdminUser(result.user);
+      setAdminUsernameData({ currentPassword: '', newUsername: '', confirmUsername: '' });
+      setIsAdminCredentialsModalOpen(false);
+      toast.success('Usuário de login alterado com sucesso!');
+    } else {
+      toast.error(result.error || 'Erro ao alterar usuário');
+    }
+  };
+
+  const closeAdminCredentialsModal = () => {
+    setIsAdminCredentialsModalOpen(false);
+    setAdminUsernameData({ currentPassword: '', newUsername: '', confirmUsername: '' });
+    setAdminPasswordData({ current: '', new: '', confirm: '' });
+    setShowAdminPasswords({ current: false, new: false, confirm: false });
   };
 
   const handleFirstLoginChangePassword = async () => {
@@ -782,6 +818,7 @@ const App: React.FC = () => {
   const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
   const [isImportResidentsModalOpen, setIsImportResidentsModalOpen] = useState(false);
   const [isImportBoletosModalOpen, setIsImportBoletosModalOpen] = useState(false);
+  const [isImportPackagesModalOpen, setIsImportPackagesModalOpen] = useState(false);
   const [isCameraScanModalOpen, setIsCameraScanModalOpen] = useState(false);
   const [pendingPackageImage, setPendingPackageImage] = useState<string | null>(null);
   const [pendingPackageQrData, setPendingPackageQrData] = useState<string | null>(null);
@@ -1434,6 +1471,30 @@ const App: React.FC = () => {
     }
     const { data } = await getBoletos();
     if (data) setAllBoletos(data);
+  };
+  const handleImportPackages = async (packagesToImport: Package[]) => {
+    for (const p of packagesToImport) {
+      const pkg: Package = {
+        ...p,
+        id: '', // novo registro
+        recipient: p.recipient,
+        unit: p.unit,
+        type: p.type || 'Outros',
+        receivedAt: p.receivedAt || new Date().toISOString(),
+        displayTime: p.displayTime || new Date(p.receivedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        status: p.status || 'Pendente',
+        deadlineMinutes: p.deadlineMinutes ?? 45,
+        items: p.items
+      };
+      const res = await savePackage(pkg);
+      if (!res.success) {
+        toast.error(`Erro ao importar "${p.recipient}": ${res.error || 'Erro desconhecido'}`);
+        throw new Error(res.error);
+      }
+    }
+    const { data } = await getPackages();
+    if (data) setAllPackages(data);
+    toast.success(`${packagesToImport.length} encomenda(s) importada(s).`);
   };
   const handleDeleteBoleto = async (boleto: Boleto) => {
     const result = await deleteBoleto(boleto.id);
@@ -2100,7 +2161,7 @@ const App: React.FC = () => {
                     {role === 'SINDICO' ? 'Dados do síndico' : 'Dados do porteiro'}
                   </p>
                 </div>
-                {!isEditingAdminProfile && !isChangingAdminPassword && (
+                {!isEditingAdminProfile && (
                   <button
                     onClick={handleStartEditAdminProfile}
                     className="px-4 py-2 rounded-xl border text-sm font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
@@ -2210,101 +2271,15 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                ) : isChangingAdminPassword ? (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
-                        Senha Atual
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showAdminPasswords.current ? 'text' : 'password'}
-                          value={adminPasswordData.current}
-                          onChange={(e) => setAdminPasswordData({ ...adminPasswordData, current: e.target.value })}
-                          className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
-                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                          placeholder="Digite sua senha atual"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowAdminPasswords({ ...showAdminPasswords, current: !showAdminPasswords.current })}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {showAdminPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
-                        Nova Senha
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showAdminPasswords.new ? 'text' : 'password'}
-                          value={adminPasswordData.new}
-                          onChange={(e) => setAdminPasswordData({ ...adminPasswordData, new: e.target.value })}
-                          className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
-                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                          placeholder="Digite a nova senha"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowAdminPasswords({ ...showAdminPasswords, new: !showAdminPasswords.new })}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {showAdminPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
-                        Confirmar Nova Senha
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showAdminPasswords.confirm ? 'text' : 'password'}
-                          value={adminPasswordData.confirm}
-                          onChange={(e) => setAdminPasswordData({ ...adminPasswordData, confirm: e.target.value })}
-                          className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
-                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                          placeholder="Confirme a nova senha"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowAdminPasswords({ ...showAdminPasswords, confirm: !showAdminPasswords.confirm })}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--text-primary)' }}
-                        >
-                          {showAdminPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex gap-3 pt-4">
-                      <button
-                        onClick={handleChangeAdminPassword}
-                        className="px-6 py-2 rounded-xl font-bold uppercase tracking-widest text-sm transition-all hover:scale-105 active:scale-95"
-                        style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' }}
-                      >
-                        Alterar Senha
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsChangingAdminPassword(false);
-                          setAdminPasswordData({ current: '', new: '', confirm: '' });
-                          setShowAdminPasswords({ current: false, new: false, confirm: false });
-                        }}
-                        className="px-6 py-2 rounded-xl border font-bold uppercase tracking-widest text-sm transition-all hover:scale-105 active:scale-95"
-                        style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: 'var(--text-secondary)' }}>
+                          Usuário de login
+                        </p>
+                        <p style={{ color: 'var(--text-primary)' }}>{currentAdminUser.username}</p>
+                      </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-black uppercase tracking-widest opacity-50" style={{ color: 'var(--text-secondary)' }}>
                           E-mail
@@ -2320,11 +2295,11 @@ const App: React.FC = () => {
                     </div>
                     <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border-color)' }}>
                       <button
-                        onClick={() => setIsChangingAdminPassword(true)}
+                        onClick={() => setIsAdminCredentialsModalOpen(true)}
                         className="px-4 py-2 rounded-xl border text-sm font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
                         style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                       >
-                        Alterar Senha
+                        Alterar usuário e senha
                       </button>
                     </div>
                     <p className="mt-6 text-[11px] opacity-60" style={{ color: 'var(--text-secondary)' }}>
@@ -2425,7 +2400,7 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <PackagesView allPackages={allPackages} allResidents={allResidents} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onDeletePackage={handleDeletePackage} onCameraScan={() => setIsCameraScanModalOpen(true)} />;
+        return <PackagesView allPackages={allPackages} allResidents={allResidents} packageSearch={packageSearch} setPackageSearch={setPackageSearch} setIsNewPackageModalOpen={handleOpenNewPackageModal} setSelectedPackageForDetail={setSelectedPackageForDetail} onDeletePackage={handleDeletePackage} onCameraScan={() => setIsCameraScanModalOpen(true)} onImportClick={() => setIsImportPackagesModalOpen(true)} />;
       case 'settings': 
         if (role === 'MORADOR') {
           return (
@@ -2709,6 +2684,118 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {isAdminCredentialsModalOpen && currentAdminUser && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" style={{ color: 'var(--text-primary)' }}>
+          <div className="relative w-full max-w-lg rounded-2xl shadow-2xl p-6 sm:p-8 border overflow-y-auto max-h-[90vh]" style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)' }}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black uppercase tracking-tight">Alterar usuário e senha</h3>
+              <button type="button" onClick={closeAdminCredentialsModal} className="p-2 rounded-xl opacity-70 hover:opacity-100 transition-opacity" style={{ color: 'var(--text-primary)' }} aria-label="Fechar"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="space-y-8">
+              {/* Seção: Alterar usuário de login */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-60" style={{ color: 'var(--text-secondary)' }}>Usuário de login</p>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Atual: <strong style={{ color: 'var(--text-primary)' }}>{currentAdminUser.username}</strong></p>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Senha atual (para confirmar)</label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPasswords.current ? 'text' : 'password'}
+                      value={adminUsernameData.currentPassword}
+                      onChange={(e) => setAdminUsernameData({ ...adminUsernameData, currentPassword: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      placeholder="Digite sua senha"
+                    />
+                    <button type="button" onClick={() => setShowAdminPasswords({ ...showAdminPasswords, current: !showAdminPasswords.current })} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Novo usuário de login</label>
+                  <input
+                    type="text"
+                    value={adminUsernameData.newUsername}
+                    onChange={(e) => setAdminUsernameData({ ...adminUsernameData, newUsername: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                    placeholder="Mín. 3 caracteres"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Confirmar novo usuário</label>
+                  <input
+                    type="text"
+                    value={adminUsernameData.confirmUsername}
+                    onChange={(e) => setAdminUsernameData({ ...adminUsernameData, confirmUsername: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                    placeholder="Digite novamente"
+                    autoComplete="username"
+                  />
+                </div>
+                <button type="button" onClick={handleChangeAdminUsername} className="px-4 py-2 rounded-xl text-sm font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95" style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' }}>Alterar usuário</button>
+              </div>
+
+              <div className="border-t py-4" style={{ borderColor: 'var(--border-color)' }} />
+
+              {/* Seção: Alterar senha */}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-60" style={{ color: 'var(--text-secondary)' }}>Senha de acesso</p>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Senha atual</label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPasswords.current ? 'text' : 'password'}
+                      value={adminPasswordData.current}
+                      onChange={(e) => setAdminPasswordData({ ...adminPasswordData, current: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      placeholder="Digite sua senha atual"
+                    />
+                    <button type="button" onClick={() => setShowAdminPasswords({ ...showAdminPasswords, current: !showAdminPasswords.current })} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminPasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Nova senha</label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPasswords.new ? 'text' : 'password'}
+                      value={adminPasswordData.new}
+                      onChange={(e) => setAdminPasswordData({ ...adminPasswordData, new: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      placeholder="Mín. 6 caracteres"
+                    />
+                    <button type="button" onClick={() => setShowAdminPasswords({ ...showAdminPasswords, new: !showAdminPasswords.new })} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminPasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>Confirmar nova senha</label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPasswords.confirm ? 'text' : 'password'}
+                      value={adminPasswordData.confirm}
+                      onChange={(e) => setAdminPasswordData({ ...adminPasswordData, confirm: e.target.value })}
+                      className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      placeholder="Repita a nova senha"
+                    />
+                    <button type="button" onClick={() => setShowAdminPasswords({ ...showAdminPasswords, confirm: !showAdminPasswords.confirm })} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminPasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                  </div>
+                </div>
+                <button type="button" onClick={handleChangeAdminPassword} className="px-4 py-2 rounded-xl text-sm font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95" style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-color)' }}>Alterar senha</button>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t flex justify-end" style={{ borderColor: 'var(--border-color)' }}>
+              <button type="button" onClick={closeAdminCredentialsModal} className="px-5 py-2 rounded-xl border text-sm font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95" style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ResidentProfileModal resident={selectedResidentProfile} onClose={() => setSelectedResidentProfile(null)} onEdit={() => { handleOpenResidentModal(selectedResidentProfile); setSelectedResidentProfile(null); }} onDelete={selectedResidentProfile ? () => handleDeleteResident(selectedResidentProfile.id) : undefined} allPackages={allPackages} visitorLogs={visitorLogs} onPackageSelect={setSelectedPackageForDetail} onCheckOutVisitor={handleVisitorCheckOut} />
       <PackageDetailModal 
         pkg={selectedPackageForDetail} 
@@ -2735,6 +2822,7 @@ const App: React.FC = () => {
       />
       <ImportResidentsModal isOpen={isImportResidentsModalOpen} onClose={() => setIsImportResidentsModalOpen(false)} onImport={handleImportResidents} existingResidents={allResidents} />
       <ImportBoletosModal isOpen={isImportBoletosModalOpen} onClose={() => setIsImportBoletosModalOpen(false)} onImport={handleImportBoletos} existingBoletos={allBoletos} allResidents={allResidents} />
+      <ImportPackagesModal isOpen={isImportPackagesModalOpen} onClose={() => setIsImportPackagesModalOpen(false)} onImport={handleImportPackages} existingPackages={allPackages} />
       <CameraScanModal isOpen={isCameraScanModalOpen} onClose={() => setIsCameraScanModalOpen(false)} onScanSuccess={handleCameraScanSuccess} allResidents={allResidents} />
       <ImportStaffModal isOpen={isImportStaffModalOpen} onClose={() => setIsImportStaffModalOpen(false)} onImport={handleImportStaff} existingStaff={allStaff} />
       <NewOccurrenceModal isOpen={isOccurrenceModalOpen} onClose={() => setIsOccurrenceModalOpen(false)} description={occurrenceDescription} setDescription={setOccurrenceDescription} onSave={async (imageDataUrl?: string | null) => {

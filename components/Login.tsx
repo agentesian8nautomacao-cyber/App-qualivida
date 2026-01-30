@@ -150,8 +150,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
     }
   };
 
-  // Se mostrar recuperação de senha
-  if (showForgotPassword && selectedRole !== 'MORADOR') {
+  // Se mostrar recuperação de senha (Porteiro, Síndico ou Morador)
+  if (showForgotPassword) {
     return (
       <div className={`relative min-h-screen w-full flex items-center justify-center overflow-hidden transition-colors duration-500 ${
         theme === 'light' ? 'bg-gray-50' : 'bg-[#050505]'
@@ -161,6 +161,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
           theme={theme}
           initialToken={resetFromLink?.token}
           initialStep={resetFromLink ? 'reset' : undefined}
+          isResident={selectedRole === 'MORADOR'}
         />
       </div>
     );
@@ -386,30 +387,29 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
                 )}
               </button>
 
-              {/* Morador: opção de cadastro; outros perfis: esqueci minha senha */}
-              {selectedRole === 'MORADOR' ? (
-                onRequestResidentRegister && (
-                  <button
-                    type="button"
-                    onClick={onRequestResidentRegister}
-                    className={`w-full text-sm text-center underline transition-colors mt-4 ${
-                      theme === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-500 hover:text-white'
-                    }`}
-                  >
-                    Não tem cadastro? Criar conta
-                  </button>
-                )
-              ) : (
+              {/* Morador: cadastro + esqueci senha; Porteiro/Síndico: esqueci senha */}
+              <div className="flex flex-col items-center gap-2 mt-4">
                 <button
                   type="button"
                   onClick={() => setShowForgotPassword(true)}
-                  className={`w-full text-sm text-center underline transition-colors mt-4 ${
+                  className={`text-sm text-center underline transition-colors ${
                     theme === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   Esqueci minha senha
                 </button>
-              )}
+                {selectedRole === 'MORADOR' && onRequestResidentRegister && (
+                  <button
+                    type="button"
+                    onClick={onRequestResidentRegister}
+                    className={`text-sm text-center underline transition-colors ${
+                      theme === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    Não tem cadastro? Criar conta
+                  </button>
+                )}
+              </div>
             </form>
           </div>
         </div>
