@@ -39,7 +39,7 @@ Arquivos principais:
 4. O app chama `supabase.auth.updateUser({ password: newPassword })`.
 5. Em caso de sucesso, exibe mensagem e o usuário pode fazer login.
 
-**Validação de senha**: mínimo 8 caracteres, com maiúscula, minúscula, número e caractere especial (frontend em `validatePasswordStrength`).
+**Validação de senha**: 6 caracteres, apenas letras e números (maiúsculas e minúsculas tratadas como iguais). Sem símbolos. Frontend em `validatePasswordStrength` em `ForgotPassword.tsx`. Para o fluxo Supabase Auth aceitar essa regra, ajuste em **Dashboard → Authentication → Providers → Email → Password** (ex.: mínimo 6 caracteres, desmarque exigência de caractere especial).
 
 ---
 
@@ -71,7 +71,7 @@ Novos usuários criados pelo app (quando o fluxo de criação usar Auth) já ter
 
 - **E-mail**: configurado apenas no Supabase (templates e opcionalmente SMTP). Sem Resend.
 - **Mensagens neutras**: não se revela se o e-mail existe ou não.
-- **Senha forte**: validada no frontend e no Auth.
+- **Senha simplificada**: 6 caracteres, letras e números (case-insensitive). Validada no frontend; o Auth do Supabase deve estar configurado para aceitar essa política (senão o usuário verá mensagem amigável com a regra correta).
 - **Redirect**: `redirectTo` em `resetPasswordForEmail` aponta para a URL do app (ex.: `https://seu-app.vercel.app/reset-password`).
 
 Configuração do e-mail no Supabase: **Dashboard → Authentication → Email Templates** (e **SMTP** em Project Settings se quiser usar servidor próprio).

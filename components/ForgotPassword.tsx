@@ -145,7 +145,12 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
         await supabase.auth.signOut();
         setTimeout(() => onBack(), 2000);
       } else {
-        setMessage({ type: 'error', text: error.message || 'Erro ao redefinir senha.' });
+        // Supabase Auth pode exigir senha forte (8 chars, maiúscula, etc.); mostrar nossa regra simplificada
+        const isPasswordPolicyError = /senha|password|caractere|caracteres|8|maiúscula|minúscula|special|símbolo|symbol/i.test(error?.message || '');
+        const errorText = isPasswordPolicyError
+          ? 'Use 6 caracteres, apenas letras e números (maiúsculas e minúsculas são iguais). Não use símbolos.'
+          : (error?.message || 'Erro ao redefinir senha.');
+        setMessage({ type: 'error', text: errorText });
       }
       return;
     }
@@ -198,7 +203,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
           }`}>
             {step === 'request' 
               ? (isResident ? 'Informe a unidade ou e-mail cadastrado para receber o link de recuperação por e-mail.' : 'Informe o e-mail ou usuário cadastrado para receber o link de recuperação por e-mail. Se o e-mail existir, você receberá o link em alguns instantes.')
-              : 'Nova senha: 6 caracteres, letras e números. Maiúsculas e minúsculas são tratadas como iguais.'}
+              : 'Defina sua nova senha: 6 caracteres, apenas letras e números (maiúsculas e minúsculas são iguais). Não use símbolos.'}
           </p>
 
           {recoveryLinkExpiredMessage && step === 'request' && (
