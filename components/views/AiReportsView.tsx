@@ -24,6 +24,7 @@ import { useAppConfig } from '../../contexts/AppConfigContext';
 import { useToast } from '../../contexts/ToastContext';
 import { extractGeminiText } from '../../utils/geminiHelpers';
 import { logger } from '../../utils/logger';
+import { getGeminiApiKey } from '../../utils/geminiApiKey';
 
 interface AiReportsViewProps {
   allPackages: any[];
@@ -70,18 +71,19 @@ const AiReportsView: React.FC<AiReportsViewProps> = ({
     };
   }, [visitorLogs, allPackages, allOccurrences, dayReservations]);
 
-  const hasGeminiKey = !!(process.env.API_KEY && String(process.env.API_KEY).trim());
+  const hasGeminiKey = !!getGeminiApiKey();
 
   const handleGenerateReport = async () => {
-    if (!hasGeminiKey) {
-      setReportContent('Configure GEMINI_API_KEY no arquivo .env ou nas variáveis de ambiente do Vercel para gerar relatórios com IA.');
+    const apiKey = getGeminiApiKey();
+    if (!hasGeminiKey || !apiKey) {
+      setReportContent('Configure GEMINI_API_KEY (ou VITE_GEMINI_API_KEY) no arquivo .env ou .env.local para gerar relatórios com IA.');
       return;
     }
     setIsGenerating(true);
     setReportContent(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       
       const dataContext = `
         DADOS DO PERÍODO:

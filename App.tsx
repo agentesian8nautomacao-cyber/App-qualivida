@@ -195,6 +195,8 @@ const App: React.FC = () => {
   // Estados para edição de perfil
   const [isEditingAdminProfile, setIsEditingAdminProfile] = useState(false);
   const [adminProfileData, setAdminProfileData] = useState({ name: '', email: '', phone: '' });
+  const [adminProfilePasswordData, setAdminProfilePasswordData] = useState({ current: '', new: '', confirm: '' });
+  const [showAdminProfilePasswords, setShowAdminProfilePasswords] = useState({ current: false, new: false, confirm: false });
   const [adminPasswordData, setAdminPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [adminUsernameData, setAdminUsernameData] = useState({ currentPassword: '', newUsername: '', confirmUsername: '' });
   const [isAdminCredentialsModalOpen, setIsAdminCredentialsModalOpen] = useState(false);
@@ -223,6 +225,8 @@ const App: React.FC = () => {
         email: currentAdminUser.email || '',
         phone: currentAdminUser.phone || ''
       });
+      setAdminProfilePasswordData({ current: '', new: '', confirm: '' });
+      setShowAdminProfilePasswords({ current: false, new: false, confirm: false });
       setIsEditingAdminProfile(true);
     }
   };
@@ -232,7 +236,37 @@ const App: React.FC = () => {
     const result = await updateUserProfile(currentAdminUser.id, adminProfileData);
     if (result.success && result.user) {
       setCurrentAdminUser(result.user);
+      const pwdNew = adminProfilePasswordData.new.trim();
+      const pwdConfirm = adminProfilePasswordData.confirm.trim();
+      if (pwdNew || pwdConfirm) {
+        if (pwdNew !== pwdConfirm) {
+          toast.error('As senhas não coincidem');
+          return;
+        }
+        if (pwdNew.length < 6 || pwdNew.length > 32 || !/^[A-Za-z0-9]+$/.test(pwdNew) || !/[A-Za-z]/.test(pwdNew) || !/[0-9]/.test(pwdNew)) {
+          toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.');
+          return;
+        }
+        if (!adminProfilePasswordData.current.trim()) {
+          toast.error('Informe a senha atual para alterar a senha');
+          return;
+        }
+        const pwdResult = await changeUserPassword(
+          currentAdminUser.username,
+          adminProfilePasswordData.current.trim(),
+          adminProfilePasswordData.new.trim()
+        );
+        if (pwdResult.success) {
+          setAdminProfilePasswordData({ current: '', new: '', confirm: '' });
+          setShowAdminProfilePasswords({ current: false, new: false, confirm: false });
+          toast.success('Senha alterada com sucesso!');
+        } else {
+          toast.error(pwdResult.error || 'Erro ao alterar senha');
+          return;
+        }
+      }
       setIsEditingAdminProfile(false);
+      setAdminProfileData({ name: '', email: '', phone: '' });
       toast.success('Perfil atualizado com sucesso!');
     } else {
       toast.error(result.error || 'Erro ao atualizar perfil');
@@ -247,7 +281,7 @@ const App: React.FC = () => {
     }
     const pwd = adminPasswordData.new.trim();
     if (pwd.length < 6 || pwd.length > 32 || !/^[A-Za-z0-9]+$/.test(pwd) || !/[A-Za-z]/.test(pwd) || !/[0-9]/.test(pwd)) {
-      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. Maiúsculas e minúsculas são iguais.');
+      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.');
       return;
     }
     const result = await changeUserPassword(
@@ -306,7 +340,7 @@ const App: React.FC = () => {
     }
     const pwdFirst = firstLoginPasswordData.new.trim();
     if (pwdFirst.length < 6 || pwdFirst.length > 32 || !/^[A-Za-z0-9]+$/.test(pwdFirst) || !/[A-Za-z]/.test(pwdFirst) || !/[0-9]/.test(pwdFirst)) {
-      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. Maiúsculas e minúsculas são iguais.');
+      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.');
       return;
     }
     const result = await changeUserPassword(
@@ -368,7 +402,7 @@ const App: React.FC = () => {
     }
     const pwdRes = residentPasswordData.new.trim();
     if (pwdRes.length < 6 || pwdRes.length > 32 || !/^[A-Za-z0-9]+$/.test(pwdRes) || !/[A-Za-z]/.test(pwdRes) || !/[0-9]/.test(pwdRes)) {
-      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. Maiúsculas e minúsculas são iguais.');
+      toast.error('A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.');
       return;
     }
     // Validar senha atual
@@ -1571,11 +1605,15 @@ const App: React.FC = () => {
   };
   const handleSaveNoticeChanges = async () => {
     if (!selectedNoticeForEdit) return;
-    const res = await updateNotice(selectedNoticeForEdit);
+    const isNew = !selectedNoticeForEdit.id;
+    const res = isNew
+      ? await saveNotice(selectedNoticeForEdit as Notice)
+      : await updateNotice(selectedNoticeForEdit);
     if (res.success) {
       const { data } = await getNotices();
       if (data) setAllNotices(data);
       setSelectedNoticeForEdit(null);
+      if (isNew) toast.success('Aviso criado.');
     } else {
       toast.error('Erro ao salvar aviso: ' + (res.error || 'Erro desconhecido'));
     }
@@ -1591,6 +1629,29 @@ const App: React.FC = () => {
       toast.error('Erro ao excluir aviso: ' + (res.error || 'Erro desconhecido'));
     }
   };
+  const handleDeleteNoticeById = async (id: string) => {
+    const res = await deleteNotice(id);
+    if (res.success) {
+      const { data } = await getNotices();
+      if (data) setAllNotices(data);
+      setSelectedNoticeForEdit((prev) => (prev?.id === id ? null : prev));
+    } else {
+      toast.error('Erro ao excluir aviso: ' + (res.error || 'Erro desconhecido'));
+    }
+  };
+  const createDraftNotice = (): Notice => ({
+    id: '',
+    title: '',
+    content: '',
+    author: currentAdminUser?.name || currentAdminUser?.username || (role === 'SINDICO' ? 'Síndico' : 'Portaria'),
+    authorRole: role,
+    date: new Date().toISOString(),
+    category: undefined,
+    priority: 'normal',
+    pinned: false,
+    read: false,
+    imageUrl: undefined
+  });
 
   const [isOccurrenceModalOpen, setIsOccurrenceModalOpen] = useState(false);
   const [occurrenceDescription, setOccurrenceDescription] = useState('');
@@ -1793,7 +1854,7 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'notices': const filteredNotices = allNotices.filter(n => { if (noticeFilter === 'urgent') return n.category === 'Urgente'; if (noticeFilter === 'unread') return !n.read; return true; }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return <NoticesView filteredNotices={filteredNotices} setNoticeFilter={setNoticeFilter} noticeFilter={noticeFilter} activeNoticeTab={activeNoticeTab} setActiveNoticeTab={setActiveNoticeTab} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} chatMessages={chatMessages} role={role} chatInput={chatInput} setChatInput={setChatInput} handleSendChatMessage={handleSendChatMessage} chatEndRef={chatEndRef} handleAcknowledgeNotice={handleAcknowledgeNotice} onRefreshChat={handleRefreshChatMessages} onClearChat={handleClearChatMessages} />;
+      case 'notices': const filteredNotices = allNotices.filter(n => { if (noticeFilter === 'urgent') return n.category === 'Urgente'; if (noticeFilter === 'unread') return !n.read; return true; }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)); return <NoticesView filteredNotices={filteredNotices} setNoticeFilter={setNoticeFilter} noticeFilter={noticeFilter} activeNoticeTab={activeNoticeTab} setActiveNoticeTab={setActiveNoticeTab} isChatOpen={isChatOpen} setIsChatOpen={setIsChatOpen} chatMessages={chatMessages} role={role} chatInput={chatInput} setChatInput={setChatInput} handleSendChatMessage={handleSendChatMessage} chatEndRef={chatEndRef} handleAcknowledgeNotice={handleAcknowledgeNotice} onRefreshChat={handleRefreshChatMessages} onClearChat={handleClearChatMessages} onAddNotice={role === 'PORTEIRO' || role === 'SINDICO' ? () => setSelectedNoticeForEdit(createDraftNotice()) : undefined} onEditNotice={role === 'PORTEIRO' || role === 'SINDICO' ? (n) => setSelectedNoticeForEdit(n) : undefined} onDeleteNotice={role === 'PORTEIRO' || role === 'SINDICO' ? handleDeleteNoticeById : undefined} />;
       case 'reservations': return <ReservationsView dayReservations={dayReservations} reservationFilter={reservationFilter} setReservationFilter={setReservationFilter} setIsReservationModalOpen={setIsReservationModalOpen} areasStatus={areasStatus} handleReservationAction={handleReservationAction} />;
       case 'residents': 
         if (role === 'MORADOR') {
@@ -1807,7 +1868,7 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <ResidentsView allResidents={allResidents} residentSearch={residentSearch} setResidentSearch={setResidentSearch} handleOpenResidentModal={handleOpenResidentModal} setSelectedResidentProfile={setSelectedResidentProfile} handleDeleteResident={handleDeleteResident} allPackages={allPackages} visitorLogs={visitorLogs} onImportClick={() => setIsImportResidentsModalOpen(true)} />;
+        return <ResidentsView allResidents={allResidents} residentSearch={residentSearch} setResidentSearch={setResidentSearch} handleOpenResidentModal={handleOpenResidentModal} setSelectedResidentProfile={setSelectedResidentProfile} handleDeleteResident={handleDeleteResident} allPackages={allPackages} visitorLogs={visitorLogs} onImportClick={role === 'SINDICO' ? () => setIsImportResidentsModalOpen(true) : undefined} canManageResidents={role === 'SINDICO'} />;
       case 'residentProfile':
         if (role === 'MORADOR' && currentResident) {
           return (
@@ -2260,6 +2321,64 @@ const App: React.FC = () => {
                         />
                       </div>
                     </div>
+                    <div className="pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-3 block" style={{ color: 'var(--text-secondary)' }}>
+                        Alterar senha (opcional)
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Senha atual
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showAdminProfilePasswords.current ? 'text' : 'password'}
+                              value={adminProfilePasswordData.current}
+                              onChange={(e) => setAdminProfilePasswordData({ ...adminProfilePasswordData, current: e.target.value })}
+                              className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                              style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                              placeholder="Só para alterar senha"
+                              autoComplete="current-password"
+                            />
+                            <button type="button" onClick={() => setShowAdminProfilePasswords((s) => ({ ...s, current: !s.current }))} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminProfilePasswords.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Nova senha
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showAdminProfilePasswords.new ? 'text' : 'password'}
+                              value={adminProfilePasswordData.new}
+                              onChange={(e) => setAdminProfilePasswordData({ ...adminProfilePasswordData, new: e.target.value })}
+                              className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                              style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                              placeholder="6 caracteres, letras e números"
+                              autoComplete="new-password"
+                            />
+                            <button type="button" onClick={() => setShowAdminProfilePasswords((s) => ({ ...s, new: !s.new }))} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminProfilePasswords.new ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest opacity-50 block" style={{ color: 'var(--text-secondary)' }}>
+                            Confirmar nova senha
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showAdminProfilePasswords.confirm ? 'text' : 'password'}
+                              value={adminProfilePasswordData.confirm}
+                              onChange={(e) => setAdminProfilePasswordData({ ...adminProfilePasswordData, confirm: e.target.value })}
+                              className="w-full px-4 py-2 pr-10 rounded-xl border bg-transparent text-sm font-medium outline-none transition-all focus:border-[var(--text-primary)]"
+                              style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                              placeholder="Repita a nova senha"
+                              autoComplete="new-password"
+                            />
+                            <button type="button" onClick={() => setShowAdminProfilePasswords((s) => ({ ...s, confirm: !s.confirm }))} className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100" style={{ color: 'var(--text-primary)' }}>{showAdminProfilePasswords.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                     <div className="flex gap-3 pt-4">
                       <button
                         onClick={handleSaveAdminProfile}
@@ -2272,6 +2391,8 @@ const App: React.FC = () => {
                         onClick={() => {
                           setIsEditingAdminProfile(false);
                           setAdminProfileData({ name: '', email: '', phone: '' });
+                          setAdminProfilePasswordData({ current: '', new: '', confirm: '' });
+                          setShowAdminProfilePasswords({ current: false, new: false, confirm: false });
                         }}
                         className="px-6 py-2 rounded-xl border font-bold uppercase tracking-widest text-sm transition-all hover:scale-105 active:scale-95"
                         style={{ backgroundColor: 'var(--glass-bg)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
@@ -2805,7 +2926,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <ResidentProfileModal resident={selectedResidentProfile} onClose={() => setSelectedResidentProfile(null)} onEdit={() => { handleOpenResidentModal(selectedResidentProfile); setSelectedResidentProfile(null); }} onDelete={selectedResidentProfile ? () => handleDeleteResident(selectedResidentProfile.id) : undefined} allPackages={allPackages} visitorLogs={visitorLogs} onPackageSelect={setSelectedPackageForDetail} onCheckOutVisitor={handleVisitorCheckOut} />
+      <ResidentProfileModal resident={selectedResidentProfile} onClose={() => setSelectedResidentProfile(null)} onEdit={role === 'SINDICO' && selectedResidentProfile ? () => { handleOpenResidentModal(selectedResidentProfile); setSelectedResidentProfile(null); } : undefined} onDelete={selectedResidentProfile && role === 'SINDICO' ? () => handleDeleteResident(selectedResidentProfile.id) : undefined} allPackages={allPackages} visitorLogs={visitorLogs} onPackageSelect={setSelectedPackageForDetail} onCheckOutVisitor={handleVisitorCheckOut} />
       <PackageDetailModal 
         pkg={selectedPackageForDetail} 
         onClose={() => setSelectedPackageForDetail(null)} 

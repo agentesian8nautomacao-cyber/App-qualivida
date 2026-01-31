@@ -66,6 +66,12 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     if (password.length > 32) {
       return { ok: false, error: 'A senha deve ter no máximo 32 caracteres.' };
     }
+    if (!/^[A-Za-z0-9]+$/.test(password)) {
+      return { ok: false, error: 'Use apenas letras e números (sem espaços ou símbolos).' };
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return { ok: false, error: 'A senha deve conter letras e números.' };
+    }
     return { ok: true };
   };
 
@@ -134,7 +140,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
       return;
     }
 
-    const normalizedPassword = newPassword.trim().toLowerCase();
+    const pwdTrim = newPassword.trim();
 
     setLoading(true);
     setMessage(null);
@@ -147,11 +153,11 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
         setMessage({ type: 'error', text: 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).' });
         return;
       }
-      const { error } = await supabase.auth.updateUser({ password: normalizedPassword });
+      const { error } = await supabase.auth.updateUser({ password: pwdTrim });
       if (!error) {
         clearRecoveryHashFromUrl(); // Só limpar após sucesso — evita "Auth session missing!" em retries
         try {
-          await supabase.rpc('sync_resident_password_after_reset', { new_password: normalizedPassword });
+          await supabase.rpc('sync_resident_password_after_reset', { new_password: pwdTrim });
         } catch (_) {}
       }
       setLoading(false);
@@ -166,7 +172,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
         const errorText = isSessionMissing
           ? 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).'
           : isPasswordPolicyError
-            ? 'Use pelo menos 6 caracteres (máximo 32).'
+            ? 'Use 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.'
             : errMsg || 'Erro ao redefinir senha. Tente novamente ou solicite um novo link.';
         setMessage({ type: 'error', text: errorText });
       }
@@ -180,7 +186,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
       return;
     }
 
-    const result = await resetPasswordWithToken(effectiveToken, normalizedPassword);
+    const result = await resetPasswordWithToken(effectiveToken, pwdTrim);
     setLoading(false);
 
     if (result.success) {
@@ -221,7 +227,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
           }`}>
             {step === 'request' 
               ? (isResident ? 'Informe a unidade ou e-mail cadastrado para receber o link de recuperação por e-mail.' : 'Informe o e-mail ou usuário cadastrado para receber o link de recuperação por e-mail. Se o e-mail existir, você receberá o link em alguns instantes.')
-              : 'Defina sua nova senha (mínimo 6 caracteres).'}
+              : 'Defina sua nova senha: 6 caracteres, letras e números. O sistema diferencia maiúsculas de minúsculas.'}
           </p>
 
           {recoveryLinkExpiredMessage && step === 'request' && (

@@ -86,6 +86,8 @@ export interface Notice {
   priority?: 'high' | 'normal';
   pinned?: boolean; // Fixar no topo
   read?: boolean;
+  /** Imagem do aviso (URL ou base64). Opcional. */
+  imageUrl?: string | null;
 }
 
 export interface ChatMessage {

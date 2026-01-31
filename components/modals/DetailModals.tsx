@@ -9,7 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 // --- PROFILE RESIDENTE 360 ---
 export const ResidentProfileModal = ({
   resident, onClose, onEdit, onDelete, allPackages, visitorLogs, onPackageSelect, onCheckOutVisitor
-}: { resident: Resident | null, onClose: () => void, onEdit: () => void, onDelete?: () => void, allPackages: Package[], visitorLogs: VisitorLog[], onPackageSelect: (p: Package) => void, onCheckOutVisitor: (id: string) => void }) => {
+}: { resident: Resident | null, onClose: () => void, onEdit?: () => void, onDelete?: () => void, allPackages: Package[], visitorLogs: VisitorLog[], onPackageSelect: (p: Package) => void, onCheckOutVisitor: (id: string) => void }) => {
   const toast = useToast();
   if (!resident) return null;
   let residentAvatar: string | null = null;
@@ -40,12 +40,16 @@ export const ResidentProfileModal = ({
              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 sm:gap-3 mb-1 flex-wrap">
                   <h2 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-tight truncate">{resident.name}</h2>
-                  <div className="flex items-center gap-2">
-                    <button onClick={onEdit} className="p-1.5 sm:p-2 bg-white/5 rounded-lg sm:rounded-xl hover:bg-white text-white hover:text-black transition-all flex-shrink-0" title="Editar"><Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                    {onDelete && (
-                      <button onClick={onDelete} className="p-1.5 sm:p-2 bg-red-500/20 text-red-400 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all flex-shrink-0" title="Excluir morador"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
-                    )}
-                  </div>
+                  {(onEdit != null || onDelete != null) && (
+                    <div className="flex items-center gap-2">
+                      {onEdit != null && (
+                        <button onClick={onEdit} className="p-1.5 sm:p-2 bg-white/5 rounded-lg sm:rounded-xl hover:bg-white text-white hover:text-black transition-all flex-shrink-0" title="Editar"><Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                      )}
+                      {onDelete != null && (
+                        <button onClick={onDelete} className="p-1.5 sm:p-2 bg-red-500/20 text-red-400 rounded-lg sm:rounded-xl hover:bg-red-500 hover:text-white transition-all flex-shrink-0" title="Excluir morador"><Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" /></button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <span className="inline-block px-2 sm:px-3 py-0.5 sm:py-1 bg-white text-black rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest">{formatUnit(resident.unit)}</span>
                 <div className="flex gap-2 sm:gap-3 mt-2 sm:mt-4">
@@ -440,24 +444,83 @@ export const NewOccurrenceModal = ({ isOpen, onClose, description, setDescriptio
   );
 };
 
-// --- MODAL EDITAR AVISO (MURAL) ---
+// --- MODAL CRIAR/EDITAR AVISO (MURAL) ---
 export const NoticeEditModal = ({ notice, onClose, onChange, onSave, onDelete }: any) => {
+  const isNew = !notice?.id;
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [imagePreview, setImagePreview] = React.useState<string | null>(notice?.imageUrl ?? null);
+
+  React.useEffect(() => {
+    setImagePreview(notice?.imageUrl ?? null);
+  }, [notice?.id, notice?.imageUrl]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = (ev.target?.result as string) || null;
+      setImagePreview(dataUrl);
+      if (notice) onChange({ ...notice, imageUrl: dataUrl });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    if (notice) onChange({ ...notice, imageUrl: undefined });
+  };
+
   if (!notice) return null;
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/90 backdrop-blur-2xl" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-12 animate-in zoom-in duration-300">
+      <div className="relative w-full max-w-lg bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-12 animate-in zoom-in duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
          <header className="flex justify-between items-start gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1"><div className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-green-100 text-green-600 flex-shrink-0"><Bell className="w-5 h-5 sm:w-6 sm:h-6" /></div><div className="min-w-0"><h4 className="text-lg sm:text-xl md:text-2xl font-black uppercase tracking-tight leading-none">Aviso Mural</h4><p className="text-[9px] sm:text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1">Editar Comunicado</p></div></div>
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+              <div className="p-3 sm:p-4 rounded-2xl sm:rounded-3xl bg-green-100 text-green-600 flex-shrink-0"><Bell className="w-5 h-5 sm:w-6 sm:h-6" /></div>
+              <div className="min-w-0">
+                <h4 className="text-lg sm:text-xl md:text-2xl font-black uppercase tracking-tight leading-none">Aviso Mural</h4>
+                <p className="text-[9px] sm:text-[10px] font-bold opacity-40 uppercase tracking-widest mt-1">{isNew ? 'Novo comunicado' : 'Editar comunicado'}</p>
+              </div>
+            </div>
             <button onClick={onClose} className="p-2 sm:p-3 bg-zinc-100 rounded-xl sm:rounded-2xl hover:bg-zinc-200 flex-shrink-0"><X className="w-4 h-4 sm:w-5 sm:h-5"/></button>
          </header>
          <div className="space-y-4 sm:space-y-6">
-            <div><label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Título</label><input type="text" value={notice.title} onChange={(e) => onChange({...notice, title: e.target.value})} className="w-full p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-bold text-base sm:text-lg outline-none border-2 border-transparent focus:border-black/5" /></div>
-            <div><label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Conteúdo</label><textarea value={notice.content} onChange={(e) => onChange({...notice, content: e.target.value})} className="w-full h-28 sm:h-32 p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-medium text-xs sm:text-sm outline-none border-2 border-transparent focus:border-black/5 resize-none shadow-inner" /></div>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 bg-zinc-50 p-3 sm:p-4 rounded-[20px] sm:rounded-[24px]"><div className="min-w-0"><p className="text-[9px] font-black uppercase opacity-30">Autor</p><p className="text-[10px] sm:text-xs font-bold uppercase truncate">{notice.author}</p></div><div className="text-left sm:text-right"><p className="text-[9px] font-black uppercase opacity-30">Data</p><p className="text-[10px] sm:text-xs font-bold uppercase">{new Date(notice.date).toLocaleDateString()}</p></div></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <button onClick={onDelete} className="py-4 sm:py-5 md:py-6 bg-red-100 text-red-600 rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] tracking-widest hover:bg-red-200 active:scale-95 transition-all flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> <span className="whitespace-nowrap">Eliminar</span></button>
-                <button onClick={onSave} className="py-4 sm:py-5 md:py-6 bg-black text-white rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-2xl flex items-center justify-center gap-2 sm:gap-3"><Save className="w-4 h-4" /> <span className="whitespace-nowrap">Salvar</span></button>
+            <div><label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Título</label><input type="text" value={notice.title || ''} onChange={(e) => onChange({...notice, title: e.target.value})} className="w-full p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-bold text-base sm:text-lg outline-none border-2 border-transparent focus:border-black/5" placeholder="Título do aviso" /></div>
+            <div><label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-2 block">Conteúdo (texto)</label><textarea value={notice.content || ''} onChange={(e) => onChange({...notice, content: e.target.value})} className="w-full h-28 sm:h-32 p-4 sm:p-5 bg-zinc-50 rounded-[20px] sm:rounded-[24px] font-medium text-xs sm:text-sm outline-none border-2 border-transparent focus:border-black/5 resize-none shadow-inner" placeholder="Escreva o aviso ou use uma imagem abaixo" /></div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2">Imagem (opcional)</span>
+                {imagePreview && (
+                  <button type="button" onClick={removeImage} className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-red-500 flex items-center gap-1">Remover</button>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed border-zinc-200 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 transition-colors"><Camera className="w-4 h-4" /> Câmera</button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-zinc-200 text-[10px] font-black uppercase tracking-widest text-zinc-600 hover:bg-zinc-50 transition-colors"><ImageIcon className="w-4 h-4" /> Galeria</button>
+              </div>
+              {imagePreview && (
+                <div className="mt-2 rounded-[20px] sm:rounded-[24px] overflow-hidden border border-zinc-100 bg-zinc-50">
+                  <img src={imagePreview} alt="Aviso" className="w-full max-h-48 object-contain" />
+                </div>
+              )}
+            </div>
+            {!isNew && (
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 bg-zinc-50 p-3 sm:p-4 rounded-[20px] sm:rounded-[24px]">
+                <div className="min-w-0"><p className="text-[9px] font-black uppercase opacity-30">Autor</p><p className="text-[10px] sm:text-xs font-bold uppercase truncate">{notice.author}</p></div>
+                <div className="text-left sm:text-right"><p className="text-[9px] font-black uppercase opacity-30">Data</p><p className="text-[10px] sm:text-xs font-bold uppercase">{new Date(notice.date).toLocaleDateString()}</p></div>
+              </div>
+            )}
+            <div className={`grid gap-3 sm:gap-4 ${isNew ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
+                {!isNew && <button type="button" onClick={onDelete} className="py-4 sm:py-5 md:py-6 bg-red-100 text-red-600 rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] tracking-widest hover:bg-red-200 active:scale-95 transition-all flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> <span className="whitespace-nowrap">Excluir</span></button>}
+                <button type="button" onClick={onSave} className="py-4 sm:py-5 md:py-6 bg-black text-white rounded-[24px] sm:rounded-[32px] font-black uppercase text-[10px] sm:text-[11px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-2xl flex items-center justify-center gap-2 sm:gap-3"><Save className="w-4 h-4" /> <span className="whitespace-nowrap">{isNew ? 'Criar aviso' : 'Salvar'}</span></button>
             </div>
          </div>
       </div>

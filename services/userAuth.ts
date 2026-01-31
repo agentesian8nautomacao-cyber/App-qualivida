@@ -94,21 +94,21 @@ export const isUserBlocked = (username: string): { blocked: boolean; remainingMi
 };
 
 /**
- * Verifica regra simplificada da senha: mínimo 6, máximo 32 caracteres.
- * Aceita qualquer caractere digitado (sem exigir letras ou números).
+ * Verifica regra simplificada da senha: 6 a 32 caracteres, apenas letras e números (pelo menos uma letra e um número).
+ * Maiúsculas e minúsculas são diferenciadas.
  */
 const isStrongPassword = (password: string): boolean => {
   if (!password || password.length < 6 || password.length > 32) return false;
+  if (!/^[A-Za-z0-9]+$/.test(password)) return false;
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return false;
   return true;
 };
 
 /**
  * Faz hash da senha usando SHA-256 (Web Crypto API) quando disponível.
+ * A senha é tratada como digitada (maiúsculas e minúsculas diferenciadas).
  * Em contexto não seguro (ex: http em rede local no celular), crypto.subtle
  * não está disponível, então usamos um fallback simples para não quebrar o login.
- *
- * IMPORTANTE: em produção (https://app-qualivida.vercel.app) a versão com
- * SHA-256 será usada normalmente.
  */
 const hashPassword = async (password: string): Promise<string> => {
   try {
@@ -124,10 +124,7 @@ const hashPassword = async (password: string): Promise<string> => {
     console.warn('Falha ao usar crypto.subtle para hash de senha, usando fallback:', err);
   }
 
-  // Fallback para ambiente não seguro (ex: http://192.168.x.x no celular)
-  // Aqui apenas retornamos a senha em texto puro, o que funciona para:
-  // - contas com password_hash no formato "plain:senha"
-  // - ambiente de desenvolvimento com senhas simples
+  // Fallback para ambiente não seguro: retorna a senha em texto puro (case-sensitive).
   return password;
 };
 
@@ -148,7 +145,7 @@ export const loginUser = async (
   attemptsRemaining?: number;
 }> => {
   const normalizedUsername = username.toLowerCase().trim();
-  const normalizedPassword = password.trim().toLowerCase();
+  const normalizedPassword = password.trim();
 
   // Verificar se o usuário está bloqueado
   const blockStatus = isUserBlocked(normalizedUsername);
@@ -181,7 +178,7 @@ export const loginUser = async (
 
     const data = row as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean; password_hash?: string };
 
-    // Se o usuário tem auth_id e email, usar Supabase Auth para login
+    // Se o usuário tem auth_id e email, usar Supabase Auth para login (senha case-sensitive)
     if (data.auth_id && data.email) {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: data.email,
@@ -205,15 +202,15 @@ export const loginUser = async (
       // Tem password_hash (legado): tentar legado abaixo
     }
 
-    // Login legado (sem auth_id ou Auth falhou e tem password_hash) — senha normalizada para case-insensitive
+    // Login legado (sem auth_id ou Auth falhou e tem password_hash) — senha case-sensitive
     const hashedPassword = await hashPassword(normalizedPassword);
     let isValidPassword = false;
     let usedDefaultPassword = false;
 
     if (data.password_hash && data.password_hash.startsWith('plain:')) {
-      const plainPassword = data.password_hash.substring(6).toLowerCase();
-      isValidPassword = plainPassword === normalizedPassword;
-      if (isValidPassword && data.role === 'PORTEIRO' && plainPassword === '123456') usedDefaultPassword = true;
+      const storedPlain = data.password_hash.substring(6);
+      isValidPassword = storedPlain === normalizedPassword;
+      if (isValidPassword && data.role === 'PORTEIRO' && storedPlain === '123456') usedDefaultPassword = true;
     } else if (data.password_hash === '$2a$10$placeholder_hash_here') {
       const defaultPasswords: Record<string, string> = {
         'portaria': '123456',
@@ -477,18 +474,18 @@ export const changeUserPassword = async (
       return { success: false, error: 'Senha atual incorreta' };
     }
 
-    const normalizedNew = newPassword.trim().toLowerCase();
+    const newPwdTrim = newPassword.trim();
 
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.id === loginResult.user.id) {
-      const { error } = await supabase.auth.updateUser({ password: normalizedNew });
+      const { error } = await supabase.auth.updateUser({ password: newPwdTrim });
       if (!error) return { success: true };
       console.warn('Auth updateUser falhou, tentando legado:', error);
     }
 
     const newPasswordHash = options?.storePlain
-      ? `plain:${normalizedNew}`
-      : await hashPassword(normalizedNew);
+      ? `plain:${newPwdTrim}`
+      : await hashPassword(newPwdTrim);
 
     const { error } = await supabase
       .from('users')
@@ -823,11 +820,11 @@ export const resetPasswordWithToken = async (
   message: string;
 }> => {
   try {
-    const normalized = newPassword.trim().toLowerCase();
-    if (!isStrongPassword(normalized)) {
+    const pwdTrim = newPassword.trim();
+    if (!isStrongPassword(pwdTrim)) {
       return {
         success: false,
-        message: 'A nova senha deve ter entre 6 e 32 caracteres.'
+        message: 'A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.'
       };
     }
 
@@ -840,8 +837,8 @@ export const resetPasswordWithToken = async (
       };
     }
 
-    // Hash da nova senha (normalizada para login case-insensitive)
-    const newPasswordHash = await hashPassword(normalized);
+    // Hash da nova senha (case-sensitive)
+    const newPasswordHash = await hashPassword(pwdTrim);
 
     // Atualizar senha do usuário
     const { error: updateError } = await supabase

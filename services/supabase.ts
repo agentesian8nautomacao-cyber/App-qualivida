@@ -127,6 +127,7 @@ export type Database = {
           category: 'Urgente' | 'Manutenção' | 'Social' | 'Institucional' | null;
           priority: 'high' | 'normal';
           pinned: boolean;
+          image_url: string | null;
           created_at: string;
           updated_at: string;
         };

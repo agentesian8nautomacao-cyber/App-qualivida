@@ -1,12 +1,17 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { extractGeminiText } from "../utils/geminiHelpers";
 import { logger } from "../utils/logger";
+import { getGeminiApiKey } from "../utils/geminiApiKey";
 
 export class AIService {
   static async analyzeCondoData(data: string): Promise<string> {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = getGeminiApiKey();
+      if (!apiKey) {
+        logger.error("AI Error: GEMINI_API_KEY não configurada.");
+        return "Erro ao processar análise inteligente. Configure a chave da API nas configurações.";
+      }
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Analise os seguintes dados do condomínio Qualivida e forneça um resumo executivo com recomendações rápidas: ${data}`,
@@ -23,7 +28,9 @@ export class AIService {
 
   static async getPackageAdvice(): Promise<string> {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = getGeminiApiKey();
+      if (!apiKey) return "";
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: "Quais as melhores práticas atuais para entrega de encomendas em condomínios de luxo para evitar acúmulo na portaria?",

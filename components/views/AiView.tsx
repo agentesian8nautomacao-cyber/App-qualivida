@@ -5,6 +5,7 @@ import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { encode, decode, decodeAudioData } from '../../services/audioHelper';
 import { getInternalInstructions } from '../../services/ai/internalInstructions';
 import { useAppConfig } from '../../contexts/AppConfigContext';
+import { getGeminiApiKey } from '../../utils/geminiApiKey';
 
 interface AiViewProps {
   allPackages: any[];
@@ -146,7 +147,7 @@ ${voiceSettings.style === 'serious'
     setIsProcessing(true);
 
     try {
-      const apiKey = process.env.API_KEY;
+      const apiKey = getGeminiApiKey();
       if (!apiKey) {
         throw new Error('Chave da API não configurada. Verifique as variáveis de ambiente.');
       }
@@ -201,7 +202,7 @@ ${voiceSettings.style === 'serious'
       }
 
       // Verificar API Key
-      const apiKey = process.env.API_KEY;
+      const apiKey = getGeminiApiKey();
       if (!apiKey) {
         throw new Error('Chave da API não configurada. Verifique as variáveis de ambiente.');
       }
@@ -311,7 +312,7 @@ ${voiceSettings.style === 'serious'
     setIsLiveConnecting(false);
   };
 
-  const hasGeminiKey = !!(process.env.API_KEY && String(process.env.API_KEY).trim());
+  const hasGeminiKey = !!getGeminiApiKey();
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6 animate-in fade-in duration-500 overflow-hidden relative">

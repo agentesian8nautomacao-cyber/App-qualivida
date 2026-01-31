@@ -16,6 +16,8 @@ interface ResidentsViewProps {
   allPackages: Package[];
   visitorLogs: VisitorLog[];
   onImportClick?: () => void;
+  /** Síndico: pode adicionar, importar, editar e excluir. Portaria: apenas visualiza. */
+  canManageResidents?: boolean;
 }
 
 const ResidentsView: React.FC<ResidentsViewProps> = ({
@@ -27,7 +29,8 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
   handleDeleteResident,
   allPackages,
   visitorLogs,
-  onImportClick
+  onImportClick,
+  canManageResidents = true
 }) => {
   const toast = useToast();
   const displayResidents = allResidents.filter(r => 
@@ -54,7 +57,7 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                 style={{ color: 'var(--text-primary)' }}
              />
           </div>
-          {onImportClick && (
+          {canManageResidents && onImportClick && (
             <button 
               onClick={onImportClick} 
               className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
@@ -62,12 +65,14 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
               <Upload className="w-4 h-4" /> Importar
             </button>
           )}
-          <button 
-            onClick={() => handleOpenResidentModal()} 
-            className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
-          >
-            <UserPlus className="w-4 h-4" /> Novo Morador
-          </button>
+          {canManageResidents && (
+            <button 
+              onClick={() => handleOpenResidentModal()} 
+              className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" /> Novo Morador
+            </button>
+          )}
         </div>
       </header>
 
@@ -94,23 +99,25 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
                    </div>
                  </div>
                  
-                 <div className="flex gap-2">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleOpenResidentModal(resident); }}
-                      className="p-2 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl hover:bg-[var(--text-primary)] hover:text-[var(--bg-color)] transition-all" 
-                      style={{ color: 'var(--text-primary)' }}
-                      title="Editar"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteResident(resident.id); }}
-                      className="p-2 bg-red-500/10 text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500 hover:text-white transition-all" 
-                      title="Remover"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                 </div>
+                 {canManageResidents && (
+                   <div className="flex gap-2">
+                     <button 
+                       onClick={(e) => { e.stopPropagation(); handleOpenResidentModal(resident); }}
+                       className="p-2 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl hover:bg-[var(--text-primary)] hover:text-[var(--bg-color)] transition-all" 
+                       style={{ color: 'var(--text-primary)' }}
+                       title="Editar"
+                     >
+                       <Edit2 className="w-4 h-4" />
+                     </button>
+                     <button 
+                       onClick={(e) => { e.stopPropagation(); handleDeleteResident(resident.id); }}
+                       className="p-2 bg-red-500/10 text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500 hover:text-white transition-all" 
+                       title="Remover"
+                     >
+                       <Trash2 className="w-4 h-4" />
+                     </button>
+                   </div>
+                 )}
               </div>
 
               <div>

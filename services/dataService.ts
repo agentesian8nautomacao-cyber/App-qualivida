@@ -734,7 +734,8 @@ function mapNoticesFromRaw(raw: any[]): Notice[] {
     category: n.category ?? undefined,
     priority: (n.priority as 'high' | 'normal') ?? 'normal',
     pinned: !!n.pinned,
-    read: false
+    read: false,
+    imageUrl: n.image_url ?? undefined
   }));
 }
 
@@ -751,7 +752,7 @@ export const getNotices = async (
       fetchRemote: async () => {
         const { data, error } = await supabase
           .from('notices')
-          .select('id, title, content, author, author_role, date, category, priority, pinned')
+          .select('id, title, content, author, author_role, date, category, priority, pinned, image_url')
           .order('date', { ascending: false });
         if (error) throw error;
         return data || [];
@@ -778,7 +779,8 @@ export const saveNotice = async (notice: Notice): Promise<{ success: boolean; er
       date: notice.date,
       category: notice.category || null,
       priority: notice.priority ?? 'normal',
-      pinned: notice.pinned ?? false
+      pinned: notice.pinned ?? false,
+      image_url: notice.imageUrl ?? null
     });
     return { success: result.success, id: result.id, error: result.error };
   } catch (err: any) {
@@ -795,7 +797,8 @@ export const updateNotice = async (notice: Notice): Promise<{ success: boolean; 
       content: notice.content,
       category: notice.category || null,
       priority: notice.priority ?? 'normal',
-      pinned: notice.pinned ?? false
+      pinned: notice.pinned ?? false,
+      image_url: notice.imageUrl ?? null
     });
     return { success: result.success, error: result.error };
   } catch (err: any) {

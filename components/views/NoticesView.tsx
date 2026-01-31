@@ -1,6 +1,6 @@
 
 import React, { useRef } from 'react';
-import { Pin, Crown, BadgeInfo, Check, CheckCheck, MessageSquareText, ChevronUp, X, Paperclip, SendHorizontal, RefreshCw, Trash2 } from 'lucide-react';
+import { Pin, Crown, BadgeInfo, Check, CheckCheck, MessageSquareText, ChevronUp, X, Paperclip, SendHorizontal, RefreshCw, Trash2, Plus, Edit2, Trash2 as TrashIcon } from 'lucide-react';
 import { Notice, ChatMessage, UserRole } from '../../types';
 
 interface NoticesViewProps {
@@ -20,6 +20,12 @@ interface NoticesViewProps {
   handleAcknowledgeNotice: (id: string) => void;
   onRefreshChat?: () => void;
   onClearChat?: () => void;
+  /** Portaria e Síndico: adicionar novo aviso */
+  onAddNotice?: () => void;
+  /** Portaria e Síndico: editar aviso */
+  onEditNotice?: (notice: Notice) => void;
+  /** Portaria e Síndico: excluir aviso por id */
+  onDeleteNotice?: (id: string) => void;
 }
 
 const NoticesView: React.FC<NoticesViewProps> = ({
@@ -38,8 +44,12 @@ const NoticesView: React.FC<NoticesViewProps> = ({
   chatEndRef,
   handleAcknowledgeNotice,
   onRefreshChat,
-  onClearChat
+  onClearChat,
+  onAddNotice,
+  onEditNotice,
+  onDeleteNotice
 }) => {
+  const canManageNotices = (role === 'PORTEIRO' || role === 'SINDICO') && (onAddNotice != null || onEditNotice != null || onDeleteNotice != null);
   const lastMessage = chatMessages[chatMessages.length - 1];
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -85,12 +95,21 @@ const NoticesView: React.FC<NoticesViewProps> = ({
             onClick={() => setIsChatOpen(false)}
          />
 
-         <div className="flex justify-between items-end mb-6 pb-6 border-b border-[var(--border-color)] flex-shrink-0">
+         <div className="flex justify-between items-end mb-6 pb-6 border-b border-[var(--border-color)] flex-shrink-0 flex-wrap gap-3">
             <div>
                <h3 className="text-3xl font-black uppercase tracking-tighter" style={{ color: 'var(--text-primary)' }}>Mural Digital</h3>
                <p className="text-[10px] font-bold uppercase tracking-[0.3em] mt-1" style={{ color: 'var(--text-secondary)' }}>Avisos & Comunicados</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+               {canManageNotices && onAddNotice && (
+                  <button
+                     type="button"
+                     onClick={onAddNotice}
+                     className="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all flex items-center gap-2 bg-green-600 text-white border-green-600 hover:bg-green-500 hover:border-green-500"
+                  >
+                     <Plus className="w-4 h-4" /> Adicionar aviso
+                  </button>
+               )}
                {['all', 'urgent', 'unread'].map(f => (
                   <button
                      key={f}
@@ -128,12 +147,38 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                         {/* Role Indicator Stripe */}
                         <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${roleStyles.stripe} opacity-80`} />
 
-                        {/* Pinned Icon */}
-                        {notice.pinned && (
-                           <div className="absolute top-4 right-4 rotate-45 z-10" style={{ color: 'var(--text-primary)' }}>
-                              <Pin className="w-5 h-5" style={{ fill: 'currentColor' }} />
-                           </div>
-                        )}
+                        {/* Top-right: Pinned + Editar/Excluir (Portaria e Síndico) */}
+                        <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5">
+                           {notice.pinned && (
+                              <div className="rotate-45" style={{ color: 'var(--text-primary)' }}>
+                                 <Pin className="w-5 h-5" style={{ fill: 'currentColor' }} />
+                              </div>
+                           )}
+                           {canManageNotices && onEditNotice && (
+                              <button
+                                 type="button"
+                                 onClick={(e) => { e.stopPropagation(); onEditNotice(notice); }}
+                                 className="p-2 rounded-xl bg-white/20 hover:bg-white/30 transition-colors"
+                                 style={{ color: 'var(--text-primary)' }}
+                                 title="Editar aviso"
+                              >
+                                 <Edit2 className="w-4 h-4" />
+                              </button>
+                           )}
+                           {canManageNotices && onDeleteNotice && (
+                              <button
+                                 type="button"
+                                 onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm('Excluir este aviso? A ação não pode ser desfeita.')) onDeleteNotice(notice.id);
+                                 }}
+                                 className="p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 transition-colors text-red-400"
+                                 title="Excluir aviso"
+                              >
+                                 <TrashIcon className="w-4 h-4" />
+                              </button>
+                           )}
+                        </div>
 
                         <div className="p-8">
                            <div className="flex items-center gap-3 mb-6">
@@ -149,6 +194,11 @@ const NoticesView: React.FC<NoticesViewProps> = ({
                            </div>
 
                            <h4 className="text-2xl font-black uppercase leading-tight mb-4" style={{ color: 'var(--text-primary)' }}>{notice.title}</h4>
+                           {notice.imageUrl && (
+                              <div className="rounded-xl overflow-hidden mb-4 border" style={{ borderColor: 'var(--border-color)' }}>
+                                 <img src={notice.imageUrl} alt="" className="w-full h-auto max-h-48 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              </div>
+                           )}
                            <p className="text-sm font-medium leading-relaxed mb-8" style={{ color: 'var(--text-secondary)' }}>{notice.content}</p>
 
                            <button 

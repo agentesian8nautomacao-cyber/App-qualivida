@@ -76,7 +76,7 @@ const ResidentRegister: React.FC<ResidentRegisterProps> = ({
 
     const pwd = (formData.password || '').trim();
     if (pwd.length < 6) {
-      setError('Senha deve ter 6 caracteres (letras e números). Maiúsculas e minúsculas são iguais.');
+      setError('Senha deve ter 6 caracteres (letras e números). O sistema diferencia maiúsculas de minúsculas.');
       return;
     }
     if (!/^[A-Za-z0-9]+$/.test(pwd)) {
