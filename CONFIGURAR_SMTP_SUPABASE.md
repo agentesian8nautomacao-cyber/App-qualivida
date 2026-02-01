@@ -4,6 +4,12 @@ O e-mail **integrado** do Supabase tem limite fixo de **2 e-mails por hora** e *
 
 ---
 
+## Gmail não recebe o link de recuperação?
+
+Se o e-mail de recuperação **chega no Hotmail/Outlook mas não chega no Gmail** (nem na caixa de entrada, nem em Spam/Promoções), o Gmail está bloqueando o remetente padrão do Supabase. **A única solução é configurar SMTP personalizado com domínio verificado (SPF/DKIM)** — siga este guia. Sem isso, o Gmail não entrega.
+
+---
+
 ## Onde configurar
 
 1. Acesse o [Supabase Dashboard](https://supabase.com/dashboard) e abra seu projeto.

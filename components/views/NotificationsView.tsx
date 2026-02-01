@@ -153,7 +153,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
           {filteredNotifications.map(notification => (
             <div
               key={notification.id}
-              className={`premium-glass rounded-2xl p-5 border transition-all cursor-pointer group relative ${
+              className={`premium-glass rounded-2xl p-5 border transition-all group relative ${
                 notification.read
                   ? 'border-[var(--border-color)] opacity-70'
                   : 'border-[var(--text-primary)]/30 bg-[var(--border-color)]/20'
@@ -226,7 +226,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                       <Clock className="w-3 h-3" />
                       <span>{formatDate(notification.created_at)}</span>
                     </div>
-                    <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-wrap">
+                    <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-wrap relative z-10">
                       {notification.type === 'package' && notification.related_id && (
                         <button
                           type="button"
@@ -235,8 +235,13 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                             e.stopPropagation();
                             handleViewRelated(notification);
                           }}
-                          className="px-3 sm:px-3 py-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap min-h-[44px] sm:min-h-0 touch-manipulation cursor-pointer inline-flex items-center justify-center"
-                          style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                          className="px-3 sm:px-3 py-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap min-h-[44px] sm:min-h-0 touch-manipulation cursor-pointer inline-flex items-center justify-center hover:opacity-80 active:scale-95"
+                          style={{ 
+                            backgroundColor: 'var(--glass-bg)', 
+                            color: 'var(--text-primary)', 
+                            border: '1px solid var(--border-color)',
+                            pointerEvents: 'auto'
+                          }}
                         >
                           <Eye className="w-3 h-3 inline mr-1" />
                           Ver encomenda
@@ -244,12 +249,19 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
                       )}
                       {!notification.read && (
                         <button
+                          type="button"
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             onMarkAsRead(notification.id);
                           }}
-                          className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap"
-                          style={{ backgroundColor: 'var(--glass-bg)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                          className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-all whitespace-nowrap min-h-[44px] sm:min-h-0 touch-manipulation cursor-pointer inline-flex items-center justify-center hover:opacity-80 active:scale-95"
+                          style={{ 
+                            backgroundColor: 'var(--glass-bg)', 
+                            color: 'var(--text-primary)', 
+                            border: '1px solid var(--border-color)',
+                            pointerEvents: 'auto'
+                          }}
                         >
                           <CheckCircle2 className="w-3 h-3 inline mr-1" />
                           Marcar como lida

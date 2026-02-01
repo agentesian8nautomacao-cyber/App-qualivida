@@ -56,27 +56,38 @@ Para o e-mail chegar: cadastre o endereço em **Authentication → Users** no Da
 
 ---
 
-## E-mail chega no Hotmail/Outlook mas não no Gmail
+## E-mail chega no Hotmail/Outlook mas NÃO no Gmail (nem no Spam)
 
-Se o link de recuperação **chega no Hotmail** (ou Outlook) mas **não chega no Gmail**, o envio está funcionando; o Gmail está filtrando ou bloqueando a mensagem.
+Se o link de recuperação **chega no Hotmail** (ou Outlook) mas **não chega no Gmail** — nem na caixa de entrada, nem em **Spam** ou **Promoções** —, o Gmail está **bloqueando ou descartando** o e-mail do remetente padrão do Supabase. Isso é comum: o Gmail exige reputação e domínio verificado (SPF/DKIM).
 
-### O que fazer (Gmail)
+### Solução: SMTP personalizado com domínio verificado
 
-1. **Verificar Spam e Promoções**
-   - No Gmail, abra a pasta **Spam** (e também a aba **Promoções**, se usar abas).
-   - Procure por e-mails do remetente do app (ex.: noreply@..., Sistema Qualivida).
-   - Se encontrar, marque como **Não é spam** e, se quiser, arraste para **Principal** ou adicione o remetente aos contatos.
+**Não há ajuste no app que resolva isso.** A única forma de o Gmail passar a receber é o **administrador** configurar **SMTP personalizado** no Supabase usando um provedor de e-mail (Resend, Brevo, SendGrid) e **verificar o domínio** de envio (SPF e DKIM). Sem isso, o Gmail continua sem entregar.
 
-2. **Adicionar o remetente aos contatos**
-   - Se o e-mail de recuperação usar um endereço fixo (ex.: `noreply@seudominio.com`), adicione esse endereço aos **Contatos** do Gmail para reduzir a chance de ir para Spam no futuro.
+**Passo a passo resumido:**
 
-3. **Melhorar a entrega no Gmail (administrador)**
-   - O Gmail é mais rigoroso que Hotmail/Outlook com remetentes sem reputação ou sem domínio verificado.
-   - Configure **SMTP personalizado** no Supabase (veja **CONFIGURAR_SMTP_SUPABASE.md**) usando um provedor (Resend, Brevo, SendGrid etc.).
-   - **Verifique o domínio** no provedor e configure **SPF** e **DKIM** para o domínio de envio — isso aumenta muito a chance do Gmail aceitar e colocar na caixa de entrada.
-   - Use um **remetente** com esse domínio verificado (ex.: `noreply@seudominio.com`), não o e-mail padrão do Supabase.
+1. **Criar conta em um provedor**  
+   - [Resend](https://resend.com) (grátis para começar) ou [Brevo](https://brevo.com) ou SendGrid.
 
-Resumo: para Gmail, verifique **Spam** e **Promoções**; para evitar isso no futuro, use SMTP personalizado com domínio verificado (SPF/DKIM).
+2. **Verificar um domínio**  
+   - No provedor, adicione e verifique um domínio que você controla (ex.: `seudominio.com`).  
+   - Siga as instruções do provedor para **SPF** e **DKIM** (geralmente são registros DNS no seu provedor de domínio).
+
+3. **Configurar no Supabase**  
+   - **Authentication** → **E-mails** → **Configurações SMTP**.  
+   - Ative **Habilitar SMTP personalizado**.  
+   - **Remetente:** use um e-mail do domínio verificado (ex.: `noreply@seudominio.com`).  
+   - Preencha **Host, Porta, Usuário e Senha** conforme o provedor (veja **CONFIGURAR_SMTP_SUPABASE.md** com exemplos Resend e Brevo).  
+   - Salve.
+
+4. **Testar**  
+   - Solicite de novo “Esqueci minha senha” com um e-mail **@gmail.com**. O e-mail deve passar a chegar (inbox ou Spam no início; depois tende a ir para a caixa de entrada).
+
+**Se você não tem domínio próprio:**  
+- Resend oferece domínio de teste (`onboarding@resend.dev`) para testes; para produção e Gmail estável, o ideal é um domínio verificado.  
+- Brevo e outros também têm opções de teste; confira a documentação do provedor.
+
+**Resumo:** Gmail não entrega o e-mail integrado do Supabase. Para Gmail receber, é obrigatório **SMTP personalizado + domínio verificado (SPF/DKIM)**. Guia completo: **CONFIGURAR_SMTP_SUPABASE.md**.
 
 ---
 
