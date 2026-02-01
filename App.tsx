@@ -99,14 +99,8 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isScreenSaverActive, setIsScreenSaverActive] = useState(false);
   const [showResidentRegister, setShowResidentRegister] = useState(false);
-  // Splash de abertura com o vídeo institucional (não repetir se já visto/pulado)
-  const [showLogoSplash, setShowLogoSplash] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('hasSeenLogoSplash') !== 'true';
-    } catch {
-      return true;
-    }
-  });
+  // Splash de abertura: vídeo de apresentação sempre primeiro para usuários não autenticados
+  const [showLogoSplash, setShowLogoSplash] = useState<boolean>(true);
   // Controle de áudio do vídeo (muted por padrão para autoplay funcionar)
   const [isVideoMuted, setIsVideoMuted] = useState<boolean>(true);
 
@@ -1724,7 +1718,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false); 
     setCurrentResident(null);
     setShowResidentRegister(false);
-    setShowLogoSplash(false);
+    setShowLogoSplash(true);
     setActiveTab('dashboard');
     // Limpar dados do morador da sessão
     sessionStorage.removeItem('currentResident');
