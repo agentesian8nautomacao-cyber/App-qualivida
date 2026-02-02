@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
     process.env.VITE_GEMINI_API_KEY = geminiKey;
   }
   return {
+    base: '/',
     build: {
       outDir: 'dist',
       emptyOutDir: true
@@ -61,8 +62,8 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/$/],
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,eot,mp4}'],
+          navigateFallbackDenylist: [/^\/$/, /\.mp4$/i],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,eot}'],
           cleanupOutdatedCaches: true,
           skipWaiting: true,
           clientsClaim: true,
@@ -76,13 +77,22 @@ export default defineConfig(({ mode }) => {
               }
             },
             {
+              urlPattern: /\.(?:mp4|m4v|webm)$/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'video-v1',
+                networkTimeoutSeconds: 5,
+                expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 }
+              }
+            },
+            {
               urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
               handler: 'CacheFirst',
               options: {
                 cacheName: 'images-v3',
                 expiration: {
                   maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30 dias
+                  maxAgeSeconds: 60 * 60 * 24 * 30
                 }
               }
             },
@@ -93,7 +103,7 @@ export default defineConfig(({ mode }) => {
                 cacheName: 'static-resources-v3',
                 expiration: {
                   maxEntries: 200,
-                  maxAgeSeconds: 60 * 60 * 24 * 7 // 7 dias
+                  maxAgeSeconds: 60 * 60 * 24 * 7
                 }
               }
             }

@@ -2664,17 +2664,22 @@ const App: React.FC = () => {
   if (isScreenSaverActive) {
     content = <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
   } else if (!isAuthenticated && showLogoSplash) {
+    // Vídeo: path absoluto a partir da raiz (funciona em custom domain e preview)
+    const base = (typeof import.meta !== 'undefined' && (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL) || '/';
+    const basePath = base.replace(/\/$/, '');
+    const videoSrc = `${basePath}/GestaoQualivida.mp4`;
     // Mostrar vídeo de abertura para usuários não autenticados
     content = (
       <div className="w-screen h-screen min-w-full min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
         <video
           ref={videoRef}
-          src="/GestaoQualivida.mp4"
-          poster="/logo-qualivida.jpg"
+          src={videoSrc}
+          poster={`${basePath}/logo-qualivida.jpg`}
           autoPlay
           muted={isVideoMuted}
           playsInline
           loop={false}
+          preload="auto"
           className="w-full h-full min-w-full min-h-full object-cover md:object-contain"
           onEnded={handleSkipSplash}
           onError={() => {
