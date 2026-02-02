@@ -75,6 +75,15 @@ const AiView: React.FC<AiViewProps> = ({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Carregar lista de vozes (Chrome/Edge populam getVoices() de forma assíncrona)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.getVoices();
+    const onVoicesChanged = () => window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener?.('voiceschanged', onVoicesChanged);
+    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', onVoicesChanged);
+  }, []);
+
   // Cleanup Live Voice ao desmontar
   useEffect(() => {
     return () => {
@@ -87,7 +96,7 @@ const AiView: React.FC<AiViewProps> = ({
     };
   }, []);
 
-  // Mapa de Vozes do Gemini Live API
+  // Mapa de Vozes do Gemini Live API (exibição)
   const getVoiceConfig = () => {
     // Fenrir: Deep/Authoritative (Male Serious)
     // Puck: Playful/Mid (Male Animated)
@@ -98,6 +107,27 @@ const AiView: React.FC<AiViewProps> = ({
     } else {
       return voiceSettings.style === 'serious' ? 'Kore' : 'Aoede';
     }
+  };
+
+  // Seleciona voz da Web Speech API por gênero (pt-BR). Nomes de vozes variam por SO/navegador.
+  const getSpeechVoiceByGender = (gender: 'male' | 'female'): SpeechSynthesisVoice | null => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+    const voices = window.speechSynthesis.getVoices();
+    const ptVoices = voices.filter(v => v.lang.startsWith('pt'));
+    if (ptVoices.length === 0) return null;
+    const wantMale = gender === 'male';
+    // Padrões comuns: Daniel, Ricardo, Luciano = masculino; Maria, Francisca, Luciana = feminino
+    const maleNames = /daniel|ricardo|luciano|antonio|male|david|paulo|tiago/i;
+    const femaleNames = /maria|francisca|luciana|helena|female|ana|fernanda|camila/i;
+    const match = ptVoices.find(v => {
+      const n = (v.name || '').toLowerCase();
+      return wantMale ? maleNames.test(n) : femaleNames.test(n);
+    });
+    if (match) return match;
+    // Fallback: alguns navegadores ordenam [feminino, masculino] ou vice-versa; tenta por índice
+    if (ptVoices.length >= 2 && wantMale) return ptVoices[1];
+    if (ptVoices.length >= 2 && !wantMale) return ptVoices[0];
+    return ptVoices[0];
   };
 
   const getSystemPersona = () => {
@@ -198,7 +228,7 @@ ${voiceSettings.style === 'serious'
     }
   };
 
-  // --- Enviar transcrição de voz para a IA e falar a resposta (Live Voice) ---
+  // --- Enviar transcrição de voz para a IA e falar a resposta (Live Voice) — só voz, sem escrever no chat ---
   const sendVoiceToAI = useCallback(async (transcript: string) => {
     const text = (transcript || '').trim();
     if (!text || isLiveProcessingRef.current) return;
@@ -206,7 +236,6 @@ ${voiceSettings.style === 'serious'
     setLiveTranscript(text);
     setLiveResponse('');
     setLiveListening(false);
-    setMessages(prev => [...prev, { id: String(Date.now()), role: 'user', text, timestamp: new Date() }]);
     try {
       const context = getSystemContext();
       const persona = getSystemPersona();
@@ -218,17 +247,15 @@ ${voiceSettings.style === 'serious'
       const data = await res.json().catch(() => ({}));
       const reply = res.ok ? (data.text ?? '') : (data.error ?? 'Erro ao processar.');
       const replyText = reply || 'Desculpe, não consegui gerar uma resposta.';
-      setMessages(prev => [...prev, { id: String(Date.now() + 1), role: 'model', text: replyText, timestamp: new Date() }]);
       setLiveResponse(replyText);
-      // Falar a resposta (Web Speech API)
+      // Falar a resposta (Web Speech API) — respeita gênero da voz (Masculino/Feminino)
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(replyText);
         u.lang = 'pt-BR';
         u.rate = 0.95;
-        const voices = window.speechSynthesis.getVoices();
-        const ptVoice = voices.find(v => v.lang.startsWith('pt'));
-        if (ptVoice) u.voice = ptVoice;
+        const chosenVoice = getSpeechVoiceByGender(voiceSettings.gender);
+        if (chosenVoice) u.voice = chosenVoice;
         u.onend = () => {
           isLiveProcessingRef.current = false;
           setLiveResponse('');
@@ -249,7 +276,6 @@ ${voiceSettings.style === 'serious'
     } catch (err) {
       console.error('Erro Live Voice:', err);
       const errMsg = 'Erro de conexão. Tente novamente.';
-      setMessages(prev => [...prev, { id: String(Date.now() + 1), role: 'model', text: errMsg, timestamp: new Date() }]);
       setLiveResponse(errMsg);
       isLiveProcessingRef.current = false;
       if (recognitionRef.current && isLiveActiveRef.current) {
@@ -361,7 +387,7 @@ ${voiceSettings.style === 'serious'
         </div>
       )}
 
-      {/* MODAL LIVE (OVERLAY IMERSIVO) */}
+      {/* MODAL LIVE — Radar IA / Modo Sentinela (OVERLAY IMERSIVO) */}
       {(isLiveActive || isLiveConnecting) && (
         <div className="fixed inset-0 z-[999] bg-black/98 backdrop-blur-3xl flex flex-col items-center justify-center animate-in fade-in duration-700 p-4 md:p-8 overflow-auto">
            <button 
@@ -371,38 +397,93 @@ ${voiceSettings.style === 'serious'
              <X className="w-6 h-6 md:w-8 md:h-8" />
            </button>
 
-           <div className="relative w-64 h-64 md:w-80 md:h-80 flex items-center justify-center flex-shrink-0">
-              <div className={`absolute inset-0 rounded-full blur-[80px] animate-pulse ${voiceSettings.gender === 'male' ? 'bg-cyan-500/20' : 'bg-purple-500/20'}`} />
-              
-              <div className={`w-44 h-44 md:w-56 md:h-56 rounded-full border-2 flex items-center justify-center relative transition-transform duration-300 ${isLiveConnecting ? 'scale-75 opacity-50' : 'scale-100'} ${voiceSettings.gender === 'male' ? 'border-cyan-500/40' : 'border-purple-500/40'}`}>
-                 <div className={`absolute inset-0 bg-gradient-to-t rounded-full ${voiceSettings.gender === 'male' ? 'from-cyan-900/60' : 'from-purple-900/60'} to-transparent`} />
-                 <Activity className={`w-16 h-16 md:w-24 md:h-24 ${voiceSettings.gender === 'male' ? 'text-cyan-400' : 'text-purple-400'} ${isLiveActive ? 'animate-[bounce_0.6s_infinite]' : 'animate-pulse'}`} />
-                 <div className={`absolute inset-[-20px] border rounded-full animate-[spin_8s_linear_infinite] ${voiceSettings.gender === 'male' ? 'border-cyan-500/10' : 'border-purple-500/10'}`} />
+           {/* Wrapper com respiração digital (scale 1 → 1.03 → 1) */}
+           <div 
+             className={`radar-breathe-wrap relative flex items-center justify-center flex-shrink-0 transition-opacity duration-300 ${isLiveConnecting ? 'opacity-60 scale-90' : 'opacity-100'}`}
+           >
+              {/* Base do radar: círculo 200–280px, borda gradiente ciano → verde, glow */}
+              <div 
+                className="relative w-[240px] h-[240px] md:w-[260px] md:h-[260px] rounded-full p-[1px]"
+                style={{
+                  background: 'conic-gradient(from 0deg, rgba(6,182,212,0.9), rgba(34,197,94,0.85), rgba(6,182,212,0.9))',
+                  boxShadow: '0 0 40px rgba(6,182,212,0.15), 0 0 80px rgba(34,197,94,0.08), inset 0 0 60px rgba(0,0,0,0.4)',
+                }}
+              >
+                 <div className="w-full h-full rounded-full bg-black/95 relative overflow-hidden">
+                    {/* Grade radar: círculos concêntricos */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                       {[1, 2, 3, 4].map((i) => (
+                         <div
+                           key={i}
+                           className="absolute rounded-full border border-cyan-500/20 border-green-500/10"
+                           style={{
+                             width: `${i * 22}%`,
+                             height: `${i * 22}%`,
+                             maxWidth: '96%',
+                             maxHeight: '96%',
+                           }}
+                         />
+                       ))}
+                    </div>
+                    {/* Grade: linhas cruzadas vertical e horizontal */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                       <div className="absolute w-px h-full bg-gradient-to-b from-transparent via-cyan-500/20 to-transparent" />
+                       <div className="absolute h-px w-full bg-gradient-to-r from-transparent via-green-500/20 to-transparent" />
+                    </div>
+
+                    {/* Linha de varredura (sonar) — rotação contínua 360°, 4s linear */}
+                    <div
+                      className="radar-sweep-line absolute left-1/2 top-1/2 w-0.5 origin-bottom pointer-events-none"
+                      style={{
+                        height: '50%',
+                        marginLeft: '-1px',
+                        transform: 'translateY(-100%)',
+                        transformOrigin: '50% 100%',
+                        background: 'linear-gradient(to top, rgba(6,182,212,0.85), rgba(34,197,94,0.5), transparent)',
+                        boxShadow: '0 0 12px rgba(6,182,212,0.4), 0 0 24px rgba(34,197,94,0.2)',
+                        filter: 'blur(0.5px)',
+                      }}
+                    />
+
+                    {/* Pulsos de detecção — pontos/anéis assíncronos */}
+                    {[
+                      { left: '18%', top: '32%', delay: '0s' },
+                      { left: '68%', top: '24%', delay: '0.8s' },
+                      { left: '75%', top: '58%', delay: '1.6s' },
+                      { left: '28%', top: '70%', delay: '2.4s' },
+                      { left: '52%', top: '48%', delay: '3.2s' },
+                      { left: '42%', top: '22%', delay: '1.2s' },
+                    ].map((pos, i) => (
+                      <div
+                        key={i}
+                        className="radar-pulse-dot absolute w-2 h-2 rounded-full bg-cyan-400/90 border border-green-400/60 pointer-events-none"
+                        style={{
+                          left: pos.left,
+                          top: pos.top,
+                          transform: 'translate(-50%, -50%)',
+                          boxShadow: '0 0 8px rgba(6,182,212,0.6)',
+                          animationDelay: pos.delay,
+                        }}
+                      />
+                    ))}
+                 </div>
               </div>
            </div>
 
-           <div className="mt-8 md:mt-16 text-center space-y-4 md:space-y-6 px-4 max-w-xl">
+           {/* Status fixo abaixo do radar: OUVINDO — FALE AGORA */}
+           <div className="mt-8 md:mt-12 text-center space-y-4 md:space-y-6 px-4 max-w-xl flex-shrink-0">
               <div className="flex items-center justify-center gap-2 md:gap-3 flex-wrap">
-                 <div className={`w-3 h-3 rounded-full ${isLiveConnecting ? 'bg-amber-500' : liveListening ? 'bg-green-500' : 'bg-cyan-500'} animate-pulse`} />
-                 <span className={`text-[10px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.5em] ${voiceSettings.gender === 'male' ? 'text-cyan-500' : 'text-purple-500'}`}>
-                    {isLiveConnecting ? 'Sincronizando...' : liveListening ? 'Ouvindo — fale agora' : liveTranscript ? 'Processando...' : `Voz: ${getVoiceConfig()} (${voiceSettings.style})`}
+                 <div className={`w-3 h-3 rounded-full flex-shrink-0 ${isLiveConnecting ? 'bg-amber-500' : liveListening ? 'bg-green-500' : 'bg-cyan-500'} animate-pulse`} />
+                 <span className="text-[10px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.5em] text-cyan-400/90">
+                    {isLiveConnecting ? 'Sincronizando...' : liveListening ? 'OUVINDO — FALE AGORA' : liveTranscript ? 'Processando...' : `Voz: ${getVoiceConfig()} (${voiceSettings.style})`}
                  </span>
               </div>
-              <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-tighter">
-                 {isLiveConnecting ? 'Conectando...' : liveListening ? 'Canal Aberto' : liveTranscript ? 'Respondendo...' : 'Canal Aberto'}
+              <h2 className="text-xl md:text-3xl font-black text-white/95 uppercase tracking-tighter">
+                 {isLiveConnecting ? 'Conectando...' : liveListening ? 'Sentinela operacional' : liveTranscript ? 'Respondendo...' : 'Sentinela operacional'}
               </h2>
-              {liveTranscript && (
-                <p className="text-sm text-zinc-400 font-medium">Você: &quot;{liveTranscript}&quot;</p>
-              )}
-              {liveResponse && (
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
-                  <p className="text-[10px] font-black uppercase text-zinc-500 mb-1">Sentinela</p>
-                  <p className="text-sm text-white font-medium leading-relaxed">{liveResponse}</p>
-                </div>
-              )}
            </div>
 
-           <button onClick={stopLiveMode} className="mt-6 md:mt-12 px-6 md:px-10 py-3 md:py-5 bg-white/5 border border-white/10 rounded-full text-zinc-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest hover:text-white transition-all">Encerrar</button>
+           <button onClick={stopLiveMode} className="mt-6 md:mt-10 px-6 md:px-10 py-3 md:py-5 bg-white/5 border border-white/10 rounded-full text-zinc-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest hover:text-white transition-all">Encerrar</button>
         </div>
       )}
 

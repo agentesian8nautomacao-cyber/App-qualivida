@@ -1,2 +1,59 @@
 /* Additional styles if needed */
 
+/* ========== Radar IA / Modo Sentinela ========== */
+@keyframes radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radar-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes radar-pulse-dot {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  35% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+}
+
+/* Classes base do Radar IA */
+.radar-breathe-wrap {
+  animation: radar-breathe 5s ease-in-out infinite;
+}
+
+.radar-sweep-line {
+  animation: radar-sweep 4s linear infinite;
+}
+
+.radar-pulse-dot {
+  animation: radar-pulse-dot 2.5s ease-out infinite;
+}
+
+/* Acessibilidade: reduzir movimento */
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep-line {
+    animation-duration: 12s !important;
+  }
+  .radar-breathe-wrap {
+    animation-duration: 8s !important;
+  }
+  .radar-pulse-dot {
+    animation-duration: 3s !important;
+    animation-iteration-count: 2 !important;
+  }
+}
