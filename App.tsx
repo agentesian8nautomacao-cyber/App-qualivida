@@ -2664,10 +2664,10 @@ const App: React.FC = () => {
   if (isScreenSaverActive) {
     content = <ScreenSaver onExit={() => setIsScreenSaverActive(false)} theme={theme} />;
   } else if (!isAuthenticated && showLogoSplash) {
-    // Vídeo: path absoluto a partir da raiz (funciona em custom domain e preview)
+    // Vídeo: path absoluto + cache-bust para evitar CDN/browser servindo HTML em cache
     const base = (typeof import.meta !== 'undefined' && (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL) || '/';
     const basePath = base.replace(/\/$/, '');
-    const videoSrc = `${basePath}/GestaoQualivida.mp4`;
+    const videoSrc = `${basePath}/GestaoQualivida.mp4?v=2`;
     // Mostrar vídeo de abertura para usuários não autenticados
     content = (
       <div className="w-screen h-screen min-w-full min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
