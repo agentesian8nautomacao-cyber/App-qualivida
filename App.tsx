@@ -926,7 +926,7 @@ const App: React.FC = () => {
     loadNotifications();
   }, [isAuthenticated, role, activeTab, currentResident]);
 
-  // Carregar notificações quando morador estiver autenticado (única carga; sem refetch ao trocar de aba)
+  // Carregar notificações e pacotes quando morador estiver autenticado (e ao abrir dashboard para manter cards em sync com o badge)
   useEffect(() => {
     if (!isAuthenticated || role !== 'MORADOR' || !currentResident) return;
 
@@ -940,15 +940,12 @@ const App: React.FC = () => {
       setNotificationsLoading(false);
     };
 
-    loadNotifications();
-
-    // Recarregar pacotes quando morador acessa notificações para garantir que imagens estejam atualizadas
     const loadPackages = async () => {
       const result = await getPackages();
-      if (result.data) {
-        setAllPackages(result.data);
-      }
+      if (result.data) setAllPackages(result.data);
     };
+
+    loadNotifications();
     loadPackages();
 
     // Configurar Realtime listener para notificações
@@ -1069,6 +1066,18 @@ const App: React.FC = () => {
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [isAuthenticated, role, currentResident]);
+
+  // Refetch pacotes e notificações quando morador abre o dashboard (mantém cards e badge em sync)
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'MORADOR' || !currentResident || activeTab !== 'dashboard') return;
+    getPackages().then((res) => { if (res.data) setAllPackages(res.data); });
+    getNotifications(currentResident.id).then((result) => {
+      if (result.data) {
+        setAllNotifications(result.data);
+        setUnreadNotificationCount(result.data.filter(n => !n.read).length);
+      }
+    });
+  }, [isAuthenticated, role, currentResident, activeTab]);
 
   const handleDeleteNotification = useCallback(async (notificationId: string) => {
     const result = await deleteNotification(notificationId);

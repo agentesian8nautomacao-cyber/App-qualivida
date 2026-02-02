@@ -70,7 +70,13 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return { ...defaultConfig, ...parsed };
+        // Merge profundo de aiConfig para não perder voiceGender/voiceStyle ao carregar
+        const merged: AppConfig = {
+          ...defaultConfig,
+          ...parsed,
+          aiConfig: { ...defaultConfig.aiConfig, ...(parsed?.aiConfig || {}) },
+        };
+        return merged;
       } catch {
         return defaultConfig;
       }
@@ -79,8 +85,12 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   });
 
   useEffect(() => {
-    localStorage.setItem('app_config', JSON.stringify(config));
-    // Aplicar tema quando config mudar
+    // Persistir config completo (aiConfig sempre com todos os campos)
+    const toSave: AppConfig = {
+      ...config,
+      aiConfig: { ...defaultConfig.aiConfig, ...config.aiConfig },
+    };
+    localStorage.setItem('app_config', JSON.stringify(toSave));
     document.documentElement.setAttribute('data-theme', config.theme);
   }, [config]);
 

@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Bell, Receipt, Calendar, Package, AlertCircle, FileText, Eye, Download } from 'lucide-react';
 import { Boleto, Notice, Package as PackageType, Resident } from '../../types';
-import { formatUnit } from '../../utils/unitFormatter';
+import { formatUnit, compareUnits } from '../../utils/unitFormatter';
 
 interface MoradorDashboardViewProps {
   currentResident: Resident;
@@ -27,20 +27,21 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
   onViewPackage,
   onViewNotice
 }) => {
-  // Filtrar apenas dados do morador logado
+  // Filtrar apenas dados do morador logado (compareUnits para aceitar "BL 03 / APTO 005" e "03/005")
+  const residentUnit = currentResident.unit;
   const myBoletos = useMemo(() => 
-    allBoletos.filter(b => b.unit === currentResident.unit),
-    [allBoletos, currentResident.unit]
+    allBoletos.filter(b => compareUnits(b.unit, residentUnit)),
+    [allBoletos, residentUnit]
   );
 
   const myPackages = useMemo(() => 
-    allPackages.filter(p => p.unit === currentResident.unit),
-    [allPackages, currentResident.unit]
+    allPackages.filter(p => compareUnits(p.unit, residentUnit)),
+    [allPackages, residentUnit]
   );
 
   const myReservations = useMemo(() => 
-    allReservations.filter(r => r.unit === currentResident.unit),
-    [allReservations, currentResident.unit]
+    allReservations.filter(r => r.unit && compareUnits(String(r.unit), residentUnit)),
+    [allReservations, residentUnit]
   );
 
   const unreadNotices = useMemo(() => 

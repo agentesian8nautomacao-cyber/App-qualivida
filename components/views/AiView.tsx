@@ -46,11 +46,11 @@ const AiView: React.FC<AiViewProps> = ({
     ];
   });
 
-  // Voice & Persona State - usar do config
+  // Voice & Persona State - usar do config (fallbacks para garantir UI sempre consistente)
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
   const voiceSettings: VoiceSettings = { 
-    gender: config.aiConfig.voiceGender, 
-    style: config.aiConfig.voiceStyle 
+    gender: config.aiConfig?.voiceGender ?? 'male', 
+    style: config.aiConfig?.voiceStyle ?? 'serious' 
   };
 
   // Live State
@@ -401,9 +401,9 @@ ${voiceSettings.style === 'serious'
            <div 
              className={`radar-breathe-wrap relative flex items-center justify-center flex-shrink-0 transition-opacity duration-300 ${isLiveConnecting ? 'opacity-60 scale-90' : 'opacity-100'}`}
            >
-              {/* Base do radar: círculo 200–280px, borda gradiente ciano → verde, glow */}
+              {/* Base do radar: círculo 200–280px, borda gradiente ciano → verde, glow; vibração energética quando OUVINDO */}
               <div 
-                className="relative w-[240px] h-[240px] md:w-[260px] md:h-[260px] rounded-full p-[1px]"
+                className={`relative w-[240px] h-[240px] md:w-[260px] md:h-[260px] rounded-full p-[1px] ${liveListening ? 'radar-energy-vibration' : ''}`}
                 style={{
                   background: 'conic-gradient(from 0deg, rgba(6,182,212,0.9), rgba(34,197,94,0.85), rgba(6,182,212,0.9))',
                   boxShadow: '0 0 40px rgba(6,182,212,0.15), 0 0 80px rgba(34,197,94,0.08), inset 0 0 60px rgba(0,0,0,0.4)',
