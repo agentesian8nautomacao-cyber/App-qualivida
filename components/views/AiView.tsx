@@ -57,17 +57,35 @@ const AiView: React.FC<AiViewProps> = ({
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [liveResponse, setLiveResponse] = useState<string>('');
+  const [liveListening, setLiveListening] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const liveSessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const liveAudioSources = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const recognitionRef = useRef<any>(null);
+  const isLiveProcessingRef = useRef(false);
+  const isLiveActiveRef = useRef(false);
 
   // Salvar histórico
   useEffect(() => {
     localStorage.setItem('sentinela_history', JSON.stringify(messages));
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Cleanup Live Voice ao desmontar
+  useEffect(() => {
+    return () => {
+      isLiveActiveRef.current = false;
+      if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch { /* */ }
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
 
   // Mapa de Vozes do Gemini Live API
   const getVoiceConfig = () => {
@@ -180,21 +198,134 @@ ${voiceSettings.style === 'serious'
     }
   };
 
-  // --- Live Voice: abre overlay de Interface Neural (canal de voz) ---
+  // --- Enviar transcrição de voz para a IA e falar a resposta (Live Voice) ---
+  const sendVoiceToAI = useCallback(async (transcript: string) => {
+    const text = (transcript || '').trim();
+    if (!text || isLiveProcessingRef.current) return;
+    isLiveProcessingRef.current = true;
+    setLiveTranscript(text);
+    setLiveResponse('');
+    setLiveListening(false);
+    setMessages(prev => [...prev, { id: String(Date.now()), role: 'user', text, timestamp: new Date() }]);
+    try {
+      const context = getSystemContext();
+      const persona = getSystemPersona();
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'chat', prompt: text, context, persona }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const reply = res.ok ? (data.text ?? '') : (data.error ?? 'Erro ao processar.');
+      const replyText = reply || 'Desculpe, não consegui gerar uma resposta.';
+      setMessages(prev => [...prev, { id: String(Date.now() + 1), role: 'model', text: replyText, timestamp: new Date() }]);
+      setLiveResponse(replyText);
+      // Falar a resposta (Web Speech API)
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(replyText);
+        u.lang = 'pt-BR';
+        u.rate = 0.95;
+        const voices = window.speechSynthesis.getVoices();
+        const ptVoice = voices.find(v => v.lang.startsWith('pt'));
+        if (ptVoice) u.voice = ptVoice;
+        u.onend = () => {
+          isLiveProcessingRef.current = false;
+          setLiveResponse('');
+          if (recognitionRef.current && isLiveActiveRef.current) {
+            try { recognitionRef.current.start(); } catch { /* já iniciado ou fechado */ }
+            setLiveListening(true);
+          }
+        };
+        window.speechSynthesis.speak(u);
+      } else {
+        isLiveProcessingRef.current = false;
+        setLiveResponse('');
+        if (recognitionRef.current && isLiveActiveRef.current) {
+          try { recognitionRef.current.start(); } catch { /* já iniciado ou fechado */ }
+          setLiveListening(true);
+        }
+      }
+    } catch (err) {
+      console.error('Erro Live Voice:', err);
+      const errMsg = 'Erro de conexão. Tente novamente.';
+      setMessages(prev => [...prev, { id: String(Date.now() + 1), role: 'model', text: errMsg, timestamp: new Date() }]);
+      setLiveResponse(errMsg);
+      isLiveProcessingRef.current = false;
+      if (recognitionRef.current && isLiveActiveRef.current) {
+        try { recognitionRef.current.start(); } catch { /* */ }
+        setLiveListening(true);
+      }
+    }
+  }, [getSystemContext, getSystemPersona]);
+
+  // --- Live Voice: inicia overlay e reconhecimento de voz ---
   const startLiveMode = async () => {
     setIsLiveConnecting(true);
-    // Simula handshake de conexão; quando houver backend de voz real, conectar aqui
-    await new Promise(r => setTimeout(r, 1200));
+    setLiveTranscript('');
+    setLiveResponse('');
+    const SpeechRecognitionAPI = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    if (!SpeechRecognitionAPI) {
+      setIsLiveConnecting(false);
+      setIsLiveActive(true);
+      setLiveResponse('Seu navegador não suporta reconhecimento de voz. Use Chrome ou Edge.');
+      return;
+    }
+    await new Promise(r => setTimeout(r, 800));
     setIsLiveConnecting(false);
     setIsLiveActive(true);
+    isLiveActiveRef.current = true;
+    try {
+      const recognition = new SpeechRecognitionAPI();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'pt-BR';
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (event: any) => {
+        const result = event.results[event.resultIndex];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript?.trim();
+          if (transcript) {
+            recognition.stop();
+            sendVoiceToAI(transcript);
+          }
+        }
+      };
+      recognition.onend = () => {
+        if (!isLiveActiveRef.current) return;
+        if (!isLiveProcessingRef.current && recognitionRef.current) {
+          try { recognition.start(); } catch { /* */ }
+        }
+      };
+      recognition.onerror = (event: any) => {
+        if (event?.error === 'no-speech' || event?.error === 'aborted') return;
+        console.warn('[Live Voice] Reconhecimento:', event?.error);
+      };
+      recognitionRef.current = recognition;
+      recognition.start();
+      setLiveListening(true);
+    } catch (e) {
+      console.error('Erro ao iniciar reconhecimento de voz:', e);
+      setLiveResponse('Não foi possível ativar o microfone. Verifique as permissões.');
+    }
   };
 
-  const stopLiveMode = () => {
+  const stopLiveMode = useCallback(() => {
+    isLiveActiveRef.current = false;
     if (liveSessionRef.current) liveSessionRef.current.close();
     liveAudioSources.current.forEach(s => s.stop());
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch { /* */ }
+      recognitionRef.current = null;
+    }
+    isLiveProcessingRef.current = false;
     setIsLiveActive(false);
     setIsLiveConnecting(false);
-  };
+    setLiveTranscript('');
+    setLiveResponse('');
+    setLiveListening(false);
+  }, []);
 
   return (
     <div className="h-[calc(100vh-140px)] min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-6 animate-in fade-in duration-500 overflow-hidden relative">
@@ -250,16 +381,25 @@ ${voiceSettings.style === 'serious'
               </div>
            </div>
 
-           <div className="mt-8 md:mt-16 text-center space-y-4 md:space-y-6 px-4">
+           <div className="mt-8 md:mt-16 text-center space-y-4 md:space-y-6 px-4 max-w-xl">
               <div className="flex items-center justify-center gap-2 md:gap-3 flex-wrap">
-                 <div className={`w-3 h-3 rounded-full ${isLiveConnecting ? 'bg-amber-500' : 'bg-green-500'} animate-pulse`} />
+                 <div className={`w-3 h-3 rounded-full ${isLiveConnecting ? 'bg-amber-500' : liveListening ? 'bg-green-500' : 'bg-cyan-500'} animate-pulse`} />
                  <span className={`text-[10px] md:text-[11px] font-black uppercase tracking-wider md:tracking-[0.5em] ${voiceSettings.gender === 'male' ? 'text-cyan-500' : 'text-purple-500'}`}>
-                    {isLiveConnecting ? 'Sincronizando Voz...' : `Voz: ${getVoiceConfig()} (${voiceSettings.style})`}
+                    {isLiveConnecting ? 'Sincronizando...' : liveListening ? 'Ouvindo — fale agora' : liveTranscript ? 'Processando...' : `Voz: ${getVoiceConfig()} (${voiceSettings.style})`}
                  </span>
               </div>
-              <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-tighter max-w-xl">
-                 {isLiveConnecting ? 'Conectando...' : 'Canal Aberto'}
+              <h2 className="text-2xl md:text-4xl font-black text-white uppercase tracking-tighter">
+                 {isLiveConnecting ? 'Conectando...' : liveListening ? 'Canal Aberto' : liveTranscript ? 'Respondendo...' : 'Canal Aberto'}
               </h2>
+              {liveTranscript && (
+                <p className="text-sm text-zinc-400 font-medium">Você: &quot;{liveTranscript}&quot;</p>
+              )}
+              {liveResponse && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left">
+                  <p className="text-[10px] font-black uppercase text-zinc-500 mb-1">Sentinela</p>
+                  <p className="text-sm text-white font-medium leading-relaxed">{liveResponse}</p>
+                </div>
+              )}
            </div>
 
            <button onClick={stopLiveMode} className="mt-6 md:mt-12 px-6 md:px-10 py-3 md:py-5 bg-white/5 border border-white/10 rounded-full text-zinc-400 font-black uppercase text-[9px] md:text-[10px] tracking-widest hover:text-white transition-all">Encerrar</button>
