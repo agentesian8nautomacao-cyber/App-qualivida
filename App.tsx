@@ -2685,7 +2685,8 @@ const App: React.FC = () => {
           className="w-full h-full min-w-full min-h-full object-cover md:object-contain"
           onEnded={handleSkipSplash}
           onError={() => {
-            console.warn('[App] Vídeo de abertura não carregou; exibindo apresentação com poster.');
+            console.warn('[App] Vídeo de abertura não carregou; indo para login.');
+            setTimeout(handleSkipSplash, 1500);
           }}
         />
         {/* Indicador de áudio mudo com instrução para clicar */}

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowRight, User, Lock, Eye, EyeOff, Sun, Moon, Building2 } from 'lucide-react';
 import { UserRole } from '../types';
 import { loginUser, saveUserSession } from '../services/userAuth';
@@ -19,7 +19,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showIntro, setShowIntro] = useState(false);
   const [showForm, setShowForm] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -61,15 +60,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
     }
   }, []);
 
-  // Intro removida - o vídeo já foi exibido antes
-  // useEffect(() => {
-  //   const introTimer = setTimeout(() => {
-  //     setShowIntro(false);
-  //     setShowForm(true);
-  //   }, 2800); 
-  //   return () => clearTimeout(introTimer);
-  // }, []);
-
   // Aplicar tema no body quando o componente montar ou tema mudar
   useEffect(() => {
     if (theme === 'light') {
@@ -82,27 +72,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
     };
   }, [theme]);
 
-  // Adiciona listener global para tecla Enter (atalho para computadores)
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && showForm && !loading) {
-        handleLogin();
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [showForm, loading, selectedRole, username, password]);
-
   const handleRoleChange = (role: UserRole) => {
-    // Garantir que apenas um role seja selecionado por vez
     setSelectedRole(role);
-    // Limpar campos ao trocar de role
     setUsername('');
     setPassword('');
     setError(null);
   };
 
-  const handleLogin = async (e?: React.FormEvent | React.KeyboardEvent) => {
+  const handleLogin = useCallback(async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     if (loading) return;
     
@@ -115,7 +92,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
 
     // Login do morador: Unidade + Senha → onMoradorLogin (cadastro só via "Criar conta")
     if (selectedRole === 'MORADOR') {
-      if (!onMoradorLogin) return;
+      if (!onMoradorLogin) {
+        setError('Login de morador indisponível.');
+        return;
+      }
       setLoading(true);
       try {
         await onMoradorLogin(username.trim(), password);
@@ -166,7 +146,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
       setError('Erro ao conectar com o servidor. Tente novamente.');
       setLoading(false);
     }
-  };
+  }, [selectedRole, username, password, loading, onLogin, onMoradorLogin]);
+
+  // Enter submete o formulário (handler estável para evitar submissão dupla)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && showForm && !loading) handleLogin();
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [showForm, loading, handleLogin]);
 
   // Se mostrar recuperação de senha (Porteiro, Síndico ou Morador)
   if (showForgotPassword) {
