@@ -40,112 +40,121 @@ type Body = {
 
 export default {
   async fetch(request: Request): Promise<Response> {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
-
-    if (request.method !== 'POST') {
-      return Response.json(
-        { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' },
-        { status: 405, headers: corsHeaders }
-      );
-    }
-
-    const apiKey =
-      typeof process.env.GEMINI_API_KEY === 'string' ? process.env.GEMINI_API_KEY.trim() : '';
-    if (!apiKey) {
-      return Response.json(
-        {
-          error:
-            'Assistente IA indisponível. Configure GEMINI_API_KEY nas variáveis de ambiente do servidor (ex.: Vercel).',
-          code: 'GEMINI_API_KEY_MISSING',
-        },
-        { status: 503, headers: corsHeaders }
-      );
-    }
-
-    let body: Body = {};
     try {
-      body = (await request.json()) as Body;
-    } catch {
-      return Response.json(
-        { error: 'Body inválido', code: 'BAD_REQUEST' },
-        { status: 400, headers: corsHeaders }
-      );
-    }
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
 
-    const { action } = body;
-    if (action !== 'chat' && action !== 'report') {
-      return Response.json(
-        { error: 'action deve ser "chat" ou "report"', code: 'BAD_REQUEST' },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-
-      if (action === 'chat') {
-        const { prompt, context = '', persona = '' } = body;
-        if (!prompt || typeof prompt !== 'string') {
-          return Response.json(
-            { error: 'prompt obrigatório', code: 'BAD_REQUEST' },
-            { status: 400, headers: corsHeaders }
-          );
-        }
-        const fullContent = `${persona}\n\nCONTEXTO EM TEMPO REAL:\n${context}\n\nSOLICITAÇÃO DO USUÁRIO:\n${prompt}`;
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{ role: 'user', parts: [{ text: fullContent }] }],
-          config: { temperature: 0.7 },
-        });
-        const text = extractGeminiText(response) || (response as { text?: () => string }).text?.() ?? '';
+      if (request.method !== 'POST') {
         return Response.json(
-          { text: text || 'Desculpe, não consegui gerar uma resposta. Tente novamente.' },
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' },
+          { status: 405, headers: corsHeaders }
         );
       }
 
-      if (action === 'report') {
-        const { dataContext = '', reportPrompt = '' } = body;
-        const fullContent = reportPrompt.includes('${dataContext}')
-          ? reportPrompt.replace('${dataContext}', dataContext)
-          : `${reportPrompt}\n\n${dataContext}`;
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: fullContent,
-        });
-        const text = extractGeminiText(response) || (response as { text?: () => string }).text?.() ?? '';
-        return Response.json(
-          { text: text || 'Não foi possível gerar o relatório.' },
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const apiMsg = (err as { error?: { message?: string } })?.error?.message ?? message;
-      if (
-        /API key|PERMISSION_DENIED|invalid|expired|quota|403|401/i.test(apiMsg) ||
-        /API key|PERMISSION_DENIED|invalid|expired|quota|403|401/i.test(message)
-      ) {
+      const apiKey =
+        typeof process.env.GEMINI_API_KEY === 'string' ? process.env.GEMINI_API_KEY.trim() : '';
+      if (!apiKey) {
         return Response.json(
           {
             error:
-              'Erro na chave da API no servidor. Verifique GEMINI_API_KEY nas variáveis do Vercel e restrições em aistudio.google.com/apikey.',
-            code: 'GEMINI_API_ERROR',
+              'Assistente IA indisponível. Configure GEMINI_API_KEY nas variáveis de ambiente do servidor (ex.: Vercel).',
+            code: 'GEMINI_API_KEY_MISSING',
           },
           { status: 503, headers: corsHeaders }
         );
       }
+
+      let body: Body = {};
+      try {
+        const raw = await request.json();
+        body = (raw && typeof raw === 'object' ? raw : {}) as Body;
+      } catch {
+        return Response.json(
+          { error: 'Body inválido', code: 'BAD_REQUEST' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const { action } = body;
+      if (action !== 'chat' && action !== 'report') {
+        return Response.json(
+          { error: 'action deve ser "chat" ou "report"', code: 'BAD_REQUEST' },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const model = 'gemini-2.0-flash';
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+
+        if (action === 'chat') {
+          const { prompt, context = '', persona = '' } = body;
+          if (!prompt || typeof prompt !== 'string') {
+            return Response.json(
+              { error: 'prompt obrigatório', code: 'BAD_REQUEST' },
+              { status: 400, headers: corsHeaders }
+            );
+          }
+          const fullContent = `${persona}\n\nCONTEXTO EM TEMPO REAL:\n${context}\n\nSOLICITAÇÃO DO USUÁRIO:\n${prompt}`;
+          const response = await ai.models.generateContent({
+            model,
+            contents: fullContent,
+          });
+          const text = (response as { text?: string }).text ?? extractGeminiText(response);
+          return Response.json(
+            { text: (text && String(text).trim()) || 'Desculpe, não consegui gerar uma resposta. Tente novamente.' },
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (action === 'report') {
+          const { dataContext = '', reportPrompt = '' } = body;
+          const fullContent = reportPrompt.includes('${dataContext}')
+            ? reportPrompt.replace(/\$\{dataContext\}/g, dataContext)
+            : `${reportPrompt}\n\n${dataContext}`;
+          const response = await ai.models.generateContent({
+            model,
+            contents: fullContent,
+          });
+          const text = (response as { text?: string }).text ?? extractGeminiText(response);
+          return Response.json(
+            { text: (text && String(text).trim()) || 'Não foi possível gerar o relatório.' },
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const apiMsg = (err as { error?: { message?: string } })?.error?.message ?? message;
+        const fullMsg = apiMsg || message;
+        if (
+          /API key|PERMISSION_DENIED|invalid|expired|quota|403|401/i.test(fullMsg)
+        ) {
+          return Response.json(
+            {
+              error:
+                'Erro na chave da API no servidor. Verifique GEMINI_API_KEY nas variáveis do Vercel e restrições em aistudio.google.com/apikey.',
+              code: 'GEMINI_API_ERROR',
+            },
+            { status: 503, headers: corsHeaders }
+          );
+        }
+        return Response.json(
+          { error: fullMsg || 'Erro ao processar solicitação.', code: 'INTERNAL_ERROR' },
+          { status: 500, headers: corsHeaders }
+        );
+      }
+
       return Response.json(
-        { error: apiMsg || 'Erro ao processar solicitação.', code: 'INTERNAL_ERROR' },
+        { error: 'Ação inválida', code: 'BAD_REQUEST' },
+        { status: 400, headers: corsHeaders }
+      );
+    } catch (topErr: unknown) {
+      const msg = topErr instanceof Error ? topErr.message : String(topErr);
+      return Response.json(
+        { error: msg || 'Erro interno no servidor.', code: 'INTERNAL_ERROR' },
         { status: 500, headers: corsHeaders }
       );
     }
-
-    return Response.json(
-      { error: 'Ação inválida', code: 'BAD_REQUEST' },
-      { status: 400, headers: corsHeaders }
-    );
   },
 };
