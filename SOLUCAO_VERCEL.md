@@ -7,6 +7,24 @@ Você já tem as variáveis configuradas no Vercel:
 - ✅ `VITE_SUPABASE_ANON_KEY`
 - ✅ `GEMINI_API_KEY`
 
+---
+
+## 🟡 Se o banner "Configure GEMINI_API_KEY" continuar após adicionar a variável
+
+A chave é injetada **no momento do build**. Se você adicionou ou alterou `GEMINI_API_KEY` no Vercel e o banner ainda aparece:
+
+1. **Confirme o nome:** exatamente `GEMINI_API_KEY` (sem `VITE_` na frente).
+2. **Ambiente:** marque **Production** (e Preview se usar). O deploy de produção só enxerga variáveis de Production.
+3. **Redeploy sem cache:**
+   - **Deployments** → três pontos (**...**) no último deploy → **Redeploy**
+   - **Desmarque** "Use existing Build Cache"
+   - Clique em **Redeploy**
+4. Opcional: **Settings** → **General** → **Build Cache** → **Clear Build Cache**, depois faça o Redeploy acima.
+
+Sem redeploy (e sem limpar cache), o build antigo continua sendo usado e a chave não entra no bundle.
+
+---
+
 ## 🎯 O Problema
 
 O erro `ERR_NAME_NOT_RESOLVED` geralmente acontece porque:

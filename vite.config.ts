@@ -14,7 +14,8 @@ export default defineConfig(({ mode }) => {
   }
   // No Vercel: GEMINI_API_KEY existe mas VITE_* não. Vite só expõe VITE_* ao cliente.
   // Garantir VITE_GEMINI_API_KEY em process.env para o build expor ao bundle.
-  const geminiKey = env.GEMINI_API_KEY ?? env.VITE_GEMINI_API_KEY ?? env.API_KEY ?? '';
+  const rawGemini = env.GEMINI_API_KEY ?? env.VITE_GEMINI_API_KEY ?? env.API_KEY ?? '';
+  const geminiKey = typeof rawGemini === 'string' ? rawGemini.trim() : '';
   if (geminiKey && !process.env.VITE_GEMINI_API_KEY) {
     process.env.VITE_GEMINI_API_KEY = geminiKey;
   }
