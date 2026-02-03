@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, Package, CheckCircle2, X, Eye, Clock } from 'lucide-react';
 import { Notification, Package as PackageType } from '../../types';
+import { useToast } from '../../contexts/ToastContext';
 
 interface NotificationsViewProps {
   notifications: Notification[];
@@ -22,6 +23,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
   onDeleteNotification
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread'>('unread');
+  const toast = useToast();
 
   const handleDeleteClick = (notificationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -30,13 +32,22 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
     }
   };
 
+  /** Encontra o pacote relacionado à notificação (comparação robusta de id). */
+  const findRelatedPackage = (relatedId: string | undefined): PackageType | undefined => {
+    if (!relatedId) return undefined;
+    const idStr = String(relatedId).trim();
+    return allPackages.find(
+      p => String(p.id).trim() === idStr || (p.id as unknown) === relatedId
+    );
+  };
+
   const handleViewRelated = (notification: Notification) => {
-    if (notification.type === 'package' && notification.related_id && onViewPackage) {
-      const relatedId = String(notification.related_id);
-      const relatedPackage = allPackages.find(p => String(p.id) === relatedId);
-      if (relatedPackage) {
-        onViewPackage(relatedPackage);
-      }
+    if (notification.type !== 'package' || !notification.related_id) return;
+    const relatedPackage = findRelatedPackage(notification.related_id);
+    if (relatedPackage && onViewPackage) {
+      onViewPackage(relatedPackage);
+    } else if (onViewPackage) {
+      toast.error('Encomenda não encontrada. Ela pode ter sido removida.');
     }
   };
 
@@ -44,7 +55,7 @@ const NotificationsView: React.FC<NotificationsViewProps> = ({
   const getNotificationImage = (notification: Notification): string | undefined => {
     if (notification.image_url) return notification.image_url;
     if (notification.type === 'package' && notification.related_id) {
-      const pkg = allPackages.find(p => p.id === notification.related_id);
+      const pkg = findRelatedPackage(notification.related_id);
       return pkg?.imageUrl ?? undefined;
     }
     return undefined;

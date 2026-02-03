@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, X, CheckCircle2, AlertCircle, Download, Copy, FileSpreadsheet, FileJson, File } from 'lucide-react';
 import { Boleto, Resident } from '../../types';
+import { uploadBoletoPdf } from '../../services/dataService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface ImportBoletosModalProps {
   isOpen: boolean;
@@ -17,6 +19,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   existingBoletos,
   allResidents
 }) => {
+  const toast = useToast();
   const [importMethod, setImportMethod] = useState<'file' | 'paste'>('file');
   const [file, setFile] = useState<File | null>(null);
   const [pdfFiles, setPdfFiles] = useState<File[]>([]);
@@ -27,6 +30,8 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  /** Mapeia boleto.id (preview) -> File do PDF para upload antes de salvar. */
+  const pdfAssignmentsRef = useRef<Map<string, File>>(new Map());
 
   if (!isOpen) return null;
 
@@ -94,6 +99,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       return;
     }
 
+    pdfAssignmentsRef.current.clear();
     const boletos: Boleto[] = [];
     const csvErrors: string[] = [];
 
@@ -194,7 +200,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         }
       }
 
-      // Associar PDF se disponível (buscar por nome do arquivo)
+      // Associar PDF se disponível (buscar por nome do arquivo); guardar File para upload depois
       let pdfUrl = '';
       if (pdfFiles.length > 0) {
         const matchingPdf = pdfFiles.find(pdf => {
@@ -203,6 +209,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         });
         if (matchingPdf) {
           pdfUrl = URL.createObjectURL(matchingPdf);
+          pdfAssignmentsRef.current.set(boleto.id!, matchingPdf);
         }
       }
 
@@ -243,6 +250,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       return;
     }
 
+    pdfAssignmentsRef.current.clear();
     const boletos: Boleto[] = [];
     const jsonErrors: string[] = [];
 
@@ -310,6 +318,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         }
       }
 
+      const boletoId = Date.now().toString() + index;
       let pdfUrl = '';
       if (pdfFiles.length > 0) {
         const matchingPdf = pdfFiles.find(pdf => {
@@ -318,11 +327,12 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         });
         if (matchingPdf) {
           pdfUrl = URL.createObjectURL(matchingPdf);
+          pdfAssignmentsRef.current.set(boletoId, matchingPdf);
         }
       }
 
       boletos.push({
-        id: Date.now().toString() + index,
+        id: boletoId,
         residentName: resident.name,
         unit: unit,
         referenceMonth: referenceMonth,
@@ -365,6 +375,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   };
 
   const processJSONData = (data: any[]) => {
+    pdfAssignmentsRef.current.clear();
     const boletos: Boleto[] = [];
     const jsonErrors: string[] = [];
 
@@ -458,8 +469,38 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       return;
     }
     setIsImporting(true);
+    setErrors([]);
     try {
+      // Upload PDFs para o storage e substituir blob URLs por URLs permanentes
+      const fileToUrl = new Map<File, string>();
+      const uploadWarnings: string[] = [];
+      for (const b of previewData) {
+        const pdfFile = pdfAssignmentsRef.current.get(b.id);
+        if (!pdfFile) continue;
+        if (b.pdfUrl?.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(b.pdfUrl);
+          } catch {
+            /* ignore */
+          }
+        }
+        let url = fileToUrl.get(pdfFile);
+        if (url === undefined) {
+          const result = await uploadBoletoPdf(pdfFile, b.id);
+          if (result.error || !result.url) {
+            uploadWarnings.push(`${b.unit} ${b.referenceMonth}: ${result.error || 'Falha no envio do PDF'}`);
+            b.pdfUrl = undefined;
+          } else {
+            url = result.url;
+            fileToUrl.set(pdfFile, url);
+          }
+        }
+        if (url) b.pdfUrl = url;
+      }
       await onImport(previewData);
+      if (uploadWarnings.length > 0) {
+        toast.error(`Boletos importados, mas alguns PDFs não foram enviados (verifique o bucket "boletos" no Supabase).`);
+      }
       handleClose();
     } catch (e) {
       setErrors([e instanceof Error ? e.message : 'Erro ao importar.']);
@@ -469,12 +510,22 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   };
 
   const handleClose = () => {
+    previewData.forEach(b => {
+      if (b.pdfUrl?.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(b.pdfUrl);
+        } catch {
+          /* ignore */
+        }
+      }
+    });
     setFile(null);
     setPdfFiles([]);
     setPastedData('');
     setPreviewData([]);
     setErrors([]);
     setImportMethod('file');
+    pdfAssignmentsRef.current.clear();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }

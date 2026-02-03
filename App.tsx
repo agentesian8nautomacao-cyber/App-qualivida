@@ -2460,11 +2460,14 @@ const App: React.FC = () => {
         return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} role={role} />;
       case 'notifications':
         if (role === 'MORADOR' && currentResident) {
+          const normUnit = (u: string) => (u ?? '').trim().toUpperCase();
+          const residentUnitNorm = normUnit(currentResident.unit);
+          const moradorPackagesForNotifications = allPackages.filter(p => normUnit(p.unit) === residentUnitNorm);
           return (
             <NotificationsView
               notifications={allNotifications}
               loading={notificationsLoading}
-              allPackages={allPackages.filter(p => p.unit === currentResident.unit)}
+              allPackages={moradorPackagesForNotifications}
               onViewPackage={setSelectedPackageForDetail}
               onMarkAsRead={handleMarkNotificationAsRead}
               onMarkAllAsRead={handleMarkAllNotificationsAsRead}

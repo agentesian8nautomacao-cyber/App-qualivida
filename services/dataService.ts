@@ -714,6 +714,35 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
   }
 };
 
+/** Nome do bucket de storage para PDFs de boleto (deve existir no Supabase e estar público). */
+const BOLETOS_STORAGE_BUCKET = 'boletos';
+
+/**
+ * Faz upload do PDF do boleto para o Supabase Storage e retorna a URL pública.
+ * O bucket "boletos" deve existir no projeto e estar configurado como público para leitura.
+ */
+export const uploadBoletoPdf = async (
+  file: File,
+  pathId: string
+): Promise<{ url: string; error?: string }> => {
+  try {
+    const path = `${pathId}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from(BOLETOS_STORAGE_BUCKET)
+      .upload(path, file, { upsert: true, contentType: 'application/pdf' });
+    if (uploadError) {
+      console.error('Erro ao fazer upload do PDF do boleto:', uploadError);
+      return { url: '', error: uploadError.message };
+    }
+    const { data } = supabase.storage
+      .from(BOLETOS_STORAGE_BUCKET)
+      .getPublicUrl(path);
+    return { url: data.publicUrl };
+  } catch (err: any) {
+    console.error('Erro ao fazer upload do PDF do boleto:', err);
+    return { url: '', error: err?.message ?? 'Erro ao enviar PDF' };
+  }
+};
 
 // ============================================
 // SERVIÇOS PARA AVISOS (NOTICES)
