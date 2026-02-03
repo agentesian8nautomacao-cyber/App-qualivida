@@ -4,8 +4,8 @@
     "version": "0.0.0",
     "type": "module",
     "scripts": {
-        "dev": "npx vite",
-        "build": "vite build",
+        "dev": "npx vite --config vite.config.ts",
+        "build": "node scripts/run-build.cjs",
         "preview": "npx vite preview",
         "test": "vitest",
         "test:run": "vitest run"
@@ -23,10 +23,11 @@
         "recharts": "^3.6.0"
     },
     "devDependencies": {
+        "@tailwindcss/vite": "^4.1.18",
         "@types/node": "^22.19.6",
         "@types/react": "^19.2.8",
         "@types/react-dom": "^19.2.3",
-        "@vitejs/plugin-react": "^5.1.2",
+        "@vitejs/plugin-react": "^5.1.3",
         "autoprefixer": "^10.4.23",
         "jsdom": "^25.0.0",
         "postcss": "^8.5.6",

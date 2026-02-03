@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { BrainCircuit, Mic, SendHorizontal, X, Activity, Radio, Cpu, Sparkles, MessageSquare, History, Settings, User } from 'lucide-react';
 import { getInternalInstructions } from '../../services/ai/internalInstructions';
 import { useAppConfig } from '../../contexts/AppConfigContext';
+import { splitIntoSpeakableChunks, humanizeTextForSpeech } from '../../utils/speechHumanize';
 
 interface AiViewProps {
   allPackages: any[];
@@ -153,8 +154,12 @@ ${externalInstructions}
 INSTRUÇÕES DE PERSONALIDADE:
 ${voiceSettings.style === 'serious' 
   ? `Você é o ${aiName}, uma IA militar e objetiva. Responda de forma curta, precisa e profissional. Foque em segurança e eficiência.`
-  : `Você é o ${aiName}, um parceiro de trabalho amigável e prestativo. Use uma linguagem mais natural e colaborativa. Seja proativo.`
-}`;
+  : `Você é o ${aiName}, um parceiro de trabalho amigável e prestativo. Use uma linguagem mais natural e colaborativa. Seja proativo.`}
+
+INSTRUÇÕES PARA FALA (quando a resposta for reproduzida por voz):
+- Use frases curtas e ritmo conversacional. Evite períodos longos.
+- Prefira linguagem natural e direta, como um atendente humano.
+- Evite listas longas em uma única frase; quebre em duas ou três frases.`;
   };
 
   // Montar contexto DO SISTEMA INTEIRO para a IA
@@ -312,32 +317,67 @@ ${voiceSettings.style === 'serious'
       const reply = res.ok ? (data.text ?? '') : (data.error ?? 'Erro ao processar.');
       const replyText = reply || 'Desculpe, não consegui gerar uma resposta.';
       setLiveResponse(replyText);
-      // Falar a resposta (Web Speech API) — voz mais natural: pt-BR, ritmo e tom suaves
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(replyText);
-        u.lang = 'pt-BR';
-        u.rate = 0.92;   // Ritmo um pouco mais lento = mais natural e claro
-        u.pitch = 1;     // Tom neutro (evita robótico)
-        u.volume = 1;
-        const chosenVoice = getSpeechVoiceByGender(voiceSettings.gender);
-        if (chosenVoice) u.voice = chosenVoice;
-        u.onend = () => {
-          isLiveProcessingRef.current = false;
-          setLiveResponse('');
-          if (recognitionRef.current && isLiveActiveRef.current) {
-            try { recognitionRef.current.start(); } catch { /* já iniciado ou fechado */ }
-            setLiveListening(true);
-          }
-        };
-        window.speechSynthesis.speak(u);
-      } else {
+
+      const onSpeechDone = () => {
         isLiveProcessingRef.current = false;
         setLiveResponse('');
         if (recognitionRef.current && isLiveActiveRef.current) {
           try { recognitionRef.current.start(); } catch { /* já iniciado ou fechado */ }
           setLiveListening(true);
         }
+      };
+
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const humanized = humanizeTextForSpeech(replyText);
+        const chunks = splitIntoSpeakableChunks(humanized);
+        const chosenVoice = getSpeechVoiceByGender(voiceSettings.gender);
+
+        const PAUSE_BETWEEN_PHRASES_MS = 280;
+        const RATE = 0.88;
+        const PITCH = 1;
+        const VOLUME = 1;
+
+        const speakNext = (index: number) => {
+          if (index >= chunks.length) {
+            onSpeechDone();
+            return;
+          }
+          const u = new SpeechSynthesisUtterance(chunks[index]);
+          u.lang = 'pt-BR';
+          u.rate = RATE;
+          u.pitch = PITCH;
+          u.volume = VOLUME;
+          if (chosenVoice) u.voice = chosenVoice;
+          u.onend = () => {
+            if (index + 1 < chunks.length) {
+              setTimeout(() => speakNext(index + 1), PAUSE_BETWEEN_PHRASES_MS);
+            } else {
+              onSpeechDone();
+            }
+          };
+          u.onerror = () => {
+            if (index + 1 < chunks.length) setTimeout(() => speakNext(index + 1), PAUSE_BETWEEN_PHRASES_MS);
+            else onSpeechDone();
+          };
+          window.speechSynthesis.speak(u);
+        };
+
+        if (chunks.length > 0) {
+          speakNext(0);
+        } else {
+          const u = new SpeechSynthesisUtterance(replyText);
+          u.lang = 'pt-BR';
+          u.rate = RATE;
+          u.pitch = PITCH;
+          u.volume = VOLUME;
+          if (chosenVoice) u.voice = chosenVoice;
+          u.onend = onSpeechDone;
+          u.onerror = onSpeechDone;
+          window.speechSynthesis.speak(u);
+        }
+      } else {
+        onSpeechDone();
       }
     } catch (err) {
       console.error('Erro Live Voice:', err);
@@ -349,7 +389,7 @@ ${voiceSettings.style === 'serious'
         setLiveListening(true);
       }
     }
-  }, [getSystemContext, getSystemPersona]);
+  }, [getSystemContext, getSystemPersona, voiceSettings.gender]);
 
   // --- Live Voice: inicia overlay e reconhecimento de voz ---
   const startLiveMode = async () => {

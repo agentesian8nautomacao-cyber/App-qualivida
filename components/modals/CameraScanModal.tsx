@@ -22,23 +22,8 @@ interface CameraScanModalProps {
 type JsQRFn = (data: Uint8ClampedArray, width: number, height: number, opts?: { inversionAttempts?: string }) => { data: string } | null;
 
 async function loadJsQR(): Promise<JsQRFn> {
-  try {
-    const m = await import('jsqr');
-    return m.default as JsQRFn;
-  } catch {
-    return new Promise((resolve, reject) => {
-      const w = window as unknown as { jsQR?: JsQRFn };
-      if (w.jsQR) {
-        resolve(w.jsQR);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
-      script.onload = () => (w.jsQR ? resolve(w.jsQR) : reject(new Error('jsQR não carregou')));
-      script.onerror = () => reject(new Error('Erro ao carregar jsQR'));
-      document.head.appendChild(script);
-    });
-  }
+  const m = await import('jsqr');
+  return m.default as JsQRFn;
 }
 
 async function detectQRFromImageData(imageData: ImageData): Promise<string | null> {

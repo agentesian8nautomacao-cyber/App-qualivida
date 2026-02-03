@@ -1,7 +1,33 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
+import tailwindcss from '@tailwindcss/vite';
+// PWA desativado para deploy Vercel; removido do plugins para evitar ENOENT em register.js
+// import { VitePWA } from 'vite-plugin-pwa';
+
+const DEV_PORT = 3007;
+
+/** Warmup + abre o navegador na URL/porta real em que o servidor subiu. */
+function warmupAndOpenPlugin(): import('vite').Plugin {
+  return {
+    name: 'warmup-and-open',
+    apply: 'serve' as const,
+    configureServer(server) {
+      server.httpServer?.once('listening', () => {
+        const addr = server.httpServer?.address();
+        const port = typeof addr === 'object' && addr && 'port' in addr ? addr.port : DEV_PORT;
+        const url = `http://localhost:${port}/`;
+        fetch(url).catch(() => {});
+        setTimeout(() => {
+          import('node:child_process').then(({ exec }) => {
+            const cmd = process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
+            exec(cmd, () => {});
+          }).catch(() => {});
+        }, 1500);
+      });
+    }
+  };
+}
 
 export default defineConfig(({ mode }) => {
   // Carregar variáveis de ambiente
@@ -26,89 +52,33 @@ export default defineConfig(({ mode }) => {
       setupFiles: []
     },
     server: {
-      port: 3007,
+      port: DEV_PORT,
       host: '0.0.0.0',
+      strictPort: true,
+      open: false,
       watch: {
         ignored: ['**/.env*', '**/node_modules/**']
       }
     },
     plugins: [
       react(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'robots.txt', '1024.png'],
-        manifest: {
-          name: 'Qualivida Gestão',
-          short_name: 'Qualivida',
-          description: 'Gestão simples para o dia a dia do condomínio',
-          start_url: '/',
-          display: 'standalone',
-          background_color: '#0c1a13',
-          theme_color: '#0b7a4b',
-          orientation: 'portrait-primary',
-          icons: [
-            {
-              src: '/1024.png',
-              sizes: '1024x1024',
-              type: 'image/png',
-              purpose: 'any maskable'
-            }
-          ]
-        },
-        workbox: {
-          navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/$/, /\.mp4$/i],
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,eot}'],
-          cleanupOutdatedCaches: true,
-          skipWaiting: true,
-          clientsClaim: true,
-          runtimeCaching: [
-            {
-              urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'supabase-api-v3',
-                networkTimeoutSeconds: 10
-              }
-            },
-            {
-              urlPattern: /\.(?:mp4|m4v|webm)$/i,
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'video-v1',
-                networkTimeoutSeconds: 5,
-                expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 }
-              }
-            },
-            {
-              urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'images-v3',
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 * 30
-                }
-              }
-            },
-            {
-              urlPattern: /\.(?:js|css|woff|woff2|ttf|eot)$/,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'static-resources-v3',
-                expiration: {
-                  maxEntries: 200,
-                  maxAgeSeconds: 60 * 60 * 24 * 7
-                }
-              }
-            }
-          ]
-        }
-      })
+      tailwindcss(),
+      warmupAndOpenPlugin()
+      // PWA desativado (evita cache/offline conflitantes no Vercel e erro ENOENT do plugin)
+      // Para reativar: descomente o import de VitePWA e adicione VitePWA({ ... }) aqui
     ],
     publicDir: 'public',
     optimizeDeps: {
-      entries: ['index.html']
+      entries: ['index.html', 'index.tsx', 'App.tsx'],
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        '@supabase/supabase-js',
+        'lucide-react',
+        'recharts',
+        '@google/genai'
+      ]
     },
     resolve: {
       alias: {
