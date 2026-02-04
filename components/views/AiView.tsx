@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { BrainCircuit, Mic, SendHorizontal, X, Activity, Radio, Cpu, Sparkles, MessageSquare, History, Settings, User } from 'lucide-react';
 import { getInternalInstructions } from '../../services/ai/internalInstructions';
 import { useAppConfig } from '../../contexts/AppConfigContext';
@@ -67,10 +67,21 @@ const AiView: React.FC<AiViewProps> = ({
 
   // Voice & Persona State - usar do config (fallbacks para garantir UI sempre consistente)
   const [isVoiceSettingsOpen, setIsVoiceSettingsOpen] = useState(false);
+  // Estado pendente no modal: só aplicado ao assistente ao clicar em Salvar
+  const [pendingGender, setPendingGender] = useState<VoiceSettings['gender']>(config.aiConfig?.voiceGender ?? 'female');
+  const [pendingStyle, setPendingStyle] = useState<VoiceSettings['style']>(config.aiConfig?.voiceStyle ?? 'serious');
   const voiceSettings: VoiceSettings = { 
     gender: config.aiConfig?.voiceGender ?? 'male', 
     style: config.aiConfig?.voiceStyle ?? 'serious' 
   };
+
+  // Ao abrir o modal, sincronizar pendentes com o que está salvo
+  useEffect(() => {
+    if (isVoiceSettingsOpen) {
+      setPendingGender(config.aiConfig?.voiceGender ?? 'female');
+      setPendingStyle(config.aiConfig?.voiceStyle ?? 'serious');
+    }
+  }, [isVoiceSettingsOpen, config.aiConfig?.voiceGender, config.aiConfig?.voiceStyle]);
 
   // Live State
   const [isLiveActive, setIsLiveActive] = useState(false);
@@ -89,31 +100,42 @@ const AiView: React.FC<AiViewProps> = ({
   // Nome da voz Gemini Live (usado para exibição / paridade com Nutri.IA)
   const activeGeminiVoiceName = getGeminiVoiceName(voiceSettings.gender, voiceSettings.style);
 
-  const getSystemPersona = () => {
+  // Persona e instruções estáveis por voz/gênero/estilo — evita reconexão a cada render e reforça voz humana
+  const liveSystemInstruction = useMemo(() => {
     const internalInstructions = getInternalInstructions();
-    const externalInstructions = config.aiConfig.externalInstructions;
-    
+    const externalInstructions = config.aiConfig?.externalInstructions ?? '';
+    const voiceDesc = voiceSettings.gender === 'male' ? 'masculina' : 'feminina';
+    const styleDesc = voiceSettings.style === 'serious' ? 'sério e profissional' : 'animado e expressivo';
     return `${internalInstructions}
 
 PERSONALIZAÇÃO DO AGENTE:
 Nome: ${aiName}
 ${externalInstructions}
 
-INSTRUÇÕES DE PERSONALIDADE:
-${voiceSettings.style === 'serious' 
-  ? `Você é o ${aiName}, uma IA militar e objetiva. Responda de forma curta, precisa e profissional. Foque em segurança e eficiência.`
-  : `Você é o ${aiName}, um parceiro de trabalho amigável e prestativo. Use uma linguagem mais natural e colaborativa. Seja proativo.`}
-
-IDIOMA E VOZ (OBRIGATÓRIO):
+VOZ E CARACTERIZAÇÃO (OBRIGATÓRIO):
+- Sua voz de saída é ${voiceDesc} e o tom é ${styleDesc}. Mantenha essa caracterização em todas as respostas.
 - Responda SEMPRE em português do Brasil. Nunca use outro idioma.
-- Sua resposta será ouvida por voz: fale como em uma chamada real, com tom natural e humano.
+- Fale como em uma chamada real: tom natural, humano e conversacional.
+
+INSTRUÇÕES DE PERSONALIDADE:
+${voiceSettings.style === 'serious'
+  ? `Você é o ${aiName}, uma IA militar e objetiva. Responda de forma curta, precisa e profissional. Foque em segurança e eficiência.`
+  : `Você é o ${aiName}, um parceiro de trabalho amigável e prestativo. Use linguagem natural e colaborativa. Seja proativo e expressivo.`}
 
 INSTRUÇÕES PARA FALA:
 - Use frases curtas e ritmo conversacional. Evite períodos longos.
 - Prefira linguagem natural e direta, como um atendente humano ao telefone.
 - Evite listas longas em uma única frase; quebre em duas ou três frases.
 - Varie levemente a entonação (perguntas soam diferentes de afirmações).`;
-  };
+  }, [
+    config.aiConfig?.name,
+    config.aiConfig?.voiceGender,
+    config.aiConfig?.voiceStyle,
+    config.aiConfig?.externalInstructions,
+    aiName,
+    voiceSettings.gender,
+    voiceSettings.style,
+  ]);
 
   // Montar contexto DO SISTEMA INTEIRO para a IA
   const getSystemContext = useCallback(() => {
@@ -143,12 +165,13 @@ INSTRUÇÕES PARA FALA:
     `;
   }, [allPackages, visitorLogs, allOccurrences, chatMessages, allNotices]);
 
-  // --- Live Voice (Sentinela) via Gemini Live (mesma engine do Nutri.ai) ---
-  // Em vez de usar Web Speech para TTS, usamos o modelo de áudio nativo do Gemini,
-  // reaproveitando o hook genérico de conversa em tempo real.
-  const liveSystemInstruction = getSystemPersona();
-  const liveContextData = getSystemContext();
+  // Contexto estável — só muda quando os dados do condomínio mudam (evita reconexão a cada render)
+  const liveContextData = useMemo(
+    () => getSystemContext(),
+    [getSystemContext]
+  );
 
+  // --- Live Voice (Sentinela) via Gemini Live ---
   const {
     isConnected: liveIsConnected,
     isMicOn: liveIsMicOn,
@@ -200,7 +223,7 @@ INSTRUÇÕES PARA FALA:
 
     try {
       const context = getSystemContext();
-      const persona = getSystemPersona();
+      const persona = liveSystemInstruction;
       const res = await fetch(getAiApiUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,30 +330,41 @@ INSTRUÇÕES PARA FALA:
         <div className="fixed md:absolute top-4 right-4 md:top-20 md:right-8 z-50 bg-black/90 backdrop-blur-xl p-4 md:p-6 rounded-[32px] border border-white/10 w-[calc(100vw-2rem)] md:w-72 max-w-sm shadow-2xl animate-in fade-in slide-in-from-top-4">
            <div className="flex justify-between items-center mb-6">
               <h5 className="text-white font-black uppercase text-sm">Configuração Neural</h5>
-              <button onClick={() => setIsVoiceSettingsOpen(false)}><X className="w-5 h-5 text-zinc-500 hover:text-white" /></button>
+              <button type="button" onClick={() => setIsVoiceSettingsOpen(false)} aria-label="Fechar"><X className="w-5 h-5 text-zinc-500 hover:text-white" /></button>
            </div>
            
            <div className="space-y-6">
               <div>
                  <label className="text-[10px] font-black uppercase text-zinc-500 mb-3 block">Gênero da Voz</label>
                  <div className="flex gap-2">
-                    <button onClick={() => updateAIConfig({ voiceGender: 'male' })} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${voiceSettings.gender === 'male' ? 'bg-cyan-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>Masculino</button>
-                    <button onClick={() => updateAIConfig({ voiceGender: 'female' })} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${voiceSettings.gender === 'female' ? 'bg-purple-500 text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>Feminino</button>
+                    <button type="button" onClick={() => setPendingGender('male')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${pendingGender === 'male' ? 'bg-cyan-500 text-black' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>Masculino</button>
+                    <button type="button" onClick={() => setPendingGender('female')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${pendingGender === 'female' ? 'bg-purple-500 text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10'}`}>Feminino</button>
                  </div>
               </div>
               
               <div>
                  <label className="text-[10px] font-black uppercase text-zinc-500 mb-3 block">Estilo Operacional</label>
                  <div className="flex gap-2">
-                    <button onClick={() => updateAIConfig({ voiceStyle: 'serious' })} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${voiceSettings.style === 'serious' ? 'border-white text-white bg-white/10' : 'border-transparent text-zinc-500 hover:text-white'}`}>Sério</button>
-                    <button onClick={() => updateAIConfig({ voiceStyle: 'animated' })} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${voiceSettings.style === 'animated' ? 'border-green-400 text-green-400 bg-green-400/10' : 'border-transparent text-zinc-500 hover:text-white'}`}>Animado</button>
+                    <button type="button" onClick={() => setPendingStyle('serious')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${pendingStyle === 'serious' ? 'border-white text-white bg-white/10' : 'border-transparent text-zinc-500 hover:text-white'}`}>Sério</button>
+                    <button type="button" onClick={() => setPendingStyle('animated')} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${pendingStyle === 'animated' ? 'border-green-400 text-green-400 bg-green-400/10' : 'border-transparent text-zinc-500 hover:text-white'}`}>Animado</button>
                  </div>
               </div>
            </div>
            
-                      <div className="mt-6 pt-4 border-t border-white/10 text-[10px] text-zinc-500 text-center">
-                      Voz Ativa: <span className="text-white font-bold">{activeGeminiVoiceName}</span>
+           <div className="mt-6 pt-4 border-t border-white/10 text-[10px] text-zinc-500 text-center">
+              Voz Ativa: <span className="text-white font-bold">{getGeminiVoiceName(pendingGender, pendingStyle)}</span>
            </div>
+
+           <button
+             type="button"
+             onClick={() => {
+               updateAIConfig({ voiceGender: pendingGender, voiceStyle: pendingStyle });
+               setIsVoiceSettingsOpen(false);
+             }}
+             className="mt-4 w-full py-3 rounded-xl text-xs font-black uppercase bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg"
+           >
+             Salvar e aplicar
+           </button>
         </div>
       )}
 

@@ -75,6 +75,8 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const sessionPromiseRef = useRef<ReturnType<GoogleGenAI["live"]["connect"]> | null>(null);
   const isSessionOpenRef = useRef(false);
+  const isMicOnRef = useRef(isMicOn);
+  isMicOnRef.current = isMicOn;
 
   // --- Tool logMeal opcional ---
   const logMealTool: FunctionDeclaration | null = enableLogMealTool
@@ -289,7 +291,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
               scriptProcessorRef.current = processor;
 
               processor.onaudioprocess = (e) => {
-                if (!isMicOn || !isSessionOpenRef.current) return;
+                if (!isMicOnRef.current || !isSessionOpenRef.current) return;
                 const inputData = e.inputBuffer.getChannelData(0);
 
                 // Volume para visualização
@@ -423,7 +425,6 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
     systemInstruction,
     contextData,
     logMealTool,
-    isMicOn,
     cleanup,
     isLimitReached,
     enableLogMealTool,
