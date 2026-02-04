@@ -227,9 +227,26 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
     }
 
     const initSession = async () => {
+      const apiKeyTrim = (apiKey || '').trim();
+      if (!apiKeyTrim) {
+        setStatus("Chave não configurada (VITE_GEMINI_LIVE_KEY)");
+        console.warn('[LiveVoice] TTS neural: chave ausente. Configure VITE_GEMINI_LIVE_KEY no .env.local e no Vercel. Nenhum fallback para voz do navegador.');
+        return;
+      }
+
       try {
         setStatus("Conectando...");
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ apiKey: apiKeyTrim });
+
+        // Log de prova: engine, modelo e voz (paridade Nutri.ai)
+        console.info('[LiveVoice/TTS] Engine=GeminiLive', {
+          engine: 'Gemini Live (native audio)',
+          model,
+          voiceName,
+          sampleRateIn: 16000,
+          sampleRateOut: 24000,
+          noBrowserTTS: true,
+        });
 
         // Monta systemInstruction completo (contexto opcional)
         let fullSystemInstruction = systemInstruction;
@@ -319,7 +336,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
                 }
               }
 
-              // Áudio de saída
+              // Áudio de saída — somente via Gemini Live (nenhum fallback para Web Speech)
               const audioData =
                 msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
               if (audioData && outputAudioContextRef.current) {
@@ -340,6 +357,10 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
 
                 activeSourcesRef.current.add(source);
                 source.onended = () => activeSourcesRef.current.delete(source);
+                // Prova: TTS é 100% neural (Gemini Live). Nenhum fallback para voz do navegador.
+                if ((import.meta as any)?.env?.DEV) {
+                  console.info('[LiveVoice/TTS] Playback=neural', { duration: buffer.duration });
+                }
               }
 
               // Interrupções

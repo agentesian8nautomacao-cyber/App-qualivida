@@ -278,6 +278,14 @@ INSTRUÇÕES PARA FALA (quando a resposta for reproduzida por voz):
   const startLiveMode = async () => {
     setIsLiveConnecting(true);
     setIsLiveActive(true);
+    // Log de prova: engine única é Gemini Live; gênero/estilo aplicados à voz
+    console.info('[Sentinela/TTS] Iniciando canal de voz', {
+      engine: 'Gemini Live (native audio)',
+      voiceName: activeGeminiVoiceName,
+      gender: voiceSettings.gender,
+      style: voiceSettings.style,
+      noBrowserTTS: true,
+    });
     liveStart();
   };
 
@@ -413,7 +421,7 @@ INSTRUÇÕES PARA FALA (quando a resposta for reproduzida por voz):
                       ? 'Sincronizando...'
                       : liveIsConnected
                         ? (liveIsMicOn ? 'Canal ativo — Fale agora' : 'Canal ativo — Microfone em pausa')
-                        : `Voz: ${activeGeminiVoiceName} (${voiceSettings.style})`}
+                        : liveStatus || `Voz: ${activeGeminiVoiceName} (${voiceSettings.style})`}
                  </span>
               </div>
               <h2 className="text-xl md:text-3xl font-black text-white/95 uppercase tracking-tighter">
