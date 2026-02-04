@@ -328,16 +328,26 @@ INSTRUÇÕES PARA FALA:
       {/* SELETOR DE VOZ (MODAL INTERNO) */}
       {isVoiceSettingsOpen && (
         <div
-          className="fixed md:absolute top-4 right-4 md:top-20 md:right-8 z-50 w-[calc(100vw-2rem)] md:w-72 max-w-sm bg-black/90 backdrop-blur-xl rounded-[32px] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 overflow-hidden"
+          className="fixed top-4 right-4 md:top-20 md:right-8 z-[100] w-[calc(100vw-2rem)] md:w-72 max-w-sm bg-black/90 backdrop-blur-xl rounded-[32px] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 overflow-hidden"
           style={{ maxHeight: 'calc(100vh - 2rem)', display: 'flex', flexDirection: 'column' }}
           role="dialog"
           aria-labelledby="config-neural-title"
         >
            <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0">
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex justify-between items-center mb-3">
                  <h5 id="config-neural-title" className="text-white font-black uppercase text-sm">Configuração Neural</h5>
                  <button type="button" onClick={() => setIsVoiceSettingsOpen(false)} aria-label="Fechar"><X className="w-5 h-5 text-zinc-500 hover:text-white" /></button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  updateAIConfig({ voiceGender: pendingGender, voiceStyle: pendingStyle });
+                  setIsVoiceSettingsOpen(false);
+                }}
+                className="mb-4 w-full py-2.5 rounded-xl text-xs font-black uppercase bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg"
+              >
+                Salvar e aplicar
+              </button>
               <div className="space-y-6">
                  <div>
                     <label className="text-[10px] font-black uppercase text-zinc-500 mb-3 block">Gênero da Voz</label>
