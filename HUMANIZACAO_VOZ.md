@@ -19,8 +19,8 @@
 
 ### Humanização em LiveConversation.tsx (Gemini Live)
 
-- **Voz padrão:** `Kore` (Firm) → **Aoede** (Breezy), mais natural e fluida. O perfil do usuário pode sobrescrever com `userProfile.aiVoice`.
-- **System instruction:** Adicionado bloco **"IMPORTANTE — Sua resposta será reproduzida por VOZ (TTS)"**: frases curtas, ritmo conversacional, linguagem direta, evitar listas longas em uma fala. Assim o texto gerado para o TTS do Gemini soa mais humano.
+- **Voz padrão:** **Kore** (paridade com o app Nutri.IA, onde a voz soa humanizada). O perfil do usuário pode sobrescrever com `userProfile.aiVoice`. Não usar Aoede neste fluxo para manter o mesmo timbre do Nutri.IA.
+- **System instruction:** Alinhado ao Nutri.IA (instruções 1–5, sem bloco TTS extra), para garantir o mesmo comportamento de geração de fala.
 
 ---
 

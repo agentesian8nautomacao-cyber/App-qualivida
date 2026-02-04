@@ -147,19 +147,12 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
           
           ${contextData}
 
-          Instruções gerais:
+          Instruções:
           1. Responda de forma natural e conversacional.
           2. Se o usuário disser que comeu algo, você DEVE usar a ferramenta 'logMeal'.
           3. Estime as calorias e macros para a ferramenta se o usuário não fornecer.
           4. Confirme verbalmente quando registrar.
           5. Fale sempre em Português do Brasil.
-
-          IMPORTANTE — Sua resposta será reproduzida por VOZ (TTS). Para soar humana e agradável:
-          - Use frases CURTAS. Uma ou duas ideias por frase.
-          - Ritmo de conversa: pausas naturais entre frases. Evite períodos longos.
-          - Linguagem direta e coloquial, como um atendente real.
-          - Evite listas longas em uma única fala; quebre em duas ou três frases.
-          - Não leia listas ou blocos de texto; fale como se estivesse conversando ao vivo.
         `;
 
         // Inject Custom Chat Instructions if available
@@ -288,7 +281,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
              responseModalities: [Modality.AUDIO],
              tools: [{ functionDeclarations: [logMealTool] }],
              speechConfig: {
-               voiceConfig: { prebuiltVoiceConfig: { voiceName: userProfile?.aiVoice || 'Aoede' } }
+               voiceConfig: { prebuiltVoiceConfig: { voiceName: userProfile?.aiVoice || 'Kore' } }
              },
              systemInstruction: systemInstruction
           }
