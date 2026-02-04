@@ -328,12 +328,12 @@ INSTRUÇÕES PARA FALA:
       {/* SELETOR DE VOZ (MODAL INTERNO) */}
       {isVoiceSettingsOpen && (
         <div
-          className="fixed md:absolute top-4 right-4 md:top-20 md:right-8 z-50 w-[calc(100vw-2rem)] md:w-72 max-w-sm overflow-y-auto overflow-x-hidden bg-black/90 backdrop-blur-xl rounded-[32px] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4"
-          style={{ maxHeight: 'calc(100vh - 2rem)' }}
+          className="fixed md:absolute top-4 right-4 md:top-20 md:right-8 z-50 w-[calc(100vw-2rem)] md:w-72 max-w-sm bg-black/90 backdrop-blur-xl rounded-[32px] border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 overflow-hidden"
+          style={{ maxHeight: 'calc(100vh - 2rem)', display: 'flex', flexDirection: 'column' }}
           role="dialog"
           aria-labelledby="config-neural-title"
         >
-           <div className="p-4 md:p-6">
+           <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden flex-1 min-h-0">
               <div className="flex justify-between items-center mb-6">
                  <h5 id="config-neural-title" className="text-white font-black uppercase text-sm">Configuração Neural</h5>
                  <button type="button" onClick={() => setIsVoiceSettingsOpen(false)} aria-label="Fechar"><X className="w-5 h-5 text-zinc-500 hover:text-white" /></button>
@@ -357,13 +357,15 @@ INSTRUÇÕES PARA FALA:
               <div className="mt-6 pt-4 border-t border-white/10 text-[10px] text-zinc-500 text-center">
                  Voz Ativa: <span className="text-white font-bold">{getGeminiVoiceName(pendingGender, pendingStyle)}</span>
               </div>
+           </div>
+           <div className="p-4 md:p-6 pt-0 bg-black/90 border-t border-white/10" style={{ flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => {
                   updateAIConfig({ voiceGender: pendingGender, voiceStyle: pendingStyle });
                   setIsVoiceSettingsOpen(false);
                 }}
-                className="mt-4 w-full py-3 rounded-xl text-xs font-black uppercase bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg"
+                className="w-full py-3 rounded-xl text-xs font-black uppercase bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg"
               >
                 Salvar e aplicar
               </button>
