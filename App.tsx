@@ -2782,12 +2782,13 @@ const App: React.FC = () => {
           <Sun className="w-5 h-5" />
         </button>
 
-        {/* Logo central */}
+        {/* Logo central (preload em index.html reduz delay) */}
         <div className="flex flex-col items-center gap-6 px-6">
           <img
             src="/1024.png"
             alt="Qualivida Residence"
             className="w-56 max-w-[70vw] object-contain drop-shadow-2xl"
+            fetchPriority="high"
           />
           <p
             className={`text-xs md:text-sm font-medium tracking-[0.25em] uppercase text-center ${

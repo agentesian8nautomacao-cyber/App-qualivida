@@ -9,6 +9,8 @@
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json" />
     
+    <!-- Preload logo da splash para exibir sem delay -->
+    <link rel="preload" href="/1024.png" as="image" />
     <!-- Favicon -->
     <link rel="icon" type="image/png" sizes="32x32" href="/1024.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/1024.png" />
@@ -361,7 +363,13 @@
     <link rel="stylesheet" href="/index.css">
 </head>
   <body class="theme-transition">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Placeholder da splash: exibe logo imediatamente antes do React montar (evita delay) -->
+      <div id="splash-placeholder" style="position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;box-sizing:border-box;">
+        <img src="/1024.png" alt="Qualivida Residence" style="width:14rem;max-width:70vw;height:auto;object-fit:contain;" fetchpriority="high" />
+        <p style="color:rgba(255,255,255,0.55);font-size:0.75rem;margin-top:1.5rem;letter-spacing:0.25em;text-transform:uppercase;font-family:system-ui,sans-serif;">Bem-vindo ao Gestão Qualivida Clube Residence</p>
+      </div>
+    </div>
   <script type="module" src="/index.tsx"></script>
 </body>
 </html>
