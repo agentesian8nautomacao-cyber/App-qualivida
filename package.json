@@ -8,7 +8,9 @@
         "build": "node scripts/run-build.cjs",
         "preview": "npx vite preview",
         "test": "vitest",
-        "test:run": "vitest run"
+        "test:run": "vitest run",
+        "deploy:vercel": "vercel --prod --force",
+        "deploy:vercel:preview": "vercel --force"
     },
     "dependencies": {
         "@google/genai": "^1.34.0",
