@@ -68,7 +68,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
   // Audio + sessão refs
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
-  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const scriptProcessorRef = useRef<AudioWorkletNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const nextStartTimeRef = useRef<number>(0);
@@ -190,6 +190,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
     }
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.disconnect();
+      scriptProcessorRef.current.port.onmessage = null;
       scriptProcessorRef.current = null;
     }
     if (sourceRef.current) {
@@ -275,46 +276,75 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
         const sessionPromise = ai.live.connect({
           model,
           callbacks: {
-            onopen: () => {
+            onopen: async () => {
               setStatus("Conectado");
               setIsConnected(true);
               isSessionOpenRef.current = true;
 
               if (!inputAudioContextRef.current || !streamRef.current) return;
 
+              try {
+                // Registra o AudioWorklet responsável por capturar os frames de áudio
+                await inputAudioContextRef.current.audioWorklet.addModule(
+                  "/live-voice-processor.js"
+                );
+              } catch (err) {
+                console.error(
+                  "[LiveVoice] Falha ao carregar AudioWorklet; a captura de áudio pode não funcionar.",
+                  err
+                );
+                setStatus("Erro ao iniciar captura de áudio");
+                return;
+              }
+
               const source =
                 inputAudioContextRef.current.createMediaStreamSource(streamRef.current);
-              const processor =
-                inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+              const worklet = new AudioWorkletNode(
+                inputAudioContextRef.current,
+                "live-voice-processor"
+              );
 
               sourceRef.current = source;
-              scriptProcessorRef.current = processor;
+              scriptProcessorRef.current = worklet;
 
-              processor.onaudioprocess = (e) => {
-                if (!isMicOnRef.current || !isSessionOpenRef.current) return;
-                const inputData = e.inputBuffer.getChannelData(0);
+              // Recebe frames Float32Array do worklet
+              worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
+                const inputData = event.data;
+                if (!inputData || !isMicOnRef.current || !isSessionOpenRef.current) {
+                  return;
+                }
 
                 // Volume para visualização
                 let sum = 0;
-                for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+                for (let i = 0; i < inputData.length; i++) {
+                  sum += inputData[i] * inputData[i];
+                }
                 setVolume(Math.sqrt(sum / inputData.length) * 100);
 
                 const pcmBlob = createBlob(inputData);
+
                 sessionPromise
                   .then((session) => {
                     try {
                       session.sendRealtimeInput({ media: pcmBlob });
                     } catch (err) {
-                      console.warn('[LiveVoice] Falha ao enviar áudio, sessão pode estar fechada.', err);
+                      console.warn(
+                        "[LiveVoice] sendRealtimeInput falhou (provável WebSocket fechado). Bloqueando envios futuros.",
+                        err
+                      );
+                      // Se o WebSocket interno já estiver fechando/fechado, marcamos a sessão como encerrada
+                      isSessionOpenRef.current = false;
                     }
                   })
                   .catch(() => {
                     // sessão já encerrada
+                    isSessionOpenRef.current = false;
                   });
               };
 
-              source.connect(processor);
-              processor.connect(inputAudioContextRef.current.destination);
+              source.connect(worklet);
+              // Opcional: conecta ao destino apenas para evitar warnings de nós desconectados
+              worklet.connect(inputAudioContextRef.current.destination);
             },
             onmessage: async (msg: LiveServerMessage) => {
               // Tools: logMeal
