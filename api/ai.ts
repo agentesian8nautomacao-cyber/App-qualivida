@@ -93,18 +93,24 @@ export default {
       }
 
       // Validar variável ANTES de usar (evita 503 genérico)
-      if (!process.env.GEMINI_API_KEY) {
-        return Response.json(
-          { error: 'GEMINI_API_KEY não definida no ambiente', code: 'GEMINI_API_KEY_MISSING' },
-          { status: 500, headers: corsHeaders }
-        );
-      }
-
-      const apiKey =
+      // Prioriza GEMINI_API_KEY; se ausente, tenta VITE_GEMINI_LIVE_KEY para reaproveitar a mesma chave
+      // usada no front (Sentinela v3) quando o projeto estiver configurado apenas com VITE_GEMINI_LIVE_KEY no Vercel.
+      const rawGeminiKey =
         typeof process.env.GEMINI_API_KEY === 'string' ? process.env.GEMINI_API_KEY.trim() : '';
+      const rawViteLiveKey =
+        typeof process.env.VITE_GEMINI_LIVE_KEY === 'string'
+          ? process.env.VITE_GEMINI_LIVE_KEY.trim()
+          : '';
+
+      const apiKey = rawGeminiKey || rawViteLiveKey;
+
       if (!apiKey) {
         return Response.json(
-          { error: 'GEMINI_API_KEY não definida no ambiente', code: 'GEMINI_API_KEY_MISSING' },
+          {
+            error:
+              'Nenhuma chave Gemini encontrada. Defina GEMINI_API_KEY (recomendado) ou VITE_GEMINI_LIVE_KEY nas variáveis de ambiente do Vercel.',
+            code: 'GEMINI_API_KEY_MISSING',
+          },
           { status: 500, headers: corsHeaders }
         );
       }
