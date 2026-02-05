@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { AlertCircle, Volume2, VolumeX, Eye, EyeOff, Lock, X } from 'lucide-react';
+import { AlertCircle, Volume2, VolumeX, Eye, EyeOff, Lock, X, Sun } from 'lucide-react';
 import Layout from './components/Layout';
 import Login from './components/Login';
 import ResidentRegister from './components/ResidentRegister';
@@ -2773,10 +2773,13 @@ const App: React.FC = () => {
         {/* Toggle tema claro/escuro */}
         <button
           type="button"
-          className="absolute top-4 right-4 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] text-zinc-200 border border-white/15"
+          title={theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+          className={`absolute top-6 right-6 p-3 rounded-2xl border transition-all hover:scale-110 active:scale-95 flex items-center justify-center z-20 bg-white/5 hover:bg-white/10 ${
+            theme === 'dark' ? 'text-white border-white/10' : 'text-black border-black/20'
+          }`}
           onClick={toggleTheme}
         >
-          {theme === 'dark' ? 'Modo claro' : 'Modo escuro'}
+          <Sun className="w-5 h-5" />
         </button>
 
         {/* Logo central */}
@@ -2791,7 +2794,7 @@ const App: React.FC = () => {
               theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'
             }`}
           >
-            Bem-vindo ao portal do condomínio
+            Bem-vindo ao Gestão Qualivida Clube Residence
           </p>
         </div>
 
