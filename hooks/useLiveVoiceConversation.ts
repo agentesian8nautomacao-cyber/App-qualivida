@@ -8,6 +8,9 @@ import {
   FunctionDeclaration,
 } from "@google/genai";
 
+/** Estado explícito do canal de voz (WebSocket interno do Gemini Live). Evita send() em CLOSING/CLOSED. */
+export type SessionState = "idle" | "connecting" | "open" | "closing" | "closed";
+
 type LogMealArgs = {
   foodName: string;
   calories: number;
@@ -37,11 +40,21 @@ interface UseLiveVoiceConversationOptions {
 }
 
 /**
- * Hook para conversa de voz em tempo real com Gemini.
- * - Captura microfone
- * - Envia áudio PCM16 para o modelo
- * - Reproduz áudio de resposta
- * - (Opcional) trata a ferramenta logMeal
+ * Hook para conversa de voz em tempo real com Gemini (Gemini Live / WebSocket interno).
+ *
+ * - Captura microfone via AudioWorklet (live-voice-processor.js), envia áudio PCM16, reproduz resposta neural.
+ * - (Opcional) trata a ferramenta logMeal.
+ *
+ * CAUSA RAIZ do erro "WebSocket is already in CLOSING or CLOSED state":
+ * O effect que inicia a sessão tem deps [voiceName, systemInstruction, ...]. Ao trocar gênero ou
+ * re-render com nova ref, o effect re-executa → cleanup() fecha o socket → o worklet/onmessage
+ * da sessão antiga (closure) ainda pode disparar e chamar send() no socket já fechando/fechado.
+ *
+ * FLUXO CORRETO (como este hook evita o problema):
+ * 1. cleanup() marca sessionStateRef = "closing" e isSessionOpenRef = false ANTES de session.close().
+ * 2. Todos os envios (sendRealtimeInput, sendToolResponse) usam sessionPromiseRef.current (nunca
+ *    a promise da closure) e só enviam quando sessionStateRef.current === "open".
+ * 3. Ao trocar gênero, o effect re-roda: cleanup → initSession; apenas uma sessão ativa por vez.
  */
 export function useLiveVoiceConversation(options: UseLiveVoiceConversationOptions) {
   const {
@@ -75,6 +88,8 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const sessionPromiseRef = useRef<ReturnType<GoogleGenAI["live"]["connect"]> | null>(null);
   const isSessionOpenRef = useRef(false);
+  /** Controle explícito: só enviar dados quando === "open". Evita "WebSocket is already in CLOSING or CLOSED state". */
+  const sessionStateRef = useRef<SessionState>("idle");
   const isMicOnRef = useRef(isMicOn);
   isMicOnRef.current = isMicOn;
 
@@ -159,8 +174,16 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
   }, [started, isConnected, isLimitReached]);
 
   // --- Cleanup geral ---
+  // CAUSA RAIZ (documentada): O efeito que chama initSession() tem deps [voiceName, systemInstruction, ...].
+  // Ao trocar gênero ou re-render com nova ref, o effect re-roda → cleanup() é chamado → socket fechado.
+  // O worklet/onmessage da sessão ANTIGA ainda pode disparar e chamar send() no socket já CLOSING/CLOSED.
+  // Correção: (1) Marcar sessão como fechada ANTES de chamar session.close(); (2) Usar sessionPromiseRef
+  // em todos os envios (nunca a promise da closure) e checar sessionStateRef === "open" antes de send().
   const cleanup = useCallback(() => {
-    // encerra sessão live se ainda existir
+    sessionStateRef.current = "closing";
+    isSessionOpenRef.current = false;
+    // A partir daqui nenhum sendRealtimeInput/sendToolResponse deve ser feito (worklet e onmessage checam o ref).
+
     if (sessionPromiseRef.current) {
       sessionPromiseRef.current
         .then((session: any) => {
@@ -175,7 +198,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
         });
       sessionPromiseRef.current = null;
     }
-    isSessionOpenRef.current = false;
+    sessionStateRef.current = "closed";
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -237,6 +260,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
         return;
       }
 
+      sessionStateRef.current = "connecting";
       try {
         setStatus("Conectando...");
         const ai = new GoogleGenAI({ apiKey: apiKeyTrim });
@@ -277,6 +301,8 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
           model,
           callbacks: {
             onopen: async () => {
+              if (sessionStateRef.current !== "connecting") return;
+              sessionStateRef.current = "open";
               setStatus("Conectado");
               setIsConnected(true);
               isSessionOpenRef.current = true;
@@ -307,10 +333,11 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
               sourceRef.current = source;
               scriptProcessorRef.current = worklet;
 
-              // Recebe frames Float32Array do worklet
+              // Recebe frames Float32Array do worklet. Usar sessionPromiseRef (nunca closure) para evitar
+              // enviar para a sessão antiga quando o effect re-roda (ex.: troca de gênero).
               worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
                 const inputData = event.data;
-                if (!inputData || !isMicOnRef.current || !isSessionOpenRef.current) {
+                if (!inputData || !isMicOnRef.current || sessionStateRef.current !== "open") {
                   return;
                 }
 
@@ -322,9 +349,12 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
                 setVolume(Math.sqrt(sum / inputData.length) * 100);
 
                 const pcmBlob = createBlob(inputData);
+                const currentPromise = sessionPromiseRef.current;
+                if (!currentPromise) return;
 
-                sessionPromise
+                currentPromise
                   .then((session) => {
+                    if (sessionStateRef.current !== "open") return;
                     try {
                       session.sendRealtimeInput({ media: pcmBlob });
                     } catch (err) {
@@ -332,12 +362,12 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
                         "[LiveVoice] sendRealtimeInput falhou (provável WebSocket fechado). Bloqueando envios futuros.",
                         err
                       );
-                      // Se o WebSocket interno já estiver fechando/fechado, marcamos a sessão como encerrada
+                      sessionStateRef.current = "closed";
                       isSessionOpenRef.current = false;
                     }
                   })
                   .catch(() => {
-                    // sessão já encerrada
+                    sessionStateRef.current = "closed";
                     isSessionOpenRef.current = false;
                   });
               };
@@ -363,10 +393,23 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
                     });
                   }
                 }
-                if (responses.length > 0) {
-                  sessionPromise.then((session) => {
-                    session.sendToolResponse({ functionResponses: responses });
-                  });
+                if (responses.length > 0 && sessionStateRef.current === "open") {
+                  const currentPromise = sessionPromiseRef.current;
+                  if (currentPromise) {
+                    currentPromise.then((session) => {
+                      if (sessionStateRef.current !== "open") return;
+                      try {
+                        session.sendToolResponse({ functionResponses: responses });
+                      } catch (err) {
+                        console.warn("[LiveVoice] sendToolResponse falhou (WebSocket fechado).", err);
+                        sessionStateRef.current = "closed";
+                        isSessionOpenRef.current = false;
+                      }
+                    }).catch(() => {
+                      sessionStateRef.current = "closed";
+                      isSessionOpenRef.current = false;
+                    });
+                  }
                 }
               }
 
@@ -405,12 +448,14 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
               }
             },
             onclose: () => {
+              sessionStateRef.current = "closed";
               setStatus("Desconectado");
               setIsConnected(false);
               isSessionOpenRef.current = false;
             },
             onerror: (err) => {
               console.error(err);
+              sessionStateRef.current = "closed";
               setStatus("Erro na conexão");
               isSessionOpenRef.current = false;
             },
@@ -444,9 +489,13 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
 
     initSession();
 
+    // Cleanup ao desmontar ou quando deps mudam (ex.: troca de gênero). Marcar estado como closing
+    // antes de fechar garante que nenhum send() use o socket já em fechamento.
     return () => {
       cleanup();
     };
+    // voiceName/systemInstruction nas deps: ao trocar gênero/estilo, recriamos o canal TTS (uma sessão ativa).
+    // O novo canal só recebe envios após onopen (sessionStateRef === "open").
   }, [
     started,
     apiKey,

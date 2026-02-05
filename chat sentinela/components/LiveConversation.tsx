@@ -30,9 +30,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
   const nextStartTimeRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
 
-  // Controle de sessão Live (WebSocket interno do Gemini Live)
+  // Controle de sessão Live (WebSocket interno do Gemini Live).
+  // Estado explícito evita send() em CLOSING/CLOSED (causa raiz do "WebSocket is already in CLOSING or CLOSED state").
+  type SessionState = "idle" | "connecting" | "open" | "closing" | "closed";
   const sessionPromiseRef = useRef<ReturnType<GoogleGenAI["live"]["connect"]> | null>(null);
   const isSessionOpenRef = useRef(false);
+  const sessionStateRef = useRef<SessionState>("idle");
+  const isMicOnRef = useRef(isMicOn);
+  isMicOnRef.current = isMicOn;
 
   // Timer State for 15 min limit
   const [secondsActive, setSecondsActive] = useState(0);
@@ -155,7 +160,8 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
   }, [isConnected, isLimitReached, isMicOn]);
 
   const cleanup = useCallback(() => {
-    // encerra sessão live se ainda existir
+    sessionStateRef.current = "closing";
+    isSessionOpenRef.current = false;
     if (sessionPromiseRef.current) {
       sessionPromiseRef.current
         .then((session: any) => {
@@ -170,7 +176,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
         });
       sessionPromiseRef.current = null;
     }
-    isSessionOpenRef.current = false;
+    sessionStateRef.current = "closed";
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -201,6 +207,7 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
     if (isLimitReached) return;
 
     const initSession = async () => {
+      sessionStateRef.current = "connecting";
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -263,18 +270,22 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
           model: 'gemini-2.5-flash-native-audio-preview-12-2025',
           callbacks: {
             onopen: () => {
+              if (sessionStateRef.current !== "connecting") return;
+              sessionStateRef.current = "open";
               setStatus("Conectado");
               setIsConnected(true);
               isSessionOpenRef.current = true;
-              
-              // Escuta frames de áudio vindos do AudioWorklet
+
               worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
                 const inputData = event.data;
-                if (!inputData || !isMicOn || !isSessionOpenRef.current) return;
+                if (!inputData || !isMicOnRef.current || sessionStateRef.current !== "open") return;
 
                 const pcmBlob = createBlob(inputData);
-                sessionPromise
+                const currentPromise = sessionPromiseRef.current;
+                if (!currentPromise) return;
+                currentPromise
                   .then((session) => {
+                    if (sessionStateRef.current !== "open") return;
                     try {
                       session.sendRealtimeInput({ media: pcmBlob });
                     } catch (err) {
@@ -282,10 +293,12 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
                         "[LiveVoice/Sentinela] sendRealtimeInput falhou (provável WebSocket fechado). Bloqueando envios futuros.",
                         err
                       );
+                      sessionStateRef.current = "closed";
                       isSessionOpenRef.current = false;
                     }
                   })
                   .catch(() => {
+                    sessionStateRef.current = "closed";
                     isSessionOpenRef.current = false;
                   });
               };
@@ -318,22 +331,28 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
                         });
                     }
                 }
-                if (responses.length > 0 && isSessionOpenRef.current) {
-                  sessionPromise
-                    .then((session) => {
-                      try {
-                        session.sendToolResponse({ functionResponses: responses });
-                      } catch (err) {
-                        console.warn(
-                          "[LiveVoice/Sentinela] sendToolResponse falhou (provável WebSocket fechado).",
-                          err
-                        );
+                if (responses.length > 0 && sessionStateRef.current === "open") {
+                  const currentPromise = sessionPromiseRef.current;
+                  if (currentPromise) {
+                    currentPromise
+                      .then((session) => {
+                        if (sessionStateRef.current !== "open") return;
+                        try {
+                          session.sendToolResponse({ functionResponses: responses });
+                        } catch (err) {
+                          console.warn(
+                            "[LiveVoice/Sentinela] sendToolResponse falhou (provável WebSocket fechado).",
+                            err
+                          );
+                          sessionStateRef.current = "closed";
+                          isSessionOpenRef.current = false;
+                        }
+                      })
+                      .catch(() => {
+                        sessionStateRef.current = "closed";
                         isSessionOpenRef.current = false;
-                      }
-                    })
-                    .catch(() => {
-                      isSessionOpenRef.current = false;
-                    });
+                      });
+                  }
                 }
               }
 
@@ -358,12 +377,14 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
               }
             },
             onclose: () => {
+              sessionStateRef.current = "closed";
               setStatus("Desconectado");
               setIsConnected(false);
               isSessionOpenRef.current = false;
             },
             onerror: (err) => {
               console.error(err);
+              sessionStateRef.current = "closed";
               setStatus("Erro na conexão");
               isSessionOpenRef.current = false;
             }
