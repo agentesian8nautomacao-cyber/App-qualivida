@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { syncOutbox } from '../services/offlineDataService';
 
 type ConnectivityContextValue = {
   isOnline: boolean;
+  isSyncing: boolean;
+  triggerSync: () => Promise<void>;
 };
 
 const ConnectivityContext = createContext<ConnectivityContextValue | undefined>(undefined);
@@ -11,37 +13,40 @@ export const ConnectivityProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const runSync = useCallback(async () => {
+    if (!navigator.onLine) return;
+    setIsSyncing(true);
+    try {
+      await syncOutbox();
+    } catch (err) {
+      console.warn('[Connectivity] Erro ao sincronizar', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      // Ao voltar online, dispara sincronização da outbox
-      syncOutbox().catch((err) => {
-        console.warn('[Connectivity] Erro ao sincronizar ao voltar online', err);
-      });
+      runSync();
     };
 
     const handleOffline = () => {
       setIsOnline(false);
+      setIsSyncing(false);
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Ao montar o app, tentar uma sincronização inicial (se já estiver online)
     if (navigator.onLine) {
-      syncOutbox().catch((err) => {
-        console.warn('[Connectivity] Erro ao sincronizar na inicialização', err);
-      });
+      runSync();
     }
 
-    // Sync periódico a cada alguns minutos enquanto o app estiver aberto e online
     const interval = window.setInterval(() => {
-      if (navigator.onLine) {
-        syncOutbox().catch((err) => {
-          console.warn('[Connectivity] Erro ao sincronizar em intervalo', err);
-        });
-      }
+      if (navigator.onLine) runSync();
     }, 3 * 60 * 1000);
 
     return () => {
@@ -49,10 +54,10 @@ export const ConnectivityProvider: React.FC<{ children: React.ReactNode }> = ({ 
       window.removeEventListener('offline', handleOffline);
       window.clearInterval(interval);
     };
-  }, []);
+  }, [runSync]);
 
   return (
-    <ConnectivityContext.Provider value={{ isOnline }}>
+    <ConnectivityContext.Provider value={{ isOnline, isSyncing, triggerSync: runSync }}>
       {children}
     </ConnectivityContext.Provider>
   );

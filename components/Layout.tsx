@@ -53,7 +53,7 @@ const Layout: React.FC<LayoutProps> = ({
   onOpenNotifications
 }) => {
   const { config } = useAppConfig();
-  const { isOnline } = useConnectivity();
+  const { isOnline, isSyncing } = useConnectivity();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
   const touchStartXRef = useRef<number | null>(null);
@@ -296,8 +296,14 @@ const Layout: React.FC<LayoutProps> = ({
 
         {!isOnline && (
           <div className="z-20 px-4 md:px-10 py-3 text-xs font-bold tracking-widest uppercase bg-amber-500/95 text-white text-center shadow-lg flex items-center justify-center gap-2">
-            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-            <span>Sem conexão. Alterações serão sincronizadas automaticamente.</span>
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            <span>Sem conexão. Alterações serão sincronizadas quando a rede voltar.</span>
+          </div>
+        )}
+        {isOnline && isSyncing && (
+          <div className="z-20 px-4 md:px-10 py-2 text-xs font-bold tracking-widest uppercase bg-emerald-600/95 text-white text-center shadow-lg flex items-center justify-center gap-2">
+            <div className="w-2 h-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <span>Sincronizando dados...</span>
           </div>
         )}
 

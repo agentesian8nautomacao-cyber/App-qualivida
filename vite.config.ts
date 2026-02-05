@@ -2,8 +2,7 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-// PWA desativado para deploy Vercel; removido do plugins para evitar ENOENT em register.js
-// import { VitePWA } from 'vite-plugin-pwa';
+import { VitePWA } from 'vite-plugin-pwa';
 
 const DEV_PORT = 3007;
 
@@ -125,9 +124,16 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      warmupAndOpenPlugin()
-      // PWA desativado (evita cache/offline conflitantes no Vercel e erro ENOENT do plugin)
-      // Para reativar: descomente o import de VitePWA e adicione VitePWA({ ... }) aqui
+      warmupAndOpenPlugin(),
+      VitePWA({
+        injectRegister: 'inline',
+        registerType: 'autoUpdate',
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          navigateFallback: '/index.html'
+        },
+        devOptions: { enabled: false }
+      })
     ],
     publicDir: 'public',
     optimizeDeps: {
