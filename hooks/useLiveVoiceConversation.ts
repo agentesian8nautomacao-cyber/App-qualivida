@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GoogleGenAI,
   LiveServerMessage,
@@ -91,37 +91,43 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
   /** Controle explícito: só enviar dados quando === "open". Evita "WebSocket is already in CLOSING or CLOSED state". */
   const sessionStateRef = useRef<SessionState>("idle");
   const isMicOnRef = useRef(isMicOn);
+  const onLogMealRef = useRef(onLogMeal);
   isMicOnRef.current = isMicOn;
+  onLogMealRef.current = onLogMeal;
 
-  // --- Tool logMeal opcional ---
-  const logMealTool: FunctionDeclaration | null = enableLogMealTool
-    ? {
-        name: "logMeal",
-        description:
-          "Registra uma refeição consumida pelo usuário no diário alimentar. Use esta função quando o usuário disser que comeu algo.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            foodName: { type: Type.STRING, description: "Nome do alimento consumido" },
-            calories: { type: Type.NUMBER, description: "Calorias estimadas" },
-            protein: { type: Type.NUMBER, description: "Proteínas estimadas em gramas" },
-            carbs: { type: Type.NUMBER, description: "Carboidratos estimados em gramas" },
-            fats: { type: Type.NUMBER, description: "Gorduras estimadas em gramas" },
-            mealType: {
-              type: Type.STRING,
-              enum: ["Breakfast", "Lunch", "Dinner", "Snack"],
-              description:
-                "Tipo da refeição (Café, Almoço, Jantar, Lanche). Inferir pelo horário ou contexto.",
+  // --- Tool logMeal opcional (estável por enableLogMealTool para não re-executar o effect a cada render) ---
+  const logMealTool = useMemo<FunctionDeclaration | null>(
+    () =>
+      enableLogMealTool
+        ? {
+            name: "logMeal",
+            description:
+              "Registra uma refeição consumida pelo usuário no diário alimentar. Use esta função quando o usuário disser que comeu algo.",
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                foodName: { type: Type.STRING, description: "Nome do alimento consumido" },
+                calories: { type: Type.NUMBER, description: "Calorias estimadas" },
+                protein: { type: Type.NUMBER, description: "Proteínas estimadas em gramas" },
+                carbs: { type: Type.NUMBER, description: "Carboidratos estimados em gramas" },
+                fats: { type: Type.NUMBER, description: "Gorduras estimadas em gramas" },
+                mealType: {
+                  type: Type.STRING,
+                  enum: ["Breakfast", "Lunch", "Dinner", "Snack"],
+                  description:
+                    "Tipo da refeição (Café, Almoço, Jantar, Lanche). Inferir pelo horário ou contexto.",
+                },
+                description: {
+                  type: Type.STRING,
+                  description: "Uma descrição curta em português.",
+                },
+              },
+              required: ["foodName", "calories", "protein", "carbs", "fats", "mealType"],
             },
-            description: {
-              type: Type.STRING,
-              description: "Uma descrição curta em português.",
-            },
-          },
-          required: ["foodName", "calories", "protein", "carbs", "fats", "mealType"],
-        },
-      }
-    : null;
+          }
+        : null,
+    [enableLogMealTool]
+  );
 
   // --- Helper: Float32 -> PCM16 base64 Blob (igual ao Nutri.ai) ---
   const createBlob = (data: Float32Array): Blob => {
@@ -292,7 +298,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
         // Microfone
         streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        const tools = [];
+        const tools: { functionDeclarations: FunctionDeclaration[] }[] = [];
         if (logMealTool) {
           tools.push({ functionDeclarations: [logMealTool] });
         }
@@ -377,13 +383,14 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
               worklet.connect(inputAudioContextRef.current.destination);
             },
             onmessage: async (msg: LiveServerMessage) => {
-              // Tools: logMeal
-              if (msg.toolCall && logMealTool && onLogMeal) {
+              // Tools: logMeal (usa ref para não depender de onLogMeal no effect)
+              const onLogMealCb = onLogMealRef.current;
+              if (msg.toolCall && logMealTool && onLogMealCb) {
                 const responses: any[] = [];
-                for (const fc of msg.toolCall.functionCalls) {
+                for (const fc of msg.toolCall.functionCalls ?? []) {
                   if (fc.name === "logMeal") {
                     const args = fc.args as any as LogMealArgs;
-                    onLogMeal(args);
+                    onLogMealCb(args);
                     setLoggedItem(`${args.foodName} (${args.calories} kcal)`);
                     setTimeout(() => setLoggedItem(null), 3000);
                     responses.push({
@@ -483,6 +490,7 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
         sessionPromiseRef.current = sessionPromise;
       } catch (err) {
         console.error("Failed to connect", err);
+        sessionStateRef.current = "closed";
         setStatus("Erro ao acessar microfone ou API");
       }
     };
@@ -507,7 +515,6 @@ export function useLiveVoiceConversation(options: UseLiveVoiceConversationOption
     cleanup,
     isLimitReached,
     enableLogMealTool,
-    onLogMeal,
   ]);
 
   // Cleanup global quando o componente que usa o hook desmontar
