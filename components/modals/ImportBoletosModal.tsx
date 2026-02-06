@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, CheckCircle2, AlertCircle, Download, File as FileIcon } from 'lucide-react';
-import { Boleto, Resident } from '../../types';
+import { Boleto, BoletoType, Resident } from '../../types';
 import { uploadBoletoPdf } from '../../services/dataService';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -28,9 +28,18 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   const [isImporting, setIsImporting] = useState(false);
   /** Designação manual: boleto.id -> File (PDF escolhido para aquele morador). */
   const [assignedPdfByBoletoId, setAssignedPdfByBoletoId] = useState<Record<string, File | null>>({});
+  /** Tipo padrão para importação em lote (Condomínio, Água ou Luz). */
+  const [defaultBoletoType, setDefaultBoletoType] = useState<BoletoType>('condominio');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const pdfAssignmentsRef = useRef<Map<string, File>>(new Map());
+
+  const normalizeBoletoType = (v: string): BoletoType => {
+    const t = (v || '').toLowerCase().trim();
+    if (t === 'agua' || t === 'água' || t === 'water') return 'agua';
+    if (t === 'luz' || t === 'energia' || t === 'light') return 'luz';
+    return 'condominio';
+  };
 
   // Sincronizar designações do ref para estado quando o preview é preenchido (ex.: auto-assign por nome)
   useEffect(() => {
@@ -155,8 +164,11 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
           boleto.description = value;
         } else if (headerLower.includes('pagamento') || headerLower.includes('paid')) {
           boleto.paidDate = value;
+        } else if (headerLower.includes('tipo') || headerLower === 'type') {
+          boleto.boletoType = normalizeBoletoType(value) || defaultBoletoType;
         }
       });
+      if (!boleto.boletoType) boleto.boletoType = defaultBoletoType;
 
       if (!unit) {
         csvErrors.push(`Linha ${i + 1}: Unidade é obrigatória`);
@@ -202,12 +214,12 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         continue;
       }
 
-      // Verificar se já existe boleto para esta unidade e mês
+      const boletoType: BoletoType = (boleto.boletoType as BoletoType) || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth
+        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        csvErrors.push(`Linha ${i + 1}: Boleto já existe para unidade ${unit} e referência ${referenceMonth}`);
+        csvErrors.push(`Linha ${i + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         continue;
       }
 
@@ -242,6 +254,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
         status: status,
+        boletoType: boletoType,
         barcode: boleto.barcode,
         description: boleto.description,
         pdfUrl: pdfUrl || undefined,
@@ -322,11 +335,12 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         return;
       }
 
+      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || '') || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth
+        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit} e referência ${referenceMonth}`);
+        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         return;
       }
 
@@ -360,6 +374,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
         status: status,
+        boletoType: boletoType,
         barcode: item.codigo || item.cod || item.barcode,
         description: item.descricao || item.description,
         pdfUrl: pdfUrl || undefined,
@@ -425,11 +440,12 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         return;
       }
 
+      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || '') || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth
+        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit} e referência ${referenceMonth}`);
+        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         return;
       }
 
@@ -463,6 +479,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
         status: status,
+        boletoType: boletoType,
         barcode: item.codigo || item.cod || item.barcode,
         description: item.descricao || item.description,
         pdfUrl: pdfUrl || undefined,
@@ -569,9 +586,10 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   };
 
   const downloadTemplate = () => {
-    const template = `unidade,mes,vencimento,valor,status,codigo_barras,descricao
-102A,01/2025,10/01/2025,450.00,Pendente,34191090000012345678901234567890123456789012,Taxa de condomínio
-405B,01/2025,10/01/2025,450.00,Pendente,,Taxa de condomínio`;
+    const template = `unidade,mes,vencimento,valor,tipo,status,codigo_barras,descricao
+102A,01/2025,10/01/2025,450.00,condominio,Pendente,34191090000012345678901234567890123456789012,Taxa de condomínio
+405B,01/2025,10/01/2025,120.50,agua,Pendente,,Conta de água
+301,02/2025,15/02/2025,85.00,luz,Pendente,,Conta de luz`;
     
     const blob = new Blob([template], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -603,6 +621,22 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Tipo padrão: Condomínio, Água ou Luz (usado quando o arquivo não informa a coluna tipo) */}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-black uppercase tracking-wider opacity-60">Tipo padrão dos boletos:</span>
+          <select
+            value={defaultBoletoType}
+            onChange={(e) => setDefaultBoletoType(e.target.value as BoletoType)}
+            className="px-4 py-2 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold outline-none focus:border-[var(--text-primary)]/50"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            <option value="condominio">Condomínio</option>
+            <option value="agua">Água</option>
+            <option value="luz">Luz</option>
+          </select>
+          <span className="text-[10px] opacity-50">(CSV/JSON pode ter coluna &quot;tipo&quot;: condominio, agua ou luz)</span>
         </div>
 
         {/* Importar: selecionar arquivo CSV ou JSON */}
@@ -694,6 +728,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
                   <tr>
                     <th className="p-3 text-left font-black uppercase">Unidade</th>
                     <th className="p-3 text-left font-black uppercase">Morador</th>
+                    <th className="p-3 text-left font-black uppercase">Tipo</th>
                     <th className="p-3 text-left font-black uppercase">Mês</th>
                     <th className="p-3 text-left font-black uppercase">Vencimento</th>
                     <th className="p-3 text-left font-black uppercase">Valor</th>
@@ -706,6 +741,11 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
                     <tr key={boleto.id} className="border-t border-[var(--border-color)]">
                       <td className="p-3">{boleto.unit}</td>
                       <td className="p-3">{boleto.residentName}</td>
+                      <td className="p-3">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-white/10">
+                          {boleto.boletoType === 'agua' ? 'Água' : boleto.boletoType === 'luz' ? 'Luz' : 'Condomínio'}
+                        </span>
+                      </td>
                       <td className="p-3">{boleto.referenceMonth}</td>
                       <td className="p-3">{new Date(boleto.dueDate).toLocaleDateString('pt-BR')}</td>
                       <td className="p-3">{formatCurrency(boleto.amount)}</td>

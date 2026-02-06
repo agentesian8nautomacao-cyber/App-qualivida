@@ -4,9 +4,9 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const DEV_PORT = 3007;
+const DEV_PORT = 3010;
 
-/** Warmup da página + abre o navegador quando o servidor estiver pronto. */
+/** Abre o navegador assim que o servidor estiver listening; warmup em background. */
 function warmupAndOpenPlugin(): import('vite').Plugin {
   return {
     name: 'warmup-and-open',
@@ -16,21 +16,16 @@ function warmupAndOpenPlugin(): import('vite').Plugin {
         const addr = server.httpServer?.address();
         const port = typeof addr === 'object' && addr && 'port' in addr ? addr.port : DEV_PORT;
         const url = `http://localhost:${port}/`;
-        // Aquecer a página (uma requisição) e só então abrir o browser
         const openBrowser = () => {
           import('node:child_process').then(({ exec }) => {
             const cmd = process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
             exec(cmd, () => {});
           }).catch(() => {});
         };
-        const timeout = setTimeout(openBrowser, 12000);
-        fetch(url)
-          .then(() => {})
-          .catch(() => {})
-          .finally(() => {
-            clearTimeout(timeout);
-            setTimeout(openBrowser, 300);
-          });
+        // Abre o browser de imediato (evita sensação de lentidão)
+        setTimeout(openBrowser, 400);
+        // Warmup em background (não bloqueia a abertura)
+        fetch(url).then(() => {}).catch(() => {});
       });
     }
   };
@@ -87,11 +82,11 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3010,
       host: '0.0.0.0',
-      strictPort: true, // sempre 3007; evita browser em 3008 e HMR em 3007 (loop/conexão recusada)
+      strictPort: true,
       open: false,
-      // HMR na mesma porta do servidor para evitar WebSocket em porta errada
+      // HMR na mesma porta do servidor (3010) para evitar WebSocket em porta errada
       hmr: {
-        port: DEV_PORT,
+        port: 3010,
         host: 'localhost',
         protocol: 'ws',
       },

@@ -141,6 +141,9 @@ export interface CrmIssue {
   updatedAt: string;
 }
 
+/** Tipo do boleto: condomínio (taxa), água ou luz */
+export type BoletoType = 'condominio' | 'agua' | 'luz';
+
 export interface Boleto {
   id: string;
   residentName: string;
@@ -149,6 +152,8 @@ export interface Boleto {
   dueDate: string; // Data de vencimento
   amount: number; // Valor em reais
   status: 'Pendente' | 'Pago' | 'Vencido';
+  /** Tipo: Condomínio (padrão), Água ou Luz */
+  boletoType?: BoletoType;
   barcode?: string; // Código de barras do boleto
   pdfUrl?: string; // URL para download do PDF
   paidDate?: string; // Data de pagamento

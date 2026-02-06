@@ -107,6 +107,7 @@ export type Database = {
           due_date: string;
           amount: number;
           status: 'Pendente' | 'Pago' | 'Vencido';
+          boleto_type: 'condominio' | 'agua' | 'luz' | null;
           barcode: string | null;
           pdf_url: string | null;
           paid_date: string | null;

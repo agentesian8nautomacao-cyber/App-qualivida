@@ -624,6 +624,7 @@ export const saveBoleto = async (boleto: Boleto): Promise<{ success: boolean; er
       due_date: boleto.dueDate,
       amount: boleto.amount,
       status: boleto.status,
+      boleto_type: boleto.boletoType || 'condominio',
       barcode: boleto.barcode || null,
       pdf_url: boleto.pdfUrl || null,
       paid_date: boleto.paidDate || null,
@@ -680,7 +681,7 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
       fetchRemote: async () => {
         const { data, error } = await supabase
           .from('boletos')
-          .select('id, resident_name, unit, reference_month, due_date, amount, status, barcode, pdf_url, paid_date, description')
+          .select('id, resident_name, unit, reference_month, due_date, amount, status, boleto_type, barcode, pdf_url, paid_date, description')
           .order('due_date', { ascending: false });
         if (error) throw error;
         return data || [];
@@ -702,6 +703,7 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
       dueDate: toDateStr(b.due_date),
       amount: Number(b.amount),
       status: b.status as 'Pendente' | 'Pago' | 'Vencido',
+      boletoType: (b.boleto_type === 'agua' || b.boleto_type === 'luz' ? b.boleto_type : 'condominio') as 'condominio' | 'agua' | 'luz',
       barcode: b.barcode ?? undefined,
       pdfUrl: b.pdf_url ?? undefined,
       paidDate: b.paid_date ? toDateStr(b.paid_date) : undefined,
