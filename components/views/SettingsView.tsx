@@ -3,7 +3,6 @@ import { Settings as SettingsIcon, Building2, MessageSquare, Keyboard, Brain, Sa
 import CondominiumNameSection from '../settings/CondominiumNameSection';
 import CondominiumWhatsAppSection from '../settings/CondominiumWhatsAppSection';
 import WhatsAppTemplatesSection from '../settings/WhatsAppTemplatesSection';
-import KeyboardShortcutsSection from '../settings/KeyboardShortcutsSection';
 import AIPersonalitySection from '../settings/AIPersonalitySection';
 import ThemeSelectionSection from '../settings/ThemeSelectionSection';
 
@@ -27,7 +26,6 @@ const SettingsView: React.FC = () => {
         <CondominiumWhatsAppSection />
         <ThemeSelectionSection />
         <WhatsAppTemplatesSection />
-        <KeyboardShortcutsSection />
         <AIPersonalitySection />
       </div>
     </div>
