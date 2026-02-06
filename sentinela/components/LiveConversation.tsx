@@ -44,10 +44,10 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
   const accentColor = isManager ? '#f59e0b' : '#10b981'; // Amber for Manager, Emerald for Doorman
   const glowColor = isManager ? 'rgba(245, 158, 11, 0.5)' : 'rgba(16, 185, 129, 0.5)';
 
-  // Tool Definition
+  // Tool Definition — involvedParties OBRIGATÓRIO para Encomenda (para o morador ser notificado)
   const logEventTool: FunctionDeclaration = {
     name: "logEvent",
-    description: "Registra uma ocorrência, visitante ou encomenda no sistema do condomínio via voz.",
+    description: "Registra uma ocorrência, visitante ou encomenda no sistema. Para ENCOMENDA, o morador só recebe notificação se involvedParties tiver a unidade ou nome do morador.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -56,9 +56,9 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
             enum: ["Visitante", "Encomenda", "Serviço", "Ocorrência", "Aviso"],
             description: "Categoria do evento."
         },
-        title: { type: Type.STRING, description: "Título curto." },
+        title: { type: Type.STRING, description: "Título curto (ex: tipo da encomenda)." },
         description: { type: Type.STRING, description: "Detalhes." },
-        involvedParties: { type: Type.STRING, description: "Unidade ou pessoa envolvida." }
+        involvedParties: { type: Type.STRING, description: "OBRIGATÓRIO para Encomenda: unidade (ex: 102, Bloco A 201) ou nome do morador. Para outros tipos: unidade ou pessoa envolvida." }
       },
       required: ["type", "title", "description"]
     }
@@ -176,9 +176,10 @@ const LiveConversation: React.FC<LiveConversationProps> = ({ onClose, userProfil
           Suas instruções operacionais:
           ${roleInstruction || "Foque em segurança e brevidade."}
           
-          IMPORTANTE:
+          REGRAS PARA REGISTRO VIA VOZ:
           1. Fale de forma clara, profissional e amigável.
-          2. Se o usuário relatar um visitante ou pacote, USE a ferramenta 'logEvent'.
+          2. Para ENCOMENDA: pergunte sempre a unidade ou o nome do morador antes de registrar. Preencha SEMPRE o campo 'involvedParties' com a unidade (ex: 102, Bloco A 201) ou o nome do morador — assim o morador recebe a notificação no app.
+          3. Para visitante, ocorrência ou aviso, use 'logEvent' com os dados informados; preencha 'involvedParties' quando houver unidade ou pessoa envolvida.
         `;
 
         // Context Construction

@@ -1644,20 +1644,47 @@ const App: React.FC = () => {
     imageUrl: undefined
   });
 
-  /** Resolve morador a partir do texto "envolvidos" (ex: "Apto 102", "Maria Silva"). */
-  const resolveResidentFromParties = useCallback((involvedParties: string | undefined): Resident | null => {
-    if (!involvedParties?.trim() || !allResidents.length) return null;
-    const q = involvedParties.trim().toLowerCase();
-    const byUnit = allResidents.find((r) => r.unit.toLowerCase() === q || r.unit.toLowerCase().includes(q));
-    if (byUnit) return byUnit;
-    const byName = allResidents.find((r) => r.name.toLowerCase().includes(q) || q.includes(r.name.toLowerCase()));
-    return byName || null;
+  /** Resolve morador a partir de involvedParties e, se necessário, título/descrição (para notificar o morador na encomenda por voz). */
+  const resolveResidentFromVoiceEvent = useCallback((item: { involvedParties?: string; title?: string; description?: string }): Resident | null => {
+    if (!allResidents.length) return null;
+    const parts = [item.involvedParties, item.title, item.description].filter(Boolean).join(' ');
+    if (!parts.trim()) return null;
+
+    const tryFind = (search: string): Resident | null => {
+      if (!search?.trim()) return null;
+      const q = search.trim().toLowerCase();
+      const byUnit = allResidents.find((r) => r.unit.toLowerCase() === q || r.unit.toLowerCase().includes(q));
+      if (byUnit) return byUnit;
+      const byName = allResidents.find((r) => r.name.toLowerCase().includes(q) || q.includes(r.name.toLowerCase()));
+      return byName || null;
+    };
+
+    if (item.involvedParties?.trim()) {
+      const r = tryFind(item.involvedParties);
+      if (r) return r;
+    }
+    if (item.title?.trim()) {
+      const r = tryFind(item.title);
+      if (r) return r;
+    }
+    const combined = parts.trim().toLowerCase();
+    const byUnitInText = allResidents.find((r) => combined.includes(r.unit.toLowerCase()));
+    if (byUnitInText) return byUnitInText;
+    const byNameInText = allResidents.find((r) => combined.includes(r.name.toLowerCase()));
+    if (byNameInText) return byNameInText;
+    const numMatch = combined.match(/\b(\d{2,4})\b/);
+    if (numMatch) {
+      const possibleUnit = numMatch[1];
+      const byNum = allResidents.find((r) => r.unit === possibleUnit || r.unit.endsWith(possibleUnit) || r.unit.includes(possibleUnit));
+      if (byNum) return byNum;
+    }
+    return null;
   }, [allResidents]);
 
   /** Persiste no backend e notifica o morador quando o assistente de voz (ou chat) regista encomenda, ocorrência ou aviso. */
   const handleVoiceEventPersist = useCallback(async (item: OccurrenceItem) => {
     const reporterName = currentAdminUser?.name || currentAdminUser?.username || (role === 'SINDICO' ? 'Síndico' : 'Portaria');
-    const resident = resolveResidentFromParties(item.involvedParties);
+    const resident = resolveResidentFromVoiceEvent({ involvedParties: item.involvedParties, title: item.title, description: item.description });
 
     try {
       if (item.type === 'Encomenda') {
@@ -1670,14 +1697,18 @@ const App: React.FC = () => {
           displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           status: 'Pendente',
           deadlineMinutes: 45,
-          recipientId: resident?.id,
+          recipientId: resident?.id ?? undefined,
           receivedByName: reporterName
         };
         const result = await savePackage(newPkg);
         if (result.success) {
           const { data } = await getPackages();
           if (data) setAllPackages(data);
-          toast.success('Encomenda registrada por voz. O morador foi notificado.');
+          if (resident?.id) {
+            toast.success('Encomenda registrada por voz. O morador foi notificado.');
+          } else {
+            toast.info('Encomenda registrada por voz. Informe a unidade ou nome do morador na próxima vez para enviar a notificação.');
+          }
         } else toast.error(result.error || 'Erro ao salvar encomenda.');
         return;
       }
@@ -1744,7 +1775,7 @@ const App: React.FC = () => {
       console.error('[handleVoiceEventPersist]', err);
       toast.error('Erro ao persistir registro de voz: ' + (err?.message || 'Erro desconhecido'));
     }
-  }, [currentAdminUser, role, currentResident, resolveResidentFromParties, toast]);
+  }, [currentAdminUser, role, currentResident, resolveResidentFromVoiceEvent, toast]);
 
   const [isOccurrenceModalOpen, setIsOccurrenceModalOpen] = useState(false);
   const [occurrenceDescription, setOccurrenceDescription] = useState('');
