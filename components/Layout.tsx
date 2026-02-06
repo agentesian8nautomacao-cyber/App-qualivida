@@ -139,8 +139,15 @@ const Layout: React.FC<LayoutProps> = ({
           )}
         </div>
         <button 
-          onClick={() => setIsMobileMenuOpen(false)} 
-          className="lg:hidden p-2 hover:bg-white/10 rounded-xl"
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+              setIsMobileMenuOpen(false);
+            } else {
+              setIsDesktopCollapsed(true);
+            }
+          }} 
+          className="p-2 hover:bg-white/10 rounded-xl"
+          title="Fechar menu"
         >
           <X className="w-5 h-5 text-[var(--text-primary)]" />
         </button>
