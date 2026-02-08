@@ -150,14 +150,57 @@ export const loginUser = async (
   const normalizedPassword = password.trim();
 
   // Verificar se o usuário está bloqueado (controle local de tentativas)
-  const blockStatus = isUserBlocked(normalizedEmail);
-  if (blockStatus.blocked) {
-    return {
-      user: null,
-      error: `Conta bloqueada devido a várias tentativas falhas. Aguarde ${blockStatus.remainingMinutes} minutos antes de tentar novamente.`,
-      blocked: true,
-      remainingMinutes: blockStatus.remainingMinutes
-    };
+  // Porém: accounts de portaria/admin/desenvolvedor não devem ser bloqueadas por este mecanismo local.
+  let skipLocalBlock = false;
+  try {
+    const bypassRoles = ['PORTEIRO','PORTARIA','SINDICO','SÍNDICO','DESENVOLVEDOR','DEVELOPER','DEV','ADMIN','ADMINISTRADOR'];
+
+    // Tentar resolver papel por username/email na tabela users
+    try {
+      const { data: userRoleRow } = await supabase
+        .from('users')
+        .select('role')
+        .or(`username.eq.${normalizedEmail},email.eq.${normalizedEmail}`)
+        .maybeSingle();
+      if (userRoleRow?.role) {
+        const r = String(userRoleRow.role).toUpperCase();
+        if (bypassRoles.includes(r)) skipLocalBlock = true;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Se ainda não identificado, checar tabela staff (por exemplo portaria pode estar lá)
+    if (!skipLocalBlock) {
+      try {
+        const { data: staffRoleRow } = await supabase
+          .from('staff')
+          .select('role')
+          .or(`username.eq.${normalizedEmail},email.eq.${normalizedEmail}`)
+          .maybeSingle();
+        if (staffRoleRow?.role) {
+          const r = String(staffRoleRow.role).toUpperCase();
+          if (bypassRoles.includes(r)) skipLocalBlock = true;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  } catch (e) {
+    // qualquer erro ao resolver papel não impede autenticação — seguir com bloqueio padrão
+    console.warn('[userAuth] Falha ao resolver papel para bypass de bloqueio local:', e);
+  }
+
+  if (!skipLocalBlock) {
+    const blockStatus = isUserBlocked(normalizedEmail);
+    if (blockStatus.blocked) {
+      return {
+        user: null,
+        error: `Conta bloqueada devido a várias tentativas falhas. Aguarde ${blockStatus.remainingMinutes} minutos antes de tentar novamente.`,
+        blocked: true,
+        remainingMinutes: blockStatus.remainingMinutes
+      };
+    }
   }
 
   try {
