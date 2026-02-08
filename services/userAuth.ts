@@ -148,7 +148,7 @@ export const loginUser = async (
   const normalizedUsername = username.toLowerCase().trim();
   const normalizedPassword = password.trim();
 
-  // Verificar se o usuário está bloqueado
+  // Verificar se o usuário está bloqueado (controle local de tentativas)
   const blockStatus = isUserBlocked(normalizedUsername);
   if (blockStatus.blocked) {
     return {
@@ -160,95 +160,14 @@ export const loginUser = async (
   }
 
   try {
-    // Buscar usuário por username ou email (para suportar Auth e legado)
-    const { data: row, error } = await supabase
-      .from('users')
-      .select('id, auth_id, username, role, name, email, phone, is_active, password_hash')
-      .or(`username.eq.${normalizedUsername},email.eq.${normalizedUsername}`)
-      .eq('is_active', true)
-      .maybeSingle();
+    // Apenas usar Supabase Auth para autenticar (sem consultar nenhuma tabela)
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: normalizedUsername,
+      password: normalizedPassword
+    });
 
-    if (error || !row) {
-      if (error) {
-        console.error('[userAuth] Erro ao buscar usuário no Supabase:', error.message, error.code, error.details);
-        const code = (error as { code?: string }).code;
-        const msg = (error.message || '').toLowerCase();
-        const isRls = code === 'PGRST301' || msg.includes('row-level security') || msg.includes('policy');
-        const isConnection = msg.includes('fetch') || msg.includes('failed to fetch');
-        if (isRls) {
-          incrementFailedAttempts(normalizedUsername);
-          return {
-            user: null,
-            error: 'Acesso à tabela "users" bloqueado (RLS). No Supabase: SQL Editor → execute a política de SELECT para anon na tabela public.users (veja SUPABASE_LOGIN_LOCAL.md).',
-            attemptsRemaining: MAX_LOGIN_ATTEMPTS - getLoginAttempts(normalizedUsername).count
-          };
-        }
-        if (isConnection) {
-          incrementFailedAttempts(normalizedUsername);
-          return {
-            user: null,
-            error: (import.meta as { env?: { DEV?: boolean } }).env?.DEV
-              ? 'Sem conexão com o Supabase. Verifique internet, .env.local (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY) e reinicie "npm run dev".'
-              : 'Sem conexão com o servidor. Verifique as variáveis de ambiente no Vercel (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY) e se o projeto Supabase está ativo.',
-            attemptsRemaining: MAX_LOGIN_ATTEMPTS - getLoginAttempts(normalizedUsername).count
-          };
-        }
-      }
-      incrementFailedAttempts(normalizedUsername);
-      return {
-        user: null,
-        error: 'Usuário ou senha inválidos',
-        attemptsRemaining: MAX_LOGIN_ATTEMPTS - getLoginAttempts(normalizedUsername).count
-      };
-    }
-
-    const data = row as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean; password_hash?: string };
-
-    // Se o usuário tem auth_id e email, usar Supabase Auth para login (senha case-sensitive)
-    if (data.auth_id && data.email) {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: normalizedPassword
-      });
-      if (!authError && authData?.user?.id) {
-        resetLoginAttempts(normalizedUsername);
-        const user = await getProfileByAuthId(authData.user.id);
-        if (user) {
-          return { user, error: null };
-        }
-      }
-      // Auth falhou (senha errada ou outro erro); continuar para legado se não tiver password_hash não faz sentido
-      if (data.password_hash === undefined || data.password_hash === null) {
-        return {
-          user: null,
-          error: authError?.message || 'Usuário ou senha inválidos',
-          attemptsRemaining: MAX_LOGIN_ATTEMPTS - getLoginAttempts(normalizedUsername).count
-        };
-      }
-      // Tem password_hash (legado): tentar legado abaixo
-    }
-
-    // Login legado (sem auth_id ou Auth falhou e tem password_hash) — senha case-sensitive
-    const hashedPassword = await hashPassword(normalizedPassword);
-    let isValidPassword = false;
-    let usedDefaultPassword = false;
-
-    if (data.password_hash && data.password_hash.startsWith('plain:')) {
-      const storedPlain = data.password_hash.substring(6);
-      isValidPassword = storedPlain === normalizedPassword;
-      if (isValidPassword && data.role === 'PORTEIRO' && storedPlain === '123456') usedDefaultPassword = true;
-    } else if (data.password_hash === '$2a$10$placeholder_hash_here') {
-      const defaultPasswords: Record<string, string> = {
-        'portaria': '123456',
-        'admin': 'admin123',
-        'desenvolvedor': 'dev'
-      };
-      isValidPassword = defaultPasswords[normalizedUsername] === normalizedPassword;
-    } else {
-      isValidPassword = data.password_hash === hashedPassword;
-    }
-
-    if (!isValidPassword) {
+    if (authError || !authData?.user?.id) {
+      // Falha de autenticação — incrementar tentativas locais
       const attempts = incrementFailedAttempts(normalizedUsername);
       const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
       if (attempts.blockedUntil) {
@@ -262,31 +181,38 @@ export const loginUser = async (
       }
       return {
         user: null,
-        error: `Senha incorreta. ${remaining > 0 ? `${remaining} tentativa(s) restante(s).` : 'Conta será bloqueada.'}`,
+        error: authError?.message || 'Usuário ou senha inválidos',
         attemptsRemaining: remaining
       };
     }
 
+    // Sucesso: resetar tentativas e retornar usuário mínimo (sem consultar tabelas)
     resetLoginAttempts(normalizedUsername);
-    const userId = data.auth_id || data.id;
-    return {
-      user: {
-        id: userId,
-        username: data.username,
-        role: data.role as 'PORTEIRO' | 'SINDICO',
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        is_active: data.is_active
-      },
-      error: null,
-      mustChangePassword: usedDefaultPassword
+    const authUser = authData.user;
+    const user: User = {
+      id: authUser.id,
+      username: normalizedUsername,
+      role: 'PORTEIRO', // valor padrão porque não podemos consultar a tabela
+      name: (authUser.user_metadata as any)?.full_name ?? null,
+      email: authUser.email ?? null,
+      phone: (authUser.user_metadata as any)?.phone ?? null,
+      is_active: true
     };
+
+    // Salvar sessão local mínima
+    try {
+      saveUserSession(user);
+    } catch {
+      // ignore
+    }
+
+    return { user, error: null };
   } catch (error: any) {
-    console.error('[userAuth] Erro ao buscar usuário no Supabase:', error);
+    console.error('[userAuth] Erro ao autenticar via Supabase Auth:', error);
     const msg = (error?.message ?? '').toLowerCase();
     const isNetwork = msg.includes('fetch') || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('err_name_not_resolved');
     const networkMessage = 'Não foi possível conectar ao Supabase (erro de rede/DNS). No navegador (F12 → Console) pode aparecer ERR_NAME_NOT_RESOLVED: este computador ou rede não consegue resolver o endereço do Supabase. Tente: outra rede (ex.: celular como hotspot), outro DNS (ex.: 8.8.8.8), desativar VPN; confira .env.local (VITE_SUPABASE_URL) e no Vercel as variáveis de ambiente.';
+    incrementFailedAttempts(normalizedUsername);
     return {
       user: null,
       error: isNetwork ? networkMessage : (error?.message || 'Erro ao conectar com o servidor. Tente novamente.')
@@ -618,11 +544,9 @@ export function clearRecoveryHashFromUrl(): void {
  */
 export const requestPasswordReset = async (email: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    const redirectTo = typeof window !== 'undefined' && window.location?.origin
-      ? `${window.location.origin}/reset-password`
-      : undefined;
+    const redirectTo = 'https://qualivida-club-residence.vercel.app/reset-password';
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: redirectTo || undefined
+      redirectTo
     });
     if (error) {
       return { success: false, error: error.message };

@@ -93,7 +93,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    const successMessage = 'Se o e-mail estiver cadastrado, você receberá um link de recuperação por e-mail. Verifique a caixa de entrada e o spam. No Gmail, confira também a pasta Spam e a aba Promoções.';
+    const successMessage = 'Se o e-mail estiver cadastrado, você receberá um link por e-mail. Verifique a caixa de entrada, Spam e Promoções (Gmail). Se não chegar (comum em Gmail/Hotmail com e-mail padrão do Supabase), o administrador deve configurar SMTP personalizado no Supabase — veja CONFIGURAR_SMTP_SUPABASE.md no projeto.';
 
     const emailToUse = value.includes('@')
       ? value.trim().toLowerCase()

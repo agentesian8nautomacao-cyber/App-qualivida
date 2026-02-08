@@ -1,6 +1,21 @@
 # O e-mail de recuperação não chega – o que fazer
 
-## Por que o e-mail não chega
+## E-mail não chega no Gmail nem no Hotmail/Outlook
+
+Se o link de recuperação **não chega em nenhum dos dois** (Gmail e Hotmail/Outlook) — nem na caixa de entrada nem em Spam —, as causas mais comuns são:
+
+1. **E-mail não está em Authentication → Users**  
+   O Supabase só envia para endereços cadastrados em **Authentication → Users**. Verifique isso primeiro (veja seção abaixo).
+
+2. **Uso do e-mail padrão do Supabase (sem SMTP personalizado)**  
+   O remetente padrão do Supabase tem **baixa entrega** em Gmail e Hotmail: muitos provedores bloqueiam ou filtram por falta de SPF/DKIM e reputação.  
+   **Solução:** configurar **SMTP personalizado** no Supabase com um provedor (Resend, Brevo, SendGrid) e **verificar o domínio** (SPF/DKIM). Guia completo: **CONFIGURAR_SMTP_SUPABASE.md**.
+
+Resumo: para o e-mail chegar de forma confiável em **Gmail e Hotmail**, é necessário **SMTP personalizado + domínio verificado** no Supabase. Não há ajuste apenas no app que resolva a entrega.
+
+---
+
+## Por que o e-mail não chega (verificações básicas)
 
 O Supabase **só envia** o link de recuperação para endereços que estão em **Authentication → Users** (no Dashboard do Supabase).
 
