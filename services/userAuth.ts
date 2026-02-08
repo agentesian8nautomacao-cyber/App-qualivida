@@ -145,11 +145,11 @@ export const loginUser = async (
   attemptsRemaining?: number;
   mustChangePassword?: boolean;
 }> => {
-  const normalizedUsername = username.toLowerCase().trim();
+  const normalizedEmail = username.toLowerCase().trim();
   const normalizedPassword = password.trim();
 
   // Verificar se o usuário está bloqueado (controle local de tentativas)
-  const blockStatus = isUserBlocked(normalizedUsername);
+  const blockStatus = isUserBlocked(normalizedEmail);
   if (blockStatus.blocked) {
     return {
       user: null,
@@ -160,15 +160,41 @@ export const loginUser = async (
   }
 
   try {
-    // Apenas usar Supabase Auth para autenticar (sem consultar nenhuma tabela)
+    // If input is not an email (username), try to resolve it to an email in users/residents
+    let emailToUse = normalizedEmail;
+    if (!normalizedEmail.includes('@')) {
+      try {
+        const usernameQ = normalizedEmail;
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('email')
+          .eq('username', usernameQ)
+          .maybeSingle();
+        if (userRow?.email) {
+          emailToUse = String(userRow.email).trim().toLowerCase();
+        } else {
+          // try residents table (some apps use unit/name login)
+          const { data: residentRow } = await supabase
+            .from('residents')
+            .select('email')
+            .eq('username', usernameQ)
+            .maybeSingle();
+          if (residentRow?.email) emailToUse = String(residentRow.email).trim().toLowerCase();
+        }
+      } catch {
+        // ignore lookup errors and continue using the raw input as email
+      }
+    }
+
+    // Autenticar via Supabase Auth usando email resolvido
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: normalizedUsername,
+      email: emailToUse,
       password: normalizedPassword
     });
 
     if (authError || !authData?.user?.id) {
       // Falha de autenticação — incrementar tentativas locais
-      const attempts = incrementFailedAttempts(normalizedUsername);
+      const attempts = incrementFailedAttempts(normalizedEmail);
       const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
       if (attempts.blockedUntil) {
         const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
@@ -186,33 +212,83 @@ export const loginUser = async (
       };
     }
 
-    // Sucesso: resetar tentativas e retornar usuário mínimo (sem consultar tabelas)
-    resetLoginAttempts(normalizedUsername);
+    // Sucesso de Auth: resetar tentativas e buscar perfil por auth_user_id
+    resetLoginAttempts(normalizedEmail);
     const authUser = authData.user;
-    const user: User = {
-      id: authUser.id,
-      username: normalizedUsername,
-      role: 'PORTEIRO', // valor padrão porque não podemos consultar a tabela
-      name: (authUser.user_metadata as any)?.full_name ?? null,
-      email: authUser.email ?? null,
-      phone: (authUser.user_metadata as any)?.phone ?? null,
-      is_active: true
-    };
 
-    // Salvar sessão local mínima
-    try {
-      saveUserSession(user);
-    } catch {
-      // ignore
+    // 1) tentar perfil em public.users via helper existente
+    let profile = await getProfileByAuthId(authUser.id);
+
+    // 2) se não encontrou, tentar resident
+    if (!profile) {
+      try {
+        const { data: residentRow } = await supabase
+          .from('resident')
+          .select('id, auth_user_id, username, role, name, email, phone, is_active')
+          .eq('auth_user_id', authUser.id)
+          .maybeSingle();
+        if (residentRow) {
+          profile = {
+            id: authUser.id,
+            username: residentRow.username ?? residentRow.email ?? '',
+            role: (residentRow.role as any) === 'SINDICO' ? 'SINDICO' : 'PORTEIRO',
+            name: residentRow.name ?? null,
+            email: residentRow.email ?? authUser.email ?? null,
+            phone: residentRow.phone ?? null,
+            is_active: residentRow.is_active ?? true
+          };
+        }
+      } catch {
+        // ignore errors (RLS) and continue to next
+      }
     }
 
-    return { user, error: null };
+    // 3) se ainda não, tentar staff ou users
+    if (!profile) {
+      try {
+        const { data: staffRow } = await supabase
+          .from('staff')
+          .select('id, auth_user_id, username, role, name, email, phone, is_active')
+          .eq('auth_user_id', authUser.id)
+          .maybeSingle();
+        if (staffRow) {
+          profile = {
+            id: authUser.id,
+            username: staffRow.username ?? staffRow.email ?? '',
+            role: (staffRow.role as any) === 'SINDICO' ? 'SINDICO' : 'PORTEIRO',
+            name: staffRow.name ?? null,
+            email: staffRow.email ?? authUser.email ?? null,
+            phone: staffRow.phone ?? null,
+            is_active: staffRow.is_active ?? true
+          };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 4) fallback: usar dados do auth user quando não existir perfil nas tabelas
+    if (!profile) {
+      profile = {
+        id: authUser.id,
+        username: authUser.email ?? '',
+        role: 'PORTEIRO',
+        name: (authUser.user_metadata as any)?.full_name ?? null,
+        email: authUser.email ?? null,
+        phone: (authUser.user_metadata as any)?.phone ?? null,
+        is_active: true
+      };
+    }
+
+    // Salvar sessão e retornar
+    try { saveUserSession(profile); } catch {}
+    return { user: profile, error: null };
   } catch (error: any) {
     console.error('[userAuth] Erro ao autenticar via Supabase Auth:', error);
     const msg = (error?.message ?? '').toLowerCase();
     const isNetwork = msg.includes('fetch') || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('err_name_not_resolved');
     const networkMessage = 'Não foi possível conectar ao Supabase (erro de rede/DNS). No navegador (F12 → Console) pode aparecer ERR_NAME_NOT_RESOLVED: este computador ou rede não consegue resolver o endereço do Supabase. Tente: outra rede (ex.: celular como hotspot), outro DNS (ex.: 8.8.8.8), desativar VPN; confira .env.local (VITE_SUPABASE_URL) e no Vercel as variáveis de ambiente.';
-    incrementFailedAttempts(normalizedUsername);
+    incrementFailedAttempts(normalizedEmail);
     return {
       user: null,
       error: isNetwork ? networkMessage : (error?.message || 'Erro ao conectar com o servidor. Tente novamente.')
@@ -225,16 +301,17 @@ export const loginUser = async (
  * Retorna User com id = auth_id para uso consistente no app.
  */
 async function getProfileByAuthId(authId: string): Promise<User | null> {
+  // Support both legacy `auth_id` and new `auth_user_id` columns
   const { data, error } = await supabase
     .from('users')
-    .select('id, auth_id, username, role, name, email, phone, is_active')
-    .eq('auth_id', authId)
+    .select('id, auth_id, auth_user_id, username, role, name, email, phone, is_active')
+    .or(`auth_id.eq.${authId},auth_user_id.eq.${authId}`)
     .eq('is_active', true)
     .maybeSingle();
   if (error || !data) return null;
   const row = data as { id: string; auth_id?: string; username: string; role: string; name: string | null; email: string | null; phone: string | null; is_active: boolean };
   return {
-    id: row.auth_id || row.id,
+    id: (row as any).auth_user_id || row.auth_id || row.id,
     username: row.username,
     role: row.role as 'PORTEIRO' | 'SINDICO',
     name: row.name,
@@ -847,3 +924,4 @@ export const resetPasswordWithToken = async (
     };
   }
 };
+

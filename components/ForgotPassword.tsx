@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Mail, Lock, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { requestPasswordReset, getEmailForReset, resetPasswordWithToken, getOrRestoreRecoverySession, clearRecoveryHashFromUrl } from '../services/userAuth';
-import { getEmailForResetResident, computeResidentPasswordHash } from '../services/residentAuth';
+import { resetPasswordWithToken, getOrRestoreRecoverySession, clearRecoveryHashFromUrl } from '../services/userAuth';
+import { computeResidentPasswordHash } from '../services/residentAuth';
 
 interface ForgotPasswordProps {
   onBack: () => void;
@@ -95,23 +95,23 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
 
     const successMessage = 'Se o e-mail estiver cadastrado, você receberá um link por e-mail. Verifique a caixa de entrada, Spam e Promoções (Gmail). Se não chegar (comum em Gmail/Hotmail com e-mail padrão do Supabase), o administrador deve configurar SMTP personalizado no Supabase — veja CONFIGURAR_SMTP_SUPABASE.md no projeto.';
 
-    const emailToUse = value.includes('@')
-      ? value.trim().toLowerCase()
-      : (isResident ? await getEmailForResetResident(value) : await getEmailForReset(value)) || '';
-
-    if (!emailToUse) {
+    // Agora exigimos e-mail; NÃO consultar tabelas customizadas para reset
+    if (!value.includes('@') || !emailRegex.test(value.toLowerCase())) {
       setLoading(false);
-      setMessage({ type: 'error', text: isResident ? 'Unidade ou e-mail não encontrado. Verifique e tente novamente.' : 'E-mail ou usuário não encontrado. Verifique e tente novamente.' });
+      setMessage({ type: 'error', text: 'Informe um e-mail válido. Não é possível solicitar recuperação por nome de usuário.' });
       return;
     }
 
-    // Único fluxo: Supabase Auth envia o link de recuperação por e-mail
-    const authResult = await requestPasswordReset(emailToUse);
+    const emailToUse = value.trim().toLowerCase();
+
+    // Chamar diretamente o método oficial do Supabase Auth (sem consultar tabelas)
+    const redirectTo = 'https://qualivida-club-residence.vercel.app/reset-password';
+    const { error } = await supabase.auth.resetPasswordForEmail(emailToUse, { redirectTo });
     setLoading(false);
-    if (authResult.success) {
+    if (!error) {
       setMessage({ type: 'success', text: successMessage });
     } else {
-      const err = authResult.error || '';
+      const err = error.message || '';
       const isRateLimit = /rate limit|rate_limit|too many requests|limite/i.test(err);
       const isRecoverySendError = /error sending recovery|500|internal server error|redirect|url.*config|smtp|email.*fail|send.*fail|mail.*fail|configuration/i.test(err);
       let text: string;

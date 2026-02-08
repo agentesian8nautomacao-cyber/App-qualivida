@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { Package, Resident, VisitorLog, Occurrence, Boleto, PackageItem, Notice, ChatMessage, Staff } from '../types';
 import { createNotification } from './notificationService';
 import { getData, createData, updateData, deleteData, type GetDataOptions } from './offlineDataService';
+import { createClient } from '@supabase/supabase-js';
 
 // ============================================
 // SERVIÇOS PARA PACOTES (ENCOMENDAS)
@@ -1090,34 +1091,66 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promis
       }
     }
 
-    // Senha: pessoal se informada, senão padrão 123456 (ex.: import em lote)
-    const plain = (passwordPlain && passwordPlain.trim().length >= 6) ? passwordPlain.trim() : '123456';
-    const passwordHash = `plain:${plain}`;
+    // Tentar criar usuário no Supabase Auth (admin) e salvar auth_user_id na tabela users.
+    // Só funciona se estiver executando no backend com SUPABASE_SERVICE_ROLE_KEY definido.
+    let authUserId: string | null = null;
+    const serviceKey = (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY) ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined;
+    const supabaseUrl = (typeof process !== 'undefined' && process.env && process.env.SUPABASE_URL) ? process.env.SUPABASE_URL : undefined;
 
-    // Criar usuário na tabela users
+    if (serviceKey && staff.email) {
+      try {
+        const adminSup = createClient(supabaseUrl || '', serviceKey);
+        const normalizedEmail = String(staff.email).trim().toLowerCase();
+        const { data: createData, error: createError } = await (adminSup.auth as any).admin.createUser({
+          email: normalizedEmail,
+          email_confirm: true
+        });
+        if (!createError && createData) {
+          authUserId = (createData.user?.id ?? createData.id) as string;
+        } else if (createError) {
+          console.warn('[createUserFromStaff] admin.createUser failed:', createError.message || createError);
+        }
+      } catch (err: any) {
+        console.warn('[createUserFromStaff] admin.createUser exception:', err?.message || err);
+      }
+    }
+
+    // Preparar payload para inserir/atualizar usuário na tabela users.
+    const insertPayload: any = {
+      username: finalUsername,
+      role: 'PORTEIRO',
+      name: staff.name,
+      email: staff.email || null,
+      phone: staff.phone || null,
+      is_active: staff.status === 'Ativo',
+      auth_user_id: authUserId
+    };
+
+    // Se admin.createUser não foi possível (sem service key ou falha), podemos optar por criar com senha legada.
+    // Não salvamos senha quando auth_user_id foi criado.
+    if (!authUserId) {
+      const plain = (passwordPlain && passwordPlain.trim().length >= 6) ? passwordPlain.trim() : '123456';
+      insertPayload.password_hash = `plain:${plain}`;
+    }
+
     const { error: userError } = await supabase
       .from('users')
-      .insert({
-        username: finalUsername,
-        password_hash: passwordHash,
-        role: 'PORTEIRO',
-        name: staff.name,
-        email: staff.email || null,
-        phone: staff.phone || null,
-        is_active: staff.status === 'Ativo'
-      });
+      .insert(insertPayload);
 
     if (userError) {
-      // Se o erro for de duplicidade, tentar atualizar
-      if (userError.code === '23505' || userError.message.includes('duplicate')) {
-        // Usuário já existe, atualizar dados (e senha se informada)
+      // Se o erro for de duplicidade, tentar atualizar existente
+      if (userError.code === '23505' || (userError.message && userError.message.toLowerCase().includes('duplicate'))) {
         const updatePayload: Record<string, unknown> = {
           name: staff.name,
           email: staff.email || null,
           phone: staff.phone || null,
           is_active: staff.status === 'Ativo'
         };
-        if (passwordPlain && passwordPlain.trim().length >= 6) {
+        if (authUserId) {
+          updatePayload.auth_user_id = authUserId;
+          // remover password_hash legada caso exista
+          updatePayload['password_hash'] = null;
+        } else if (passwordPlain && passwordPlain.trim().length >= 6) {
           updatePayload.password_hash = `plain:${passwordPlain.trim()}`;
         }
         const { error: updateError } = await supabase
@@ -1131,12 +1164,12 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promis
         }
         return { success: true };
       }
-      
+
       console.warn('[createUserFromStaff] Erro ao criar usuário:', userError);
       return { success: false, error: userError.message };
     }
 
-    console.log('[createUserFromStaff] ✅ Usuário criado para porteiro:', staff.name, 'Username:', finalUsername);
+    console.log('[createUserFromStaff] ✅ Usuário criado para porteiro:', staff.name, 'Username:', finalUsername, authUserId ? `auth_user_id=${authUserId}` : '(legacy password stored)');
     return { success: true };
   } catch (err: any) {
     console.error('[createUserFromStaff] Erro inesperado:', err);
