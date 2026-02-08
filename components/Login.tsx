@@ -135,6 +135,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
       return;
     }
 
+    // Proibir envio de e-mail no campo de usuário (fornecer feedback imediado)
+    if (username.includes('@')) {
+      setError('Use seu usuário (não o e-mail) para efetuar login.');
+      return;
+    }
+
     // Login do morador: Unidade + Senha → onMoradorLogin (cadastro só via "Criar conta")
     if (selectedRole === 'MORADOR') {
       if (!onMoradorLogin) {

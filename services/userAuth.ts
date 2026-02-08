@@ -99,9 +99,10 @@ export const isUserBlocked = (username: string): { blocked: boolean; remainingMi
  * Maiúsculas e minúsculas são diferenciadas.
  */
 const isStrongPassword = (password: string): boolean => {
+  // Regras ajustadas: aceitar senhas numéricas (ex: 123456) e alfanuméricas.
+  // Apenas aceitar caracteres alfanuméricos e comprimento entre 6 e 32.
   if (!password || password.length < 6 || password.length > 32) return false;
   if (!/^[A-Za-z0-9]+$/.test(password)) return false;
-  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return false;
   return true;
 };
 
@@ -146,8 +147,26 @@ export const loginUser = async (
   attemptsRemaining?: number;
   mustChangePassword?: boolean;
 }> => {
-  const normalizedEmail = username.toLowerCase().trim();
+  const normalizedInput = username.toLowerCase().trim();
+  // Proibir autenticação direta por e-mail pelo backend: o campo de login é sempre username.
+  if (normalizedInput.includes('@')) {
+    return {
+      user: null,
+      error: 'Use seu usuário (não o e-mail) para efetuar login.'
+    };
+  }
   const normalizedPassword = password.trim();
+
+  // Helper to compare passwords (supports legacy "plain:" prefix and hashed values)
+  const comparePassword = async (plain: string, storedHash: string | null): Promise<boolean> => {
+    if (!storedHash) return false;
+    if (typeof storedHash !== 'string') return false;
+    if (storedHash.startsWith('plain:')) {
+      return plain === storedHash.slice(6);
+    }
+    const computed = await hashPassword(plain);
+    return computed === storedHash;
+  };
 
   // Verificar se o usuário está bloqueado (controle local de tentativas)
   // Porém: accounts de portaria/admin/desenvolvedor não devem ser bloqueadas por este mecanismo local.
@@ -160,7 +179,7 @@ export const loginUser = async (
       const { data: userRoleRow } = await supabase
         .from('users')
         .select('role')
-        .or(`username.eq.${normalizedEmail},email.eq.${normalizedEmail}`)
+        .or(`username.eq.${normalizedInput},email.eq.${normalizedInput}`)
         .maybeSingle();
       if (userRoleRow?.role) {
         const r = String(userRoleRow.role).toUpperCase();
@@ -176,7 +195,7 @@ export const loginUser = async (
         const { data: staffRoleRow } = await supabase
           .from('staff')
           .select('role')
-          .or(`username.eq.${normalizedEmail},email.eq.${normalizedEmail}`)
+          .or(`username.eq.${normalizedInput},email.eq.${normalizedInput}`)
           .maybeSingle();
         if (staffRoleRow?.role) {
           const r = String(staffRoleRow.role).toUpperCase();
@@ -192,7 +211,7 @@ export const loginUser = async (
   }
 
   if (!skipLocalBlock) {
-    const blockStatus = isUserBlocked(normalizedEmail);
+    const blockStatus = isUserBlocked(normalizedInput);
     if (blockStatus.blocked) {
       return {
         user: null,
@@ -205,10 +224,10 @@ export const loginUser = async (
 
   try {
     // If input is not an email (username), try to resolve it to an email in users/residents/staff
-    let emailToUse = normalizedEmail;
-    if (!normalizedEmail.includes('@')) {
+    let emailToUse = normalizedInput;
+    if (!normalizedInput.includes('@')) {
       try {
-        const usernameQ = normalizedEmail;
+        const usernameQ = normalizedInput;
         // Try users table
         const { data: userRow } = await supabase
           .from('users')
@@ -249,19 +268,151 @@ export const loginUser = async (
       }
     }
 
+    // Prioritize local (legacy) authentication for system accounts even if email exists.
+    // This allows numeric/simple passwords for porteiro/admin/dev stored in password_hash.
+    try {
+      const usernameQ = normalizedInput;
+      const tablesToCheck = ['staff', 'users', 'residents'];
+      for (const tbl of tablesToCheck) {
+        try {
+          const { data: row } = await supabase
+            .from(tbl)
+            .select('id, auth_user_id, username, role, name, email, phone, is_active, password_hash')
+            .eq('username', usernameQ)
+            .maybeSingle();
+          if (row && (row as any).password_hash) {
+            const pwdHash = (row as any).password_hash ?? null;
+            const ok = await comparePassword(normalizedPassword, pwdHash);
+            if (ok) {
+              const rawRole = ((row as any).role ?? '').toString();
+              const roleNormalized = rawRole ? rawRole.toUpperCase() : (tbl === 'users' ? 'MORADOR' : 'PORTEIRO');
+              const profile: User = {
+                id: (row as any).auth_user_id || (row as any).id || '',
+                username: (row as any).username ?? (row as any).email ?? usernameQ,
+                role: roleNormalized,
+                name: (row as any).name ?? null,
+                email: (row as any).email ?? null,
+                phone: (row as any).phone ?? null,
+                is_active: (row as any).is_active ?? true
+              };
+              try { resetLoginAttempts(normalizedInput); } catch {}
+              try { saveUserSession(profile); } catch {}
+              return { user: profile, error: null };
+            } else {
+              // senha incorreta localmente para essa tabela — tratar abaixo (não continuar para Supabase)
+              if (!skipLocalBlock) {
+                const attempts = incrementFailedAttempts(normalizedInput);
+                const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
+                if (attempts.blockedUntil) {
+                  const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
+                  return {
+                    user: null,
+                    error: `Senha incorreta. Conta bloqueada por ${remainingMinutes} minutos devido a múltiplas tentativas falhas.`,
+                    blocked: true,
+                    remainingMinutes
+                  };
+                }
+                return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.', attemptsRemaining: remaining };
+              }
+              return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
+            }
+          }
+        } catch {
+          // continue to next table on error
+        }
+      }
+    } catch {
+      // ignore errors in legacy lookup — continue to Supabase flow
+    }
+
     // Normalize and validate email before sending to Supabase Auth.
     const simpleEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // If we couldn't resolve a valid email, attempt a local (legacy) authentication
+    // against password_hash stored in users/residents/staff tables. This allows
+    // system accounts (porteiro/admin/desenvolvedor) that may not have an Auth
+    // user to login via username + password.
     if (!simpleEmailRegex.test(emailToUse)) {
-      // Do not call Supabase Auth with an invalid email format (this causes 400).
-      return {
-        user: null,
-        error: 'Informe o e-mail cadastrado para efetuar login. Se você usa um usuário (ex.: porteiro), verifique se há um e-mail cadastrado no perfil.'
+      const usernameQ = normalizedInput;
+
+      // Helper to compare passwords (supports legacy "plain:" prefix and hashed values)
+      const comparePassword = async (plain: string, storedHash: string | null): Promise<boolean> => {
+        if (!storedHash) return false;
+        if (storedHash.startsWith('plain:')) {
+          return plain === storedHash.slice(6);
+        }
+        const computed = await hashPassword(plain);
+        return computed === storedHash;
       };
+
+      // Try users -> residents -> staff for a local password_hash
+      try {
+        const tables = ['users', 'residents', 'staff'];
+        for (const tbl of tables) {
+          try {
+            const { data: row } = await supabase
+              .from(tbl)
+              .select('id, auth_user_id, username, role, name, email, phone, is_active, password_hash')
+              .eq('username', usernameQ)
+              .maybeSingle();
+            if (row) {
+              const pwdHash = (row as any).password_hash ?? null;
+              const ok = await comparePassword(normalizedPassword, pwdHash);
+              if (ok) {
+                // Autenticação local bem-sucedida — construir perfil mínimo e salvar sessão
+                const rawRole = ((row as any).role ?? '').toString();
+                const roleNormalized = rawRole ? rawRole.toUpperCase() : (tbl === 'users' ? 'MORADOR' : 'PORTEIRO');
+                const profile: User = {
+                  id: (row as any).auth_user_id || (row as any).id || '',
+                  username: (row as any).username ?? (row as any).email ?? usernameQ,
+                  role: roleNormalized,
+                  name: (row as any).name ?? null,
+                  email: (row as any).email ?? null,
+                  phone: (row as any).phone ?? null,
+                  is_active: (row as any).is_active ?? true
+                };
+                try { resetLoginAttempts(normalizedInput); } catch {}
+                try { saveUserSession(profile); } catch {}
+                return { user: profile, error: null };
+              } else {
+                // senha incorreta localmente
+                if (!skipLocalBlock) {
+                  const attempts = incrementFailedAttempts(normalizedInput);
+                  const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
+                  if (attempts.blockedUntil) {
+                    const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
+                    return {
+                      user: null,
+                      error: `Senha incorreta. Conta bloqueada por ${remainingMinutes} minutos devido a múltiplas tentativas falhas.`,
+                      blocked: true,
+                      remainingMinutes
+                    };
+                  }
+                  return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.', attemptsRemaining: remaining };
+                }
+                return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
+              }
+            }
+          } catch {
+            // ignore table-specific errors and continue
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      // Se não encontrou email nem senha localmente, retornar erro genérico (não revelar existência)
+      return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
     }
 
     // Debug logs removed in production.
 
     // Autenticar via Supabase Auth usando email resolvido
+    // DEBUG: registrar chaves do payload (sem expor a senha)
+    try {
+      const payloadPreview = { email: emailToUse, passwordLength: normalizedPassword.length, keys: Object.keys({ email: emailToUse, password: normalizedPassword }) };
+      console.log('[userAuth] signIn payload preview', payloadPreview);
+    } catch {}
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: normalizedPassword
@@ -271,8 +422,8 @@ export const loginUser = async (
     // Falha de autenticação
     // Se for usuário com bypass (porteiro/admin/dev), NÃO incrementar tentativas nem bloquear localmente.
 
-      if (!skipLocalBlock) {
-        const attempts = incrementFailedAttempts(normalizedEmail);
+        if (!skipLocalBlock) {
+        const attempts = incrementFailedAttempts(normalizedInput);
         const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
         if (attempts.blockedUntil) {
           const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
@@ -312,7 +463,7 @@ export const loginUser = async (
     }
 
     // Sucesso de Auth: resetar tentativas e buscar perfil por auth_user_id
-    resetLoginAttempts(normalizedEmail);
+    resetLoginAttempts(normalizedInput);
     const authUser = authData.user;
 
     // 1) tentar perfil em public.users via helper existente
@@ -412,7 +563,7 @@ export const loginUser = async (
     const isNetwork = msg.includes('fetch') || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('err_name_not_resolved');
     const networkMessage = 'Não foi possível conectar ao Supabase (erro de rede/DNS). No navegador (F12 → Console) pode aparecer ERR_NAME_NOT_RESOLVED: este computador ou rede não consegue resolver o endereço do Supabase. Tente: outra rede (ex.: celular como hotspot), outro DNS (ex.: 8.8.8.8), desativar VPN; confira .env.local (VITE_SUPABASE_URL) e no Vercel as variáveis de ambiente.';
     try {
-      if (!skipLocalBlock) incrementFailedAttempts(normalizedEmail);
+      if (!skipLocalBlock) incrementFailedAttempts(normalizedInput);
     } catch {
       // ignore
     }
@@ -981,7 +1132,7 @@ export const resetPasswordWithToken = async (
     if (!isStrongPassword(pwdTrim)) {
       return {
         success: false,
-        message: 'A nova senha deve ter 6 caracteres, apenas letras e números. O sistema diferencia maiúsculas de minúsculas.'
+        message: 'A nova senha deve ter entre 6 e 32 caracteres; apenas letras e números são permitidos. O sistema diferencia maiúsculas de minúsculas.'
       };
     }
 
