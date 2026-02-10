@@ -348,9 +348,33 @@ export const getResidents = async (): Promise<GetResidentsResult> => {
   }
 };
 
-export const saveResident = async (resident: Resident): Promise<{ success: boolean; error?: string; id?: string }> => {
+export const saveResident = async (resident: Resident, options?: { passwordPlain?: string }): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     const isNew = !resident.id || resident.id.startsWith('temp-');
+    const emailRaw = (resident.email || '').toString().trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (isNew && (!emailRaw || !emailRegex.test(emailRaw))) {
+      return {
+        success: false,
+        error: 'E-mail válido obrigatório para morador. Necessário para login e recuperação de senha.'
+      };
+    }
+
+    let authUserId: string | null = null;
+    if (isNew && emailRaw && emailRegex.test(emailRaw)) {
+      const pwd = (options?.passwordPlain && options.passwordPlain.length >= 6)
+        ? options.passwordPlain
+        : '123456';
+      authUserId = await createAuthUserViaApi(emailRaw, pwd);
+      if (!authUserId) {
+        return {
+          success: false,
+          error: 'Não foi possível criar usuário em auth.users. Adicione SUPABASE_SERVICE_ROLE_KEY e SUPABASE_URL no Vercel.'
+        };
+      }
+    }
+
     const payload: any = {
       id: isNew ? undefined : resident.id,
       name: resident.name,
@@ -359,22 +383,19 @@ export const saveResident = async (resident: Resident): Promise<{ success: boole
       phone: resident.phone || null,
       whatsapp: resident.whatsapp || null
     };
+    if (authUserId) payload.auth_user_id = authUserId;
 
-    // Só envia extra_data se tivermos alguma informação extra definida.
-    // Isso evita sobrescrever JSON existente quando outras telas (ex: admin)
-    // ainda não trabalham com extraData.
     if (resident.extraData !== undefined || resident.vehiclePlate || resident.vehicleModel || resident.vehicleColor) {
       const baseExtra = resident.extraData || {};
-      const mergedExtra = {
+      payload.extra_data = {
         ...baseExtra,
         vehiclePlate: resident.vehiclePlate || baseExtra.vehiclePlate,
         vehicleModel: resident.vehicleModel || baseExtra.vehicleModel,
         vehicleColor: resident.vehicleColor || baseExtra.vehicleColor
       };
-      payload.extra_data = mergedExtra;
     }
 
-    const result = isNew 
+    const result = isNew
       ? await createData('residents', payload)
       : await updateData('residents', payload);
 
@@ -1057,68 +1078,79 @@ export const getPorteiroLoginInfo = async (staff: Staff): Promise<{ username: st
   }
 };
 
-// Helper para criar usuário na tabela users quando porteiro é importado
-// passwordPlain: senha pessoal do porteiro (obrigatória no cadastro manual; em import usa 123456 se não informada)
-const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promise<{ success: boolean; error?: string }> => {
-  try {
-    // Apenas criar usuário se for porteiro
-    if (staff.role.toLowerCase() !== 'porteiro') {
-      return { success: true };
-    }
+const STAFF_ROLES_WITH_LOGIN = ['porteiro', 'síndico', 'sindico', 'portaria'];
 
-    // Gerar username único
+/** Chama API Vercel para criar usuário em auth.users (usa service_role no servidor). */
+const createAuthUserViaApi = async (email: string, password?: string): Promise<string | null> => {
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : '';
+    if (!base) return null;
+    const res = await fetch(`${base}/api/create-auth-user`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password: password && password.length >= 6 ? password : undefined,
+        emailConfirm: true
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data?.auth_user_id) return data.auth_user_id;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+// Cria em auth.users e na tabela users para porteiro/síndico (login e recuperação de senha).
+const createUserFromStaff = async (staff: Staff, passwordPlain?: string, authUserIdPre?: string | null): Promise<{ success: boolean; error?: string; authUserId?: string | null }> => {
+  try {
+    const roleLower = staff.role.toLowerCase();
+    if (!STAFF_ROLES_WITH_LOGIN.includes(roleLower)) return { success: true };
+
     let username = generateUsername(staff.name);
     let counter = 1;
     let finalUsername = username;
 
-    // Verificar se username já existe e gerar um único
     while (true) {
-      const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', finalUsername)
-        .maybeSingle();
-
-      if (!existing) break; // Username disponível
-      
+      const { data: existing } = await supabase.from('users').select('id').eq('username', finalUsername).maybeSingle();
+      if (!existing) break;
       finalUsername = `${username}_${counter}`;
       counter++;
-      
-      // Limite de segurança para evitar loop infinito
       if (counter > 100) {
         finalUsername = `${username}_${Date.now()}`;
         break;
       }
     }
 
-    // Tentar criar usuário no Supabase Auth (admin) e salvar auth_user_id na tabela users.
-    // Só funciona se estiver executando no backend com SUPABASE_SERVICE_ROLE_KEY definido.
-    let authUserId: string | null = null;
-    const serviceKey = (typeof process !== 'undefined' && process.env && process.env.SUPABASE_SERVICE_ROLE_KEY) ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined;
-    const supabaseUrl = (typeof process !== 'undefined' && process.env && process.env.SUPABASE_URL) ? process.env.SUPABASE_URL : undefined;
+    let authUserId: string | null = authUserIdPre ?? null;
 
-    if (serviceKey && staff.email) {
-      try {
-        const adminSup = createClient(supabaseUrl || '', serviceKey);
-        const normalizedEmail = String(staff.email).trim().toLowerCase();
-        const { data: createData, error: createError } = await (adminSup.auth as any).admin.createUser({
-          email: normalizedEmail,
-          email_confirm: true
-        });
-        if (!createError && createData) {
-          authUserId = (createData.user?.id ?? createData.id) as string;
-        } else if (createError) {
-          console.warn('[createUserFromStaff] admin.createUser failed:', createError.message || createError);
-        }
-      } catch (err: any) {
-        console.warn('[createUserFromStaff] admin.createUser exception:', err?.message || err);
+    // 1) Backend com service_role
+    if (!authUserId && staff.email) {
+      const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY)?.trim();
+      const supabaseUrl = (typeof process !== 'undefined' && process.env?.SUPABASE_URL)?.trim();
+      if (serviceKey && supabaseUrl) {
+        try {
+          const adminSup = createClient(supabaseUrl, serviceKey);
+          const { data: createData, error } = await (adminSup.auth as any).admin.createUser({
+            email: String(staff.email).trim().toLowerCase(),
+            email_confirm: true
+          });
+          if (!error && createData) authUserId = (createData.user?.id ?? createData.id) ?? null;
+        } catch {}
       }
     }
 
-    // Preparar payload para inserir/atualizar usuário na tabela users.
+    // 2) API Vercel (frontend em produção)
+    if (!authUserId && staff.email && typeof window !== 'undefined') {
+      const pwd = (passwordPlain && passwordPlain.trim().length >= 6) ? passwordPlain.trim() : '123456';
+      authUserId = await createAuthUserViaApi(String(staff.email), pwd);
+    }
+
+    const roleDb = roleLower.includes('sindico') || roleLower.includes('síndico') ? 'SINDICO' : 'PORTEIRO';
     const insertPayload: any = {
       username: finalUsername,
-      role: 'PORTEIRO',
+      role: roleDb,
       name: staff.name,
       email: staff.email || null,
       phone: staff.phone || null,
@@ -1126,11 +1158,17 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promis
       auth_user_id: authUserId
     };
 
-    // Se admin.createUser não foi possível (sem service key ou falha), podemos optar por criar com senha legada.
-    // Não salvamos senha quando auth_user_id foi criado.
     if (!authUserId) {
-      const plain = (passwordPlain && passwordPlain.trim().length >= 6) ? passwordPlain.trim() : '123456';
-      insertPayload.password_hash = `plain:${plain}`;
+      if (!staff.email) {
+        return {
+          success: false,
+          error: 'E-mail obrigatório. O cadastro em auth.users permite login e recuperação de senha.'
+        };
+      }
+      return {
+        success: false,
+        error: 'Não foi possível criar usuário em auth.users. Adicione SUPABASE_SERVICE_ROLE_KEY e SUPABASE_URL nas variáveis do Vercel (Projeto → Settings → Environment Variables).'
+      };
     }
 
     const { error: userError } = await supabase
@@ -1138,39 +1176,26 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promis
       .insert(insertPayload);
 
     if (userError) {
-      // Se o erro for de duplicidade, tentar atualizar existente
       if (userError.code === '23505' || (userError.message && userError.message.toLowerCase().includes('duplicate'))) {
         const updatePayload: Record<string, unknown> = {
           name: staff.name,
           email: staff.email || null,
           phone: staff.phone || null,
-          is_active: staff.status === 'Ativo'
+          is_active: staff.status === 'Ativo',
+          auth_user_id: authUserId
         };
-        if (authUserId) {
-          updatePayload.auth_user_id = authUserId;
-          // remover password_hash legada caso exista
-          updatePayload['password_hash'] = null;
-        } else if (passwordPlain && passwordPlain.trim().length >= 6) {
-          updatePayload.password_hash = `plain:${passwordPlain.trim()}`;
-        }
         const { error: updateError } = await supabase
           .from('users')
           .update(updatePayload)
           .eq('username', finalUsername);
-
-        if (updateError) {
-          console.warn('[createUserFromStaff] Erro ao atualizar usuário existente:', updateError);
-          return { success: false, error: updateError.message };
-        }
-        return { success: true };
+        if (updateError) return { success: false, error: updateError.message };
+        return { success: true, authUserId };
       }
-
-      console.warn('[createUserFromStaff] Erro ao criar usuário:', userError);
       return { success: false, error: userError.message };
     }
 
-    console.log('[createUserFromStaff] ✅ Usuário criado para porteiro:', staff.name, 'Username:', finalUsername, authUserId ? `auth_user_id=${authUserId}` : '(legacy password stored)');
-    return { success: true };
+    console.log('[createUserFromStaff] ✅ Usuário criado:', staff.name, 'Username:', finalUsername, 'auth_user_id:', authUserId);
+    return { success: true, authUserId };
   } catch (err: any) {
     console.error('[createUserFromStaff] Erro inesperado:', err);
     return { success: false, error: err?.message ?? 'Erro ao criar usuário' };
@@ -1180,6 +1205,18 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string): Promis
 export const saveStaff = async (staff: Staff, options?: { passwordPlain?: string }): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     const isNew = !staff.id || staff.id.startsWith('temp-');
+    const roleLower = staff.role.toLowerCase();
+    const hasLogin = STAFF_ROLES_WITH_LOGIN.includes(roleLower);
+    const passwordPlain = options?.passwordPlain?.trim();
+
+    let authUserId: string | null = null;
+    if (isNew && hasLogin && staff.email) {
+      authUserId = await createAuthUserViaApi(
+        String(staff.email),
+        (passwordPlain && passwordPlain.length >= 6) ? passwordPlain : '123456'
+      );
+    }
+
     const payload: any = {
       id: isNew ? undefined : staff.id,
       name: staff.name,
@@ -1189,28 +1226,27 @@ export const saveStaff = async (staff: Staff, options?: { passwordPlain?: string
       phone: staff.phone || null,
       email: staff.email || null
     };
+    if (authUserId) payload.auth_user_id = authUserId;
 
-    const result = isNew 
+    const result = isNew
       ? await createData('staff', payload)
       : await updateData('staff', payload);
 
-    if (!result.success) {
-      return { success: false, error: result.error };
-    }
+    if (!result.success) return { success: false, error: result.error };
 
-    const passwordPlain = options?.passwordPlain?.trim();
-    // Se for um porteiro novo, criar usuário na tabela users com senha pessoal (ou padrão se import)
-    if (isNew && staff.role.toLowerCase() === 'porteiro') {
-      const userResult = await createUserFromStaff(staff, passwordPlain);
+    if (hasLogin) {
+      const userResult = await createUserFromStaff(staff, passwordPlain, authUserId);
       if (!userResult.success) {
-        console.warn('[saveStaff] Aviso: Funcionário salvo, mas não foi possível criar usuário:', userResult.error);
-        // Não falhar o salvamento do staff, apenas avisar
+        if (authUserId) {
+          console.warn('[saveStaff] Staff vinculado a auth.users, mas falha ao criar users:', userResult.error);
+        } else {
+          return { success: false, error: userResult.error };
+        }
       }
-    } else if (!isNew && staff.role.toLowerCase() === 'porteiro') {
-      // Se estiver atualizando um porteiro existente, atualizar também o usuário (senha só se informada)
-      const userResult = await createUserFromStaff(staff, passwordPlain);
-      if (!userResult.success) {
-        console.warn('[saveStaff] Aviso: Funcionário atualizado, mas não foi possível atualizar usuário:', userResult.error);
+      // Atualizar staff com auth_user_id (ex.: ao editar porteiro que não tinha)
+      const finalAuthId = userResult.authUserId ?? authUserId;
+      if (finalAuthId && !payload.auth_user_id && result.id) {
+        await supabase.from('staff').update({ auth_user_id: finalAuthId }).eq('id', result.id);
       }
     }
 

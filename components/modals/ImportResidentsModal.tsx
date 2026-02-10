@@ -68,7 +68,7 @@ const ImportResidentsModal: React.FC<ImportResidentsModalProps> = ({
     }
 
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const requiredFields = ['nome', 'unidade'];
+    const requiredFields = ['nome', 'unidade', 'email'];
     const missingFields = requiredFields.filter(field => !headers.some(h => h.includes(field)));
     
     if (missingFields.length > 0) {
@@ -107,6 +107,11 @@ const ImportResidentsModal: React.FC<ImportResidentsModalProps> = ({
 
       if (!resident.name || !resident.unit) {
         csvErrors.push(`Linha ${i + 1}: Nome e Unidade são obrigatórios`);
+        return;
+      }
+      const emailVal = resident.email || '';
+      if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+        csvErrors.push(`Linha ${i + 1}: E-mail válido obrigatório (login e recuperação de senha)`);
         return;
       }
 
@@ -166,6 +171,11 @@ const ImportResidentsModal: React.FC<ImportResidentsModalProps> = ({
       }
       if (!item.unidade && !item.unit && !item.apto) {
         jsonErrors.push(`Item ${index + 1}: Unidade é obrigatória`);
+        return;
+      }
+      const emailVal = item.email || item.e_mail || '';
+      if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(emailVal))) {
+        jsonErrors.push(`Item ${index + 1}: E-mail válido obrigatório`);
         return;
       }
 
@@ -305,6 +315,11 @@ const ImportResidentsModal: React.FC<ImportResidentsModalProps> = ({
 
       if (!resident.name || !resident.unit) {
         csvErrors.push(`Linha ${i + 1}: Nome e Unidade são obrigatórios`);
+        continue;
+      }
+      const emailVal = resident.email || '';
+      if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+        csvErrors.push(`Linha ${i + 1}: E-mail válido obrigatório`);
         continue;
       }
 

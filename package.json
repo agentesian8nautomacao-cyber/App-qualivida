@@ -3,8 +3,9 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
-    "scripts": {
-        "dev": "vite --config vite.config.ts",
+"scripts": {
+    "migrate:auth": "node scripts/migrate_auth_login.cjs",
+    "dev": "vite --config vite.config.ts",
         "optimize-deps": "vite optimize-deps",
         "build": "node scripts/run-build.cjs",
         "preview": "npx vite preview",

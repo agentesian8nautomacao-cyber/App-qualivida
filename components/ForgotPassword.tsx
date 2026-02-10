@@ -1,24 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Mail, Lock, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { resetPasswordWithToken, getOrRestoreRecoverySession, clearRecoveryHashFromUrl } from '../services/userAuth';
-import { computeResidentPasswordHash } from '../services/residentAuth';
+import { getOrRestoreRecoverySession, clearRecoveryHashFromUrl, getEmailForReset, requestPasswordReset } from '../services/userAuth';
 
 interface ForgotPasswordProps {
   onBack: () => void;
   theme?: 'dark' | 'light';
-  initialToken?: string;
-  initialStep?: 'request' | 'reset';
   /** true quando o usuário veio da aba Morador */
   isResident?: boolean;
   /** Mensagem quando o link de recuperação expirou ou já foi usado (vindo do hash da URL) */
   recoveryLinkExpiredMessage?: string;
 }
 
-const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', initialToken, initialStep, isResident = false, recoveryLinkExpiredMessage }) => {
-  const [step, setStep] = useState<'request' | 'reset'>(initialStep || 'request');
+const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark', isResident = false, recoveryLinkExpiredMessage }) => {
+  const [step, setStep] = useState<'request' | 'reset'>('request');
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
-  const [token, setToken] = useState(initialToken || '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -28,13 +24,6 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     recoveryLinkExpiredMessage ? { type: 'error', text: recoveryLinkExpiredMessage } : null
   );
   const [recoveryFromAuth, setRecoveryFromAuth] = useState(false);
-
-  useEffect(() => {
-    if (initialStep === 'reset' && initialToken) {
-      setStep('reset');
-      setToken(initialToken);
-    }
-  }, [initialStep, initialToken]);
 
   // Detectar link de recuperação no hash e estabelecer sessão assim que a página carregar.
   // NÃO limpar o hash aqui — manter até após reset bem-sucedido para poder restaurar sessão no submit.
@@ -79,53 +68,39 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     e.preventDefault();
     const value = usernameOrEmail.trim();
     if (!value) {
-      setMessage({ type: 'error', text: isResident ? 'Por favor, informe a unidade ou e-mail cadastrado.' : 'Por favor, informe o e-mail ou usuário cadastrado.' });
+      setMessage({ type: 'error', text: isResident ? 'Por favor, informe a unidade ou e-mail cadastrado.' : 'Por favor, informe o e-mail, usuário ou unidade cadastrado.' });
       return;
     }
 
-    // Aceita e-mail ou nome de usuário; se for e-mail, valida formato
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (value.includes('@') && !emailRegex.test(value.toLowerCase())) {
-      setMessage({ type: 'error', text: 'Informe um e-mail válido.' });
+    let emailToUse = value.includes('@') && emailRegex.test(value.toLowerCase())
+      ? value.trim().toLowerCase()
+      : await getEmailForReset(value);
+
+    if (!emailToUse || !emailRegex.test(emailToUse)) {
+      setMessage({ type: 'error', text: 'E-mail não encontrado. O usuário deve existir em auth.users. Informe o e-mail cadastrado ou usuário/unidade vinculado a um e-mail.' });
       return;
     }
 
     setLoading(true);
     setMessage(null);
 
-    const successMessage = 'Se o e-mail estiver cadastrado, você receberá um link por e-mail. Verifique a caixa de entrada, Spam e Promoções (Gmail). Se não chegar (comum em Gmail/Hotmail com e-mail padrão do Supabase), o administrador deve configurar SMTP personalizado no Supabase — veja CONFIGURAR_SMTP_SUPABASE.md no projeto.';
+    const successMessage = 'Se o e-mail estiver cadastrado em auth.users, você receberá um link por e-mail. Verifique a caixa de entrada, Spam e Promoções (Gmail). Configure SMTP personalizado no Supabase se os e-mails não chegarem — veja CONFIGURAR_SMTP_SUPABASE.md.';
 
-    // Agora exigimos e-mail; NÃO consultar tabelas customizadas para reset
-    if (!value.includes('@') || !emailRegex.test(value.toLowerCase())) {
-      setLoading(false);
-      setMessage({ type: 'error', text: 'Informe um e-mail válido. Não é possível solicitar recuperação por nome de usuário.' });
-      return;
-    }
-
-    const emailToUse = value.trim().toLowerCase();
-
-    // Chamar diretamente o método oficial do Supabase Auth (sem consultar tabelas)
-    const redirectTo = 'https://qualivida-club-residence.vercel.app/reset-password';
-    const { error } = await supabase.auth.resetPasswordForEmail(emailToUse, { redirectTo });
+    const result = await requestPasswordReset(emailToUse);
     setLoading(false);
-    if (!error) {
+
+    if (result.success) {
       setMessage({ type: 'success', text: successMessage });
     } else {
-      const err = error.message || '';
+      const err = result.error || '';
       const isRateLimit = /rate limit|rate_limit|too many requests|limite/i.test(err);
-      const isRecoverySendError = /error sending recovery|500|internal server error|redirect|url.*config|smtp|email.*fail|send.*fail|mail.*fail|configuration/i.test(err);
-      let text: string;
-      if (isRateLimit) {
-        text = 'Limite de e-mails por hora atingido. Aguarde alguns minutos e tente novamente. O administrador pode aumentar o limite em Supabase (Authentication → Rate Limits).';
-      } else if (isRecoverySendError) {
-        const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        const redirectHint = origin
-          ? ` Adicione em Redirect URLs: ${origin} e ${origin}/reset-password`
-          : ' Adicione a URL do app em Redirect URLs (ex.: https://seu-dominio.vercel.app e .../reset-password)';
-        text = `Falha ao enviar o e-mail de recuperação. No Supabase: Authentication → URL Configuration → Redirect URLs.${redirectHint}. Se usar SMTP personalizado, verifique Authentication → E-mails → Configurações SMTP (credenciais).`;
-      } else {
-        text = err || 'Erro ao solicitar recuperação. Tente novamente mais tarde.';
-      }
+      const isRecoverySendError = /error sending|500|redirect|url.*config|smtp|email.*fail|configuration/i.test(err);
+      const text = isRateLimit
+        ? 'Limite de e-mails por hora atingido. Aguarde alguns minutos.'
+        : isRecoverySendError
+          ? result.error || 'Falha ao enviar. Verifique Redirect URLs e SMTP no Supabase.'
+          : err || 'Erro ao solicitar recuperação.';
       setMessage({ type: 'error', text });
     }
   };
@@ -149,64 +124,33 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    if (recoveryFromAuth) {
-      // Nunca assumir sessão ativa: obter ou restaurar a partir do link (hash ainda na URL)
-      const { session } = await getOrRestoreRecoverySession();
-      if (!session) {
-        setLoading(false);
-        setMessage({ type: 'error', text: 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).' });
-        return;
-      }
-      const { error } = await supabase.auth.updateUser({ password: pwdTrim });
-      let syncResidentOk = false;
-      if (!error) {
-        clearRecoveryHashFromUrl(); // Só limpar após sucesso — evita "Auth session missing!" em retries
-        try {
-          // Usar o mesmo hash do login morador (frontend) para garantir que a senha funcione na aba Morador
-          const residentHash = await computeResidentPasswordHash(pwdTrim);
-          const { error: rpcError } = await supabase.rpc('sync_resident_password_after_reset', { new_hash: residentHash });
-          syncResidentOk = !rpcError;
-        } catch (_) {}
-      }
+    // Fluxo exclusivo Supabase Auth (link de recuperação no hash da URL)
+    const { session } = await getOrRestoreRecoverySession();
+    if (!session) {
       setLoading(false);
-      if (!error) {
-        const successText = syncResidentOk
-          ? 'Senha redefinida com sucesso! Você já pode fazer login (aba Morador: unidade + senha; aba Admin/Porteiro: e-mail ou usuário + senha).'
-          : 'Senha redefinida com sucesso! Para login como morador (unidade + senha): o administrador deve executar no Supabase o script supabase_sync_resident_password_after_reset.sql e o e-mail do morador deve ser o mesmo que recebeu este link. Depois, faça login na aba Morador. Veja RECUPERACAO_SENHA_LOGIN_MORADOR.md.';
-        setMessage({ type: 'success', text: successText });
-        await supabase.auth.signOut();
-        setTimeout(() => onBack(), 2000);
-      } else {
-        const errMsg = (error as { message?: string; status?: number })?.message || '';
-        const status = (error as { status?: number })?.status;
-        const isSessionMissing = /session missing|auth session|invalid session|session expired|no session/i.test(errMsg);
-        // 422 = servidor recusou a senha (política do Supabase). Não repetir a instrução; explicar que o servidor recusou.
-        const isServerRejected = status === 422 || /validation|invalid|password|policy|minimum|length/i.test(errMsg);
-        const errorText = isSessionMissing
-          ? 'O link expirou ou já foi usado. Solicite um novo link de recuperação abaixo (use o mesmo e-mail).'
-          : isServerRejected
-            ? 'O servidor não aceitou esta senha. Use apenas letras e números (6 a 32 caracteres). Se o erro continuar, tente 8 ou mais caracteres ou peça ao administrador para ajustar em Supabase: Auth → Providers → Email → Password (mín. 6, sem exigência de caractere especial).'
-            : errMsg || 'Erro ao redefinir senha. Tente novamente ou solicite um novo link.';
-        setMessage({ type: 'error', text: errorText });
-      }
+      setMessage({ type: 'error', text: 'O link expirou ou já foi usado. Solicite um novo link abaixo (use o mesmo e-mail).' });
       return;
     }
 
-    const effectiveToken = (initialToken || token).trim();
-    if (!effectiveToken) {
-      setLoading(false);
-      setMessage({ type: 'error', text: 'Token de recuperação inválido ou ausente.' });
-      return;
-    }
-
-    const result = await resetPasswordWithToken(effectiveToken, pwdTrim);
+    const { error } = await supabase.auth.updateUser({ password: pwdTrim });
     setLoading(false);
 
-    if (result.success) {
-      setMessage({ type: 'success', text: result.message || 'Senha redefinida com sucesso!' });
+    if (!error) {
+      clearRecoveryHashFromUrl();
+      setMessage({ type: 'success', text: 'Senha redefinida com sucesso! Faça login com seu e-mail (ou usuário/unidade) e a nova senha.' });
+      await supabase.auth.signOut();
       setTimeout(() => onBack(), 2000);
     } else {
-      setMessage({ type: 'error', text: result.message || 'Erro ao redefinir senha.' });
+      const errMsg = (error as { message?: string; status?: number })?.message || '';
+      const status = (error as { status?: number })?.status;
+      const isSessionMissing = /session missing|auth session|invalid session|session expired|no session/i.test(errMsg);
+      const isServerRejected = status === 422 || /validation|invalid|password|policy|minimum|length/i.test(errMsg);
+      const errorText = isSessionMissing
+        ? 'O link expirou ou já foi usado. Solicite um novo link abaixo (use o mesmo e-mail).'
+        : isServerRejected
+          ? 'O servidor não aceitou esta senha. Use apenas letras e números (6 a 32 caracteres).'
+          : errMsg || 'Erro ao redefinir senha. Tente novamente ou solicite um novo link.';
+      setMessage({ type: 'error', text: errorText });
     }
   };
 
@@ -322,34 +266,9 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
             </form>
           )}
 
-          {/* Formulário de redefinição */}
+          {/* Formulário de redefinição (apenas via link Supabase Auth) */}
           {step === 'reset' && (
             <form onSubmit={handleResetPassword} className="space-y-6">
-              {/* Token só para fluxo legado; recovery do Supabase Auth não usa token */}
-              {!recoveryFromAuth && !initialToken && (
-                <div className="relative">
-                  <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
-                    theme === 'light' ? 'text-gray-400' : 'text-zinc-600'
-                  }`} />
-                  <input 
-                    type="text" 
-                    placeholder="Token de Recuperação" 
-                    value={token}
-                    onChange={(e) => {
-                      setToken(e.target.value);
-                      setMessage(null);
-                    }}
-                    className={`w-full pl-8 pr-4 py-3 bg-transparent border-b text-sm outline-none transition-all font-medium ${
-                      theme === 'light'
-                        ? 'border-gray-300/50 text-gray-900 placeholder:text-gray-400 focus:border-gray-600'
-                        : 'border-white/10 text-white placeholder:text-zinc-700 focus:border-white'
-                    }`}
-                    required
-                    disabled={loading}
-                  />
-                </div>
-              )}
-
               <div className="relative">
                 <Lock className={`absolute left-0 top-1/2 -translate-y-1/2 w-4 h-4 ${
                   theme === 'light' ? 'text-gray-400' : 'text-zinc-600'

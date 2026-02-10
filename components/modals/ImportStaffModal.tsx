@@ -51,6 +51,7 @@ const ImportStaffModal: React.FC<ImportStaffModalProps> = ({
       const list: Staff[] = [];
       const jsonErrors: string[] = [];
 
+      const loginRoles = ['porteiro', 'portaria', 'síndico', 'sindico'];
       data.forEach((item, index) => {
         const name = item.name || item.nome;
         const role = item.role || item.cargo;
@@ -61,6 +62,13 @@ const ImportStaffModal: React.FC<ImportStaffModalProps> = ({
 
         const normalizedName = String(name).trim();
         const normalizedRole = String(role).trim();
+        if (loginRoles.includes(normalizedRole.toLowerCase())) {
+          const emailVal = (item.email || '').toString().trim();
+          if (!emailVal || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+            jsonErrors.push(`Item ${index + 1}: E-mail obrigatório para ${normalizedRole} (login e recuperação de senha)`);
+            return;
+          }
+        }
 
         // Evitar duplicidade simples por nome + cargo
         const exists = existingStaff.some(

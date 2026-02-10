@@ -107,30 +107,6 @@ const isStrongPassword = (password: string): boolean => {
 };
 
 /**
- * Faz hash da senha usando SHA-256 (Web Crypto API) quando disponível.
- * A senha é tratada como digitada (maiúsculas e minúsculas diferenciadas).
- * Em contexto não seguro (ex: http em rede local no celular), crypto.subtle
- * não está disponível, então usamos um fallback simples para não quebrar o login.
- */
-const hashPassword = async (password: string): Promise<string> => {
-  try {
-    if (typeof crypto !== 'undefined' && crypto.subtle && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(password);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      return hashHex;
-    }
-  } catch (err) {
-    console.warn('Falha ao usar crypto.subtle para hash de senha, usando fallback:', err);
-  }
-
-  // Fallback para ambiente não seguro: retorna a senha em texto puro (case-sensitive).
-  return password;
-};
-
-/**
  * Valida credenciais de usuário (PORTEIRO/SINDICO) no Supabase
  * @param username Nome de usuário
  * @param password Senha em texto plano
@@ -156,21 +132,6 @@ export const loginUser = async (
     };
   }
   const normalizedPassword = password.trim();
-
-  // Helper to compare passwords (supports legacy "plain:" prefix and hashed values)
-  const comparePassword = async (plain: string, storedHash: string | null): Promise<boolean> => {
-    if (!storedHash) return false;
-    if (typeof storedHash !== 'string') return false;
-    // Support legacy explicit plain marker
-    if (storedHash.startsWith('plain:')) {
-      return plain === storedHash.slice(6);
-    }
-    // If stored value appears to be plain text (no prefix) accept direct match
-    if (storedHash === plain) return true;
-    // Otherwise compare hashed representations
-    const computed = await hashPassword(plain);
-    return computed === storedHash;
-  };
 
   // Verificar se o usuário está bloqueado (controle local de tentativas)
   // Porém: accounts de portaria/admin/desenvolvedor não devem ser bloqueadas por este mecanismo local.
@@ -227,12 +188,12 @@ export const loginUser = async (
   }
 
   try {
-    // If input is not an email (username), try to resolve it to an email in users/residents/staff
+    // Resolver username -> email nas tabelas users, staff, residents (auth.users é a ÚNICA fonte de senha)
     let emailToUse = normalizedInput;
     if (!normalizedInput.includes('@')) {
       try {
         const usernameQ = normalizedInput;
-        // Try users table
+        // users (síndico/porteiro)
         const { data: userRow } = await supabase
           .from('users')
           .select('email')
@@ -241,182 +202,35 @@ export const loginUser = async (
         if (userRow?.email) {
           emailToUse = String(userRow.email).trim().toLowerCase();
         } else {
-          // try residents table (some apps use unit/name login)
-          try {
-            const { data: residentRow } = await supabase
-              .from('residents')
-              .select('email')
-              .eq('username', usernameQ)
-              .maybeSingle();
-            if (residentRow?.email) emailToUse = String(residentRow.email).trim().toLowerCase();
-          } catch {
-            // ignore resident lookup errors
-          }
-
-          // try staff table (porteiro/admin/dev podem estar aqui)
-          if (!emailToUse.includes('@')) {
-            try {
-              const { data: staffRow } = await supabase
-                .from('staff')
-                .select('email')
-                .eq('username', usernameQ)
-                .maybeSingle();
-              if (staffRow?.email) emailToUse = String(staffRow.email).trim().toLowerCase();
-            } catch {
-              // ignore staff lookup errors
-            }
-          }
-        }
-      } catch {
-        // ignore lookup errors and continue using the raw input as email (validated below)
-      }
-    }
-
-    // Prioritize local (legacy) authentication for system accounts even if email exists.
-    // This allows numeric/simple passwords for porteiro/admin/dev stored in password_hash.
-    try {
-      const usernameQ = normalizedInput;
-      const tablesToCheck = ['staff', 'users', 'residents'];
-      for (const tbl of tablesToCheck) {
-        try {
-          const { data: row } = await supabase
-            .from(tbl)
-            .select('id, auth_user_id, username, role, name, email, phone, is_active, password_hash')
-            .eq('username', usernameQ)
+          const { data: staffRow } = await supabase
+            .from('staff')
+            .select('email')
+            .eq('email', usernameQ)
             .maybeSingle();
-          if (row && (row as any).password_hash) {
-            const pwdHash = (row as any).password_hash ?? null;
-            const ok = await comparePassword(normalizedPassword, pwdHash);
-            if (ok) {
-              const rawRole = ((row as any).role ?? '').toString();
-              const roleNormalized = rawRole ? rawRole.toUpperCase() : (tbl === 'users' ? 'MORADOR' : 'PORTEIRO');
-              const profile: User = {
-                id: (row as any).auth_user_id || (row as any).id || '',
-                username: (row as any).username ?? (row as any).email ?? usernameQ,
-                role: roleNormalized,
-                name: (row as any).name ?? null,
-                email: (row as any).email ?? null,
-                phone: (row as any).phone ?? null,
-                is_active: (row as any).is_active ?? true
-              };
-              try { resetLoginAttempts(normalizedInput); } catch {}
-              try { saveUserSession(profile); } catch {}
-              return { user: profile, error: null };
-            } else {
-              // senha incorreta localmente para essa tabela — tratar abaixo (não continuar para Supabase)
-              if (!skipLocalBlock) {
-                const attempts = incrementFailedAttempts(normalizedInput);
-                const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
-                if (attempts.blockedUntil) {
-                  const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
-                  return {
-                    user: null,
-                    error: `Senha incorreta. Conta bloqueada por ${remainingMinutes} minutos devido a múltiplas tentativas falhas.`,
-                    blocked: true,
-                    remainingMinutes
-                  };
-                }
-                return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.', attemptsRemaining: remaining };
-              }
-              return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
-            }
-          }
-        } catch {
-          // continue to next table on error
+          if (staffRow?.email) emailToUse = String(staffRow.email).trim().toLowerCase();
         }
-      }
-    } catch {
-      // ignore errors in legacy lookup — continue to Supabase flow
-    }
-
-    // Normalize and validate email before sending to Supabase Auth.
-    const simpleEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    // If we couldn't resolve a valid email, attempt a local (legacy) authentication
-    // against password_hash stored in users/residents/staff tables. This allows
-    // system accounts (porteiro/admin/desenvolvedor) that may not have an Auth
-    // user to login via username + password.
-    if (!simpleEmailRegex.test(emailToUse)) {
-      const usernameQ = normalizedInput;
-
-      // Helper to compare passwords (supports legacy "plain:" prefix and hashed values)
-      const comparePassword = async (plain: string, storedHash: string | null): Promise<boolean> => {
-        if (!storedHash) return false;
-        if (storedHash.startsWith('plain:')) {
-          return plain === storedHash.slice(6);
-        }
-        const computed = await hashPassword(plain);
-        return computed === storedHash;
-      };
-
-      // Try users -> residents -> staff for a local password_hash
-      try {
-        const tables = ['users', 'residents', 'staff'];
-        for (const tbl of tables) {
-          try {
-            const { data: row } = await supabase
-              .from(tbl)
-              .select('id, auth_user_id, username, role, name, email, phone, is_active, password_hash')
-              .eq('username', usernameQ)
-              .maybeSingle();
-            if (row) {
-              const pwdHash = (row as any).password_hash ?? null;
-              const ok = await comparePassword(normalizedPassword, pwdHash);
-              if (ok) {
-                // Autenticação local bem-sucedida — construir perfil mínimo e salvar sessão
-                const rawRole = ((row as any).role ?? '').toString();
-                const roleNormalized = rawRole ? rawRole.toUpperCase() : (tbl === 'users' ? 'MORADOR' : 'PORTEIRO');
-                const profile: User = {
-                  id: (row as any).auth_user_id || (row as any).id || '',
-                  username: (row as any).username ?? (row as any).email ?? usernameQ,
-                  role: roleNormalized,
-                  name: (row as any).name ?? null,
-                  email: (row as any).email ?? null,
-                  phone: (row as any).phone ?? null,
-                  is_active: (row as any).is_active ?? true
-                };
-                try { resetLoginAttempts(normalizedInput); } catch {}
-                try { saveUserSession(profile); } catch {}
-                return { user: profile, error: null };
-              } else {
-                // senha incorreta localmente
-                if (!skipLocalBlock) {
-                  const attempts = incrementFailedAttempts(normalizedInput);
-                  const remaining = MAX_LOGIN_ATTEMPTS - attempts.count;
-                  if (attempts.blockedUntil) {
-                    const remainingMinutes = Math.ceil((attempts.blockedUntil - Date.now()) / (60 * 1000));
-                    return {
-                      user: null,
-                      error: `Senha incorreta. Conta bloqueada por ${remainingMinutes} minutos devido a múltiplas tentativas falhas.`,
-                      blocked: true,
-                      remainingMinutes
-                    };
-                  }
-                  return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.', attemptsRemaining: remaining };
-                }
-                return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
-              }
-            }
-          } catch {
-            // ignore table-specific errors and continue
-          }
+        if (!emailToUse.includes('@')) {
+          const { data: residentRow } = await supabase
+            .from('residents')
+            .select('email')
+            .or(`unit.eq.${usernameQ},email.eq.${usernameQ}`)
+            .maybeSingle();
+          if (residentRow?.email) emailToUse = String(residentRow.email).trim().toLowerCase();
         }
       } catch {
         // ignore
       }
-
-      // Se não encontrou email nem senha localmente, retornar erro genérico (não revelar existência)
-      return { user: null, error: 'Credenciais inválidas. Verifique usuário e senha.' };
     }
 
-    // Debug logs removed in production.
+    const simpleEmailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!simpleEmailRegex.test(emailToUse)) {
+      return {
+        user: null,
+        error: 'Credenciais inválidas. Verifique usuário e senha. O usuário deve existir em auth.users com e-mail válido.'
+      };
+    }
 
-    // Autenticar via Supabase Auth usando email resolvido
-    // DEBUG: registrar chaves do payload (sem expor a senha)
-    try {
-      const payloadPreview = { email: emailToUse, passwordLength: normalizedPassword.length, keys: Object.keys({ email: emailToUse, password: normalizedPassword }) };
-      console.log('[userAuth] signIn payload preview', payloadPreview);
-    } catch {}
+    // Autenticação EXCLUSIVA via Supabase Auth (auth.users é a única fonte de senha)
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: normalizedPassword
@@ -812,49 +626,32 @@ export const changeUsername = async (
 };
 
 /**
- * Altera senha do usuário (validando senha atual).
- * @param storePlain - se true, salva como "plain:senha" (para porteiros; o síndico pode ver no modal de edição)
+ * Altera senha do usuário via Supabase Auth (valida senha atual via login).
+ * auth.users é a única fonte de senha; nenhuma atualização em tabelas próprias.
  */
 export const changeUserPassword = async (
   username: string,
   currentPassword: string,
-  newPassword: string,
-  options?: { storePlain?: boolean }
+  newPassword: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const loginResult = await loginUser(username, currentPassword);
-    if (!loginResult.user) {
-      return { success: false, error: 'Senha atual incorreta' };
-    }
+    if (!loginResult.user) return { success: false, error: 'Senha atual incorreta' };
 
     const newPwdTrim = newPassword.trim();
+    if (!isStrongPassword(newPwdTrim)) {
+      return { success: false, error: 'A nova senha deve ter 6 a 32 caracteres, apenas letras e números.' };
+    }
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user?.id === loginResult.user.id) {
-      const { error } = await supabase.auth.updateUser({ password: newPwdTrim });
-      if (!error) return { success: true };
-      console.warn('Auth updateUser falhou, tentando legado:', error);
+    if (session?.user?.id !== loginResult.user.id) {
+      return { success: false, error: 'Sessão inválida. Faça login novamente.' };
     }
 
-    const newPasswordHash = options?.storePlain
-      ? `plain:${newPwdTrim}`
-      : await hashPassword(newPwdTrim);
-
-    const { error } = await supabase
-      .from('users')
-      .update({
-        password_hash: newPasswordHash,
-        updated_at: new Date().toISOString()
-      })
-      .or(`id.eq.${loginResult.user.id},auth_id.eq.${loginResult.user.id}`);
-
-    if (error) {
-      console.error('Erro ao atualizar senha:', error);
-      return { success: false, error: error.message };
-    }
+    const { error } = await supabase.auth.updateUser({ password: newPwdTrim });
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
-    console.error('Erro ao alterar senha:', err);
     return { success: false, error: err?.message || 'Erro ao alterar senha' };
   }
 };
@@ -935,29 +732,35 @@ export function clearRecoveryHashFromUrl(): void {
   }
 }
 
+/** Obtém URL base para redirect de recuperação (env ou origin) */
+function getResetRedirectUrl(): string {
+  const env = (import.meta as { env?: Record<string, string> }).env;
+  const base = (env?.VITE_APP_URL || env?.VITE_SUPABASE_REDIRECT || '').toString().trim();
+  if (base) return base.replace(/\/$/, '');
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return 'http://localhost:3000';
+}
+
 /**
- * Solicita recuperação de senha via Supabase Auth.
- * O Supabase envia o e-mail com o link (configuração em Dashboard → Authentication → Email).
- * redirectTo deve ser a URL da sua app para onde o usuário será redirecionado (ex: /reset-password).
+ * Solicita recuperação de senha via Supabase Auth (EXCLUSIVAMENTE).
+ * O e-mail deve existir em auth.users. redirectTo usa VITE_APP_URL ou origin.
  */
 export const requestPasswordReset = async (email: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Para o Qualivida, usamos sempre a URL oficial de reset da aplicação.
-    // Isso evita divergência entre ambientes e garante que o link do Supabase Auth
-    // volte para a tela correta de redefinição de senha.
-    const redirectTo = 'https://qualivida-club-residence.vercel.app/reset-password';
+    const base = getResetRedirectUrl();
+    const redirectTo = `${base}/reset-password`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
       redirectTo
     });
     if (error) {
-      // Provide clearer guidance for common misconfiguration
       const raw = (error.message || '').toString().toLowerCase();
       if (raw.includes('redirect') || raw.includes('redirect url') || raw.includes('url configuration')) {
         return {
           success: false,
-          error: 'Falha ao enviar o e-mail de recuperação. No Supabase: Authentication → URL Configuration → Redirect URLs, adicione as URLs da sua aplicação (ex.: ' +
-            `${appBase.replace(/\/$/, '')} e ${appBase.replace(/\/$/, '')}/reset-password). Se usar SMTP personalizado, verifique Authentication → E-mails → Configurações SMTP.`
+          error: `Falha ao enviar o e-mail. No Supabase: Authentication → URL Configuration → Redirect URLs, adicione: ${base} e ${redirectTo}. Verifique também Authentication → E-mails → Configurações SMTP.`
         };
       }
       return { success: false, error: error.message };
@@ -969,293 +772,24 @@ export const requestPasswordReset = async (email: string): Promise<{ success: bo
 };
 
 /**
- * Obtém o e-mail do usuário a partir de username ou e-mail (para recuperação).
+ * Resolve username, unidade ou e-mail para e-mail (users, staff, residents).
+ * Usado para recuperação: o e-mail deve existir em auth.users.
  */
-export const getEmailForReset = async (usernameOrEmail: string): Promise<string | null> => {
-  const q = usernameOrEmail.trim().toLowerCase();
-  const { data } = await supabase
-    .from('users')
-    .select('email')
-    .or(`username.eq.${q},email.eq.${q}`)
-    .eq('is_active', true)
-    .maybeSingle();
-  return data?.email ?? null;
-};
-
-/**
- * Gera token de recuperação de senha (legado; use requestPasswordReset quando o usuário tiver auth_id)
- */
-export const generatePasswordResetToken = async (usernameOrEmail: string): Promise<{
-  success: boolean;
-  message: string;
-  email?: string;
-}> => {
+export const getEmailForReset = async (usernameOrEmailOrUnit: string): Promise<string | null> => {
   try {
-    // Ambiente precisa suportar Web Crypto seguro para não armazenar token em texto puro
-    if (typeof crypto === 'undefined' || !crypto.subtle || !(location.protocol === 'https:' || location.hostname === 'localhost')) {
-      return {
-        success: false,
-        message: 'Recuperação de senha indisponível neste ambiente. Use o link enviado por e-mail em um navegador seguro.'
-      };
-    }
+    const q = usernameOrEmailOrUnit.trim().toLowerCase();
+    if (!q) return null;
 
-    // Buscar usuário por username ou email
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, username, email, name')
-      .or(`username.eq.${usernameOrEmail.toLowerCase()},email.eq.${usernameOrEmail.toLowerCase()}`)
-      .eq('is_active', true)
-      .single();
+    const [userRes, staffRes, residentRes] = await Promise.all([
+      supabase.from('users').select('email').or(`username.eq.${q},email.eq.${q}`).eq('is_active', true).maybeSingle(),
+      supabase.from('staff').select('email').eq('email', q).maybeSingle(),
+      supabase.from('residents').select('email').or(`unit.eq.${q},email.eq.${q}`).maybeSingle()
+    ]);
 
-    if (error || !user || !user.email) {
-      // Não revelar se o usuário existe ou não por segurança
-      return {
-        success: true,
-        message: 'Se o usuário existir e tiver email cadastrado, você receberá instruções de recuperação.'
-      };
-    }
-
-    // Rate limit básico por usuário (fallback local): máximo 1 solicitação a cada 2 minutos
-    const { data: lastToken } = await supabase
-      .from('password_reset_tokens')
-      .select('id, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (lastToken) {
-      const lastCreatedAt = new Date((lastToken as any).created_at).getTime();
-      const now = Date.now();
-      const twoMinutesMs = 2 * 60 * 1000;
-      if (now - lastCreatedAt < twoMinutesMs) {
-        console.info('[AUTH-EVENT] Password reset request (fallback) rate-limited', {
-          userId: user.id,
-          username: user.username,
-          email: user.email,
-          at: new Date().toISOString()
-        });
-        return {
-          success: true,
-          message: 'Se o usuário existir e tiver email cadastrado, você receberá instruções de recuperação. Se já solicitou recentemente, aguarde alguns minutos.'
-        };
-      }
-    }
-
-    // Invalidar tokens anteriores ainda não utilizados
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('user_id', user.id)
-      .eq('used', false);
-
-    // Gerar token único (valor bruto só é exibido no console em DEV)
-    const rawBytes = crypto.getRandomValues(new Uint8Array(32));
-    const token = Array.from(rawBytes)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    // Gerar hash SHA-256 do token para salvar no banco
-    const encoder = new TextEncoder();
-    const dataToHash = encoder.encode(token);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataToHash);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-    // Expiração curta (15 minutos)
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
-    // Inserir token (hash) no banco
-    const { error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .insert({
-        user_id: user.id,
-        token: tokenHash,
-        expires_at: expiresAt.toISOString(),
-        used: false
-      });
-
-    if (tokenError) {
-      console.error('Erro ao criar token de recuperação:', tokenError);
-      return {
-        success: false,
-        message: 'Erro ao gerar token de recuperação. Tente novamente.'
-      };
-    }
-
-    console.info('[AUTH-EVENT] Password reset requested (fallback)', {
-      userId: user.id,
-      username: user.username,
-      email: user.email,
-      expiresAt: expiresAt.toISOString(),
-      at: new Date().toISOString()
-    });
-
-    // Em desenvolvimento, exibimos o token bruto no console para permitir teste manual
-    console.log('🔐 TOKEN DE RECUPERAÇÃO (DEV ONLY - NÃO ARMAZENADO EM TEXTO PURO NO BANCO):', token);
-    console.log('📧 Email do usuário:', user.email);
-
-    return {
-      success: true,
-      message: `Token de recuperação gerado. Verifique o console para ver o token (desenvolvimento apenas).`,
-      email: user.email
-    };
-  } catch (error) {
-    console.error('Erro ao gerar token de recuperação:', error);
-    return {
-      success: false,
-      message: 'Erro ao processar solicitação. Tente novamente.'
-    };
+    return userRes.data?.email ?? staffRes.data?.email ?? residentRes.data?.email ?? null;
+  } catch {
+    return null;
   }
 };
 
-/**
- * Valida token de recuperação de senha
- */
-export const validateResetToken = async (token: string): Promise<{
-  valid: boolean;
-  userId?: string;
-  message?: string;
-}> => {
-  try {
-    // Gerar hash do token informado pelo usuário
-    if (typeof crypto === 'undefined' || !crypto.subtle) {
-      console.error('Web Crypto API indisponível para validar token de recuperação.');
-      return {
-        valid: false,
-        message: 'Não foi possível validar o link de recuperação. Use um navegador seguro (HTTPS) e tente novamente.'
-      };
-    }
-
-    const encoder = new TextEncoder();
-    const tokenBytes = encoder.encode(token);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', tokenBytes);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-    const { data: tokenRow, error } = await supabase
-      .from('password_reset_tokens')
-      .select('id, user_id, expires_at, used')
-      .eq('token', tokenHash)
-      .single();
-
-    if (error || !tokenRow) {
-      return {
-        valid: false,
-        message: 'Token inválido ou não encontrado.'
-      };
-    }
-
-    if (tokenRow.used) {
-      return {
-        valid: false,
-        message: 'Este token já foi utilizado.'
-      };
-    }
-
-    if (new Date(tokenRow.expires_at) < new Date()) {
-      return {
-        valid: false,
-        message: 'Este token expirou. Solicite uma nova recuperação de senha.'
-      };
-    }
-
-    return {
-      valid: true,
-      userId: tokenRow.user_id
-    };
-  } catch (error) {
-    console.error('Erro ao validar token:', error);
-    return {
-      valid: false,
-      message: 'Erro ao validar token.'
-    };
-  }
-};
-
-/**
- * Redefine senha usando token
- */
-export const resetPasswordWithToken = async (
-  token: string,
-  newPassword: string
-): Promise<{
-  success: boolean;
-  message: string;
-}> => {
-  try {
-    const pwdTrim = newPassword.trim();
-    if (!isStrongPassword(pwdTrim)) {
-      return {
-        success: false,
-        message: 'A nova senha deve ter entre 6 e 32 caracteres; apenas letras e números são permitidos. O sistema diferencia maiúsculas de minúsculas.'
-      };
-    }
-
-    // Validar token
-    const tokenValidation = await validateResetToken(token);
-    if (!tokenValidation.valid || !tokenValidation.userId) {
-      return {
-        success: false,
-        message: tokenValidation.message || 'Token inválido.'
-      };
-    }
-
-    // Hash da nova senha (case-sensitive)
-    const newPasswordHash = await hashPassword(pwdTrim);
-
-    // Atualizar senha do usuário
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ password_hash: newPasswordHash, updated_at: new Date().toISOString() })
-      .eq('id', tokenValidation.userId);
-
-    if (updateError) {
-      console.error('Erro ao atualizar senha:', updateError);
-      return {
-        success: false,
-        message: 'Erro ao atualizar senha. Tente novamente.'
-      };
-    }
-
-    // Marcar token como usado (no banco está o hash do token)
-    const encoder = new TextEncoder();
-    const tokenBytes = encoder.encode(token);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', tokenBytes);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const tokenHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('token', tokenHash);
-
-    // Limpar tentativas de login para este usuário
-    const { data: user } = await supabase
-      .from('users')
-      .select('username')
-      .eq('id', tokenValidation.userId)
-      .single();
-
-    if (user) {
-      resetLoginAttempts(user.username);
-    }
-
-    console.info('[AUTH-EVENT] Password reset completed', {
-      userId: tokenValidation.userId,
-      username: user?.username,
-      at: new Date().toISOString()
-    });
-
-    return {
-      success: true,
-      message: 'Senha redefinida com sucesso! Você já pode fazer login.'
-    };
-  } catch (error) {
-    console.error('Erro ao redefinir senha:', error);
-    return {
-      success: false,
-      message: 'Erro ao redefinir senha. Tente novamente.'
-    };
-  }
-};
 

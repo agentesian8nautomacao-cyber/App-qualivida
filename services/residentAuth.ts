@@ -2,36 +2,11 @@ import { supabase } from './supabase';
 import { Resident } from '../types';
 import { normalizeUnit, compareUnits } from '../utils/unitFormatter';
 
-// Função simples para hash de senha (usando bcrypt via Supabase Edge Function seria ideal)
-// Por enquanto, vamos usar uma função baseada em crypto quando disponível,
-// com fallback para ambientes inseguros (ex: http em rede local no celular).
-const hashPassword = async (password: string): Promise<string> => {
-  const trimmed = password.trim();
-  try {
-    if (typeof crypto !== 'undefined' && crypto.subtle && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(trimmed);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      return hashHex;
-    }
-  } catch (err) {
-    console.warn('Falha ao usar crypto.subtle para hash de senha (morador), usando fallback:', err);
-  }
-
-  return trimmed;
-};
-
-const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
-  const passwordHash = await hashPassword(password);
-  return passwordHash === hash;
-};
-
-/** Mesmo hash usado no login do morador; use na sync após recuperação de senha (frontend → RPC). */
-export async function computeResidentPasswordHash(password: string): Promise<string> {
-  return hashPassword(password);
-}
+/**
+ * Login de morador usa EXCLUSIVAMENTE Supabase Auth (auth.users).
+ * Unidade → e-mail (residents) → signInWithPassword.
+ * Nenhuma senha é armazenada em tabelas próprias.
+ */
 
 // Registrar novo morador
 export const registerResident = async (
@@ -74,11 +49,13 @@ export const registerResident = async (
     let authUserId: string | null = null;
     try {
       const pwdTrim = password.trim();
+      const baseUrl = (import.meta.env.VITE_APP_URL || '').toString().trim().replace(/\/$/, '')
+        || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: emailRaw,
         password: pwdTrim,
         options: {
-          emailRedirectTo: 'https://qualivida-club-residence.vercel.app/reset-password'
+          emailRedirectTo: `${baseUrl}/reset-password`
         }
       });
 
@@ -113,11 +90,7 @@ export const registerResident = async (
       };
     }
 
-    // Hash da senha (para login por unidade + senha na aba Morador)
-    const passwordHash = await hashPassword(password);
-
-    // Inserir morador com unidade normalizada
-    // Usar RPC ou query direta para evitar problemas de cache do schema
+    // Inserir morador com unidade normalizada (sem password_hash; auth.users é a única fonte de senha)
     const { data, error } = await supabase
       .from('residents')
       .insert({
@@ -126,16 +99,14 @@ export const registerResident = async (
         email: emailRaw,
         phone: resident.phone || null,
         whatsapp: resident.whatsapp || null,
-        // Persistir dados extras, incluindo veículo, em extra_data (JSONB)
         extra_data: {
           ...(resident.extraData || {}),
           vehiclePlate: resident.vehiclePlate || undefined,
           vehicleModel: resident.vehicleModel || undefined,
           vehicleColor: resident.vehicleColor || undefined
         },
-        password_hash: passwordHash,
         auth_user_id: authUserId
-      } as any) // Usar 'as any' temporariamente para contornar cache do schema
+      } as any)
       .select()
       .single();
 
@@ -205,55 +176,46 @@ export const registerResident = async (
   }
 };
 
-// Login de morador
+// Login de morador via Supabase Auth (unidade → email → signInWithPassword)
 export const loginResident = async (
   unit: string,
   password: string
 ): Promise<{ resident: Resident | null; success: boolean; error?: string }> => {
   try {
-    // Normalizar unidade antes de buscar
     const normalizedUnit = normalizeUnit(unit);
-    
-    // Buscar todas as unidades e comparar
+
     const { data: allResidents, error: fetchError } = await supabase
       .from('residents')
-      .select('*');
-    
+      .select('id, name, unit, email, phone, whatsapp, extra_data, auth_user_id');
+
     if (fetchError || !allResidents) {
       if (fetchError) {
-        console.error('[residentAuth] Erro ao buscar moradores no Supabase:', fetchError.message, fetchError.code, fetchError.details);
         const code = (fetchError as { code?: string }).code;
         const msg = String(fetchError.message || '').toLowerCase();
-        const isRls = code === 'PGRST301' || msg.includes('row-level security') || msg.includes('policy');
+        const isRls = code === 'PGRST301' || msg.includes('row-level security');
         const isConnection = msg.includes('fetch') || msg.includes('failed to fetch');
         if (isRls) {
           return {
             resident: null,
             success: false,
-            error: 'Acesso à tabela "residents" bloqueado (RLS). No Supabase: SQL Editor → política de SELECT para anon na tabela public.residents (veja SUPABASE_LOGIN_LOCAL.md).'
+            error: 'Acesso à tabela residents bloqueado (RLS). Configure políticas no Supabase.'
           };
         }
         if (isConnection) {
           return {
             resident: null,
             success: false,
-            error: (import.meta as { env?: { DEV?: boolean } }).env?.DEV
-              ? 'Sem conexão com o Supabase. Verifique internet e .env.local (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY).'
-              : 'Sem conexão com o servidor. Verifique as variáveis no Vercel e se o projeto Supabase está ativo.'
+            error: import.meta.env?.DEV
+              ? 'Sem conexão com o Supabase. Verifique .env.local.'
+              : 'Sem conexão com o servidor.'
           };
         }
       }
-      return {
-        resident: null,
-        success: false,
-        error: 'Erro ao buscar morador'
-      };
+      return { resident: null, success: false, error: 'Erro ao buscar morador' };
     }
-    
-    // Encontrar morador pela unidade normalizada
-    const data = allResidents.find(r => compareUnits(r.unit, normalizedUnit));
 
-    if (!data) {
+    const data = allResidents.find((r: any) => compareUnits(r.unit, normalizedUnit));
+    if (!data || !(data as any).email) {
       return {
         resident: null,
         success: false,
@@ -261,18 +223,21 @@ export const loginResident = async (
       };
     }
 
-    // Verificar senha
-    if (!data.password_hash) {
+    const email = String((data as any).email).trim().toLowerCase();
+    if (!email || !email.includes('@')) {
       return {
         resident: null,
         success: false,
-        error: 'Morador não possui senha cadastrada. Faça o cadastro primeiro.'
+        error: 'Morador sem e-mail cadastrado. Cadastre um e-mail para usar recuperação de senha.'
       };
     }
 
-    const isValid = await verifyPassword(password, data.password_hash);
-    
-    if (!isValid) {
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password: password.trim()
+    });
+
+    if (authError || !authData?.user?.id) {
       return {
         resident: null,
         success: false,
@@ -282,16 +247,16 @@ export const loginResident = async (
 
     return {
       resident: {
-        id: data.id,
-        name: data.name,
-        unit: data.unit,
-        email: data.email || '',
-        phone: data.phone || '',
-        whatsapp: data.whatsapp || '',
-        vehiclePlate: data.extra_data?.vehiclePlate || data.extra_data?.vehicle_plate || '',
-        vehicleModel: data.extra_data?.vehicleModel || data.extra_data?.vehicle_model || '',
-        vehicleColor: data.extra_data?.vehicleColor || data.extra_data?.vehicle_color || '',
-        extraData: data.extra_data
+        id: (data as any).id,
+        name: (data as any).name,
+        unit: (data as any).unit,
+        email: (data as any).email || '',
+        phone: (data as any).phone || '',
+        whatsapp: (data as any).whatsapp || '',
+        vehiclePlate: (data as any).extra_data?.vehiclePlate || (data as any).extra_data?.vehicle_plate || '',
+        vehicleModel: (data as any).extra_data?.vehicleModel || (data as any).extra_data?.vehicle_model || '',
+        vehicleColor: (data as any).extra_data?.vehicleColor || (data as any).extra_data?.vehicle_color || '',
+        extraData: (data as any).extra_data
       },
       success: true
     };
@@ -303,7 +268,7 @@ export const loginResident = async (
       resident: null,
       success: false,
       error: isNetwork
-        ? 'Sem conexão com o Supabase. Verifique internet e variáveis de ambiente (VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY).'
+        ? 'Sem conexão com o Supabase.'
         : (err?.message || 'Erro ao fazer login')
     };
   }
@@ -386,31 +351,20 @@ export const getEmailForResetResident = async (unitOrEmail: string): Promise<str
   }
 };
 
-// Atualizar senha do morador
+// Atualizar senha do morador via Supabase Auth (requer sessão ativa)
 export const updateResidentPassword = async (
-  residentId: string,
+  _residentId: string,
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const passwordHash = await hashPassword(newPassword);
-
-    const { error } = await supabase
-      .from('residents')
-      .update({ password_hash: passwordHash } as any) // Usar 'as any' para contornar cache do schema
-      .eq('id', residentId);
-
-    if (error) {
-      return {
-        success: false,
-        error: error.message || 'Erro ao atualizar senha'
-      };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      return { success: false, error: 'Sessão não encontrada. Faça login novamente.' };
     }
-
+    const { error } = await supabase.auth.updateUser({ password: newPassword.trim() });
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
-    return {
-      success: false,
-      error: err.message || 'Erro ao atualizar senha'
-    };
+    return { success: false, error: err?.message || 'Erro ao atualizar senha' };
   }
 };

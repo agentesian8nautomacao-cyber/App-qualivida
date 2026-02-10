@@ -1434,7 +1434,12 @@ const App: React.FC = () => {
     setIsResidentModalOpen(true); 
   };
   const handleSaveResident = async () => { 
-    if (!residentFormData.name || !residentFormData.unit) return; 
+    if (!residentFormData.name || !residentFormData.unit) return;
+    const isNew = (residentFormData.id || '').startsWith('temp-') || !residentFormData.id;
+    if (isNew && (!residentFormData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(residentFormData.email))) {
+      toast.error('E-mail válido obrigatório para novo morador (necessário para login e recuperação de senha).');
+      return;
+    }
     // Normalizar unidade antes de salvar
     const normalizedData = { ...residentFormData, unit: normalizeUnit(residentFormData.unit) };
     
@@ -1448,10 +1453,8 @@ const App: React.FC = () => {
       whatsapp: normalizedData.whatsapp || ''
     };
     
-    const isNew = resident.id.startsWith('temp-');
-    
-    // Salvar no Supabase
-    const result = await saveResident(resident);
+    // Salvar no Supabase (senha padrão 123456 para novo; morador pode trocar via Esqueci minha senha)
+    const result = await saveResident(resident, isNew ? { passwordPlain: '123456' } : undefined);
     if (result.success) {
       if (result.id) {
         resident.id = result.id;
@@ -1484,7 +1487,7 @@ const App: React.FC = () => {
   const handleImportResidents = async (residents: Resident[]) => {
     for (let i = 0; i < residents.length; i++) {
       const r = { ...residents[i], id: `temp-${Date.now()}-${i}` };
-      const res = await saveResident(r);
+      const res = await saveResident(r, { passwordPlain: '123456' });
       if (!res.success) {
         const msg = `Erro ao importar "${r.name}": ${res.error || 'Erro desconhecido'}`;
         toast.error(msg);

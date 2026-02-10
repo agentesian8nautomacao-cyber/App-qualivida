@@ -22,7 +22,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
   const [showForm, setShowForm] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [resetFromLink, setResetFromLink] = useState<{ token: string } | null>(null);
   const [recoveryLinkExpired, setRecoveryLinkExpired] = useState(false);
   // Slider "Iniciar Turno" (estilo LandingPage)
   const [sliderPosition, setSliderPosition] = useState(0);
@@ -31,8 +30,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const reset = params.get('reset');
     const isResetPath = window.location.pathname === '/reset-password';
     const isResidentLink = params.get('resident') === 'true' || params.get('morador') === 'true';
 
@@ -53,13 +50,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
       setShowForgotPassword(true);
     }
 
-    // Aceita tanto o padrão antigo (?reset=1&token=) quanto o novo (/reset-password?token=)
-    if (token && (reset === '1' || isResetPath)) {
-      setResetFromLink({ token });
-      setShowForgotPassword(true);
-      setSelectedRole('PORTEIRO');
-      window.history.replaceState({}, '', '/');
-    } else if (isResidentLink) {
+    if (isResidentLink) {
       setSelectedRole('MORADOR');
     }
   }, []);
@@ -212,10 +203,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onMoradorLogin, onRequestResiden
         theme === 'light' ? 'bg-gray-50' : 'bg-[#050505]'
       }`}>
         <ForgotPassword
-          onBack={() => { setShowForgotPassword(false); setResetFromLink(null); setRecoveryLinkExpired(false); }}
+          onBack={() => { setShowForgotPassword(false); setRecoveryLinkExpired(false); }}
           theme={theme}
-          initialToken={resetFromLink?.token}
-          initialStep={resetFromLink ? 'reset' : undefined}
           isResident={selectedRole === 'MORADOR'}
           recoveryLinkExpiredMessage={recoveryLinkExpired ? 'Este link expirou ou já foi usado. Solicite um novo link abaixo (use o mesmo e-mail).' : undefined}
         />

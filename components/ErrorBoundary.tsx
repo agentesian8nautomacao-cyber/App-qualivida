@@ -45,6 +45,11 @@ export default class ErrorBoundary extends Component<Props, State> {
               <p className="text-sm text-zinc-500 mt-2">
                 Ocorreu um erro inesperado. Você pode tentar novamente ou recarregar a página.
               </p>
+              {this.state.error && import.meta.env?.DEV && (
+                <pre className="text-left text-xs bg-black/40 p-3 rounded-lg overflow-auto max-h-32 mt-2">
+                  {this.state.error.message}
+                </pre>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
