@@ -85,7 +85,7 @@ const ForgotPassword: React.FC<ForgotPasswordProps> = ({ onBack, theme = 'dark',
     setLoading(true);
     setMessage(null);
 
-    const successMessage = 'Se o e-mail estiver cadastrado em auth.users, você receberá um link por e-mail. Verifique a caixa de entrada, Spam e Promoções (Gmail). Configure SMTP personalizado no Supabase se os e-mails não chegarem — veja CONFIGURAR_SMTP_SUPABASE.md.';
+    const successMessage = 'Link de recuperação enviado! Verifique sua caixa de entrada, Spam ou Promoções.';
 
     const result = await requestPasswordReset(emailToUse);
     setLoading(false);
