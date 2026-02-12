@@ -483,7 +483,7 @@ export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsRes
       fetchRemote: async () => {
         let query = supabase
           .from('visitors')
-          .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status');
+          .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status, registered_by');
         
         // Se fornecido, filtrar por unidade (para moradores verem apenas seus visitantes)
         if (filterByUnit) {
@@ -505,7 +505,8 @@ export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsRes
       type: v.type ?? 'Visita',
       entryTime: v.entry_time,
       exitTime: v.exit_time ?? undefined,
-      status: v.status as 'active' | 'completed'
+      status: v.status as 'active' | 'completed',
+      registeredBy: v.registered_by ?? undefined
     }));
     return { data: list, error: result.error };
   } catch (err: any) {
@@ -717,10 +718,12 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
   try {
     const result = await getData<any>('boletos', {
       fetchRemote: async () => {
+        // Limitar a 1000 registros mais recentes para performance
         const { data, error } = await supabase
           .from('boletos')
           .select('id, resident_name, unit, reference_month, due_date, amount, status, boleto_type, barcode, pdf_url, paid_date, description')
-          .order('due_date', { ascending: false });
+          .order('due_date', { ascending: false })
+          .limit(1000);
         if (error) throw error;
         return data || [];
       }

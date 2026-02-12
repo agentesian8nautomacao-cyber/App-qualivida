@@ -25,6 +25,7 @@ import OccurrencesView from './components/views/OccurrencesView';
 import StaffView from './components/views/StaffView';
 import SettingsView from './components/views/SettingsView';
 import BoletosView from './components/views/BoletosView';
+import FinanceiroView from './components/views/FinanceiroView';
 import MoradorDashboardView from './components/views/MoradorDashboardView';
 import NotificationsView from './components/views/NotificationsView';
 
@@ -58,6 +59,8 @@ import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal, 
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
 import ImportBoletosModal from './components/modals/ImportBoletosModal';
+// Temporariamente comentado até resolver dependências
+// import BoletoPDFModal from './components/modals/BoletoPDFModal';
 import ImportPackagesModal from './components/modals/ImportPackagesModal';
 import CameraScanModal from './components/modals/CameraScanModal';
 import ImportStaffModal from './components/modals/ImportStaffModal';
@@ -477,17 +480,54 @@ const App: React.FC = () => {
   const [allPackages, setAllPackages] = useState<Package[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
 
-  // Carregar visitantes, ocorrências e boletos do Supabase
+  // Estados de carregamento para dados lazy
+  const [visitorsLoaded, setVisitorsLoaded] = useState(false);
+  const [occurrencesLoaded, setOccurrencesLoaded] = useState(false);
+  const [boletosLoaded, setBoletosLoaded] = useState(false);
+
+  // Função para carregar visitantes (lazy)
+  const loadVisitors = useCallback(async () => {
+    if (visitorsLoaded || !isAuthenticated) return;
+    const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
+    const res = await getVisitors(unitFilter);
+    if (res.data) setVisitorLogs(res.data);
+    setVisitorsLoaded(true);
+  }, [isAuthenticated, role, currentResident, visitorsLoaded]);
+
+  // Função para carregar ocorrências (lazy)
+  const loadOccurrences = useCallback(async () => {
+    if (occurrencesLoaded || !isAuthenticated) return;
+    const res = await getOccurrences();
+    if (res.data) setAllOccurrences(res.data);
+    setOccurrencesLoaded(true);
+  }, [isAuthenticated, occurrencesLoaded]);
+
+  // Função para carregar boletos (lazy)
+  const loadBoletos = useCallback(async () => {
+    if (boletosLoaded || !isAuthenticated) return;
+    const res = await getBoletos();
+    if (res.data) setAllBoletos(res.data);
+    setBoletosLoaded(true);
+  }, [isAuthenticated, boletosLoaded]);
+
+  // Carregar dados lazy baseado na aba ativa
   useEffect(() => {
     if (!isAuthenticated) return;
-    let cancelled = false;
-    // Se for morador, filtrar visitantes apenas da sua unidade
-    const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
-    getVisitors(unitFilter).then((res) => { if (!cancelled && res.data) setVisitorLogs(res.data); });
-    getOccurrences().then((res) => { if (!cancelled && res.data) setAllOccurrences(res.data); });
-    getBoletos().then((res) => { if (!cancelled && res.data) setAllBoletos(res.data); });
-    return () => { cancelled = true; };
-  }, [isAuthenticated, role, currentResident]);
+
+    // Carregar dados baseado na aba atual
+    switch (activeTab) {
+      case 'visitors':
+        loadVisitors();
+        break;
+      case 'occurrences':
+        loadOccurrences();
+        break;
+      case 'financeiro':
+        loadBoletos();
+        break;
+      // Outras abas podem carregar seus dados conforme necessário
+    }
+  }, [activeTab, isAuthenticated, loadVisitors, loadOccurrences, loadBoletos]);
 
   // Carregar avisos, chat, staff do Supabase
   useEffect(() => {
@@ -843,6 +883,7 @@ const App: React.FC = () => {
   const [isResidentModalOpen, setIsResidentModalOpen] = useState(false);
   const [isImportResidentsModalOpen, setIsImportResidentsModalOpen] = useState(false);
   const [isImportBoletosModalOpen, setIsImportBoletosModalOpen] = useState(false);
+  // const [isBoletoPDFModalOpen, setIsBoletoPDFModalOpen] = useState(false);
   const [isImportPackagesModalOpen, setIsImportPackagesModalOpen] = useState(false);
   const [isCameraScanModalOpen, setIsCameraScanModalOpen] = useState(false);
   const [pendingPackageImage, setPendingPackageImage] = useState<string | null>(null);
@@ -1508,6 +1549,37 @@ const App: React.FC = () => {
     }
     const { data } = await getBoletos();
     if (data) setAllBoletos(data);
+  };
+
+  const handleSaveBoletoFromPDF = async (boletoData: any) => {
+    try {
+      const boleto: Boleto = {
+        id: Date.now().toString(),
+        residentName: boletoData.residentName,
+        unit: boletoData.unit,
+        referenceMonth: boletoData.referenceMonth || new Date().toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }),
+        dueDate: boletoData.dueDate || new Date().toISOString().split('T')[0],
+        amount: boletoData.amount || 0,
+        status: 'Pendente',
+        resident_id: boletoData.resident_id,
+        unidade_id: boletoData.unidade_id,
+        nosso_numero: boletoData.nosso_numero,
+        pdfUrl: boletoData.pdfUrl,
+        description: `Processado automaticamente do PDF - ${boletoData.extractedData?.nossoNumero || 'N/A'}`
+      };
+
+      const res = await saveBoleto(boleto);
+      if (res.success) {
+        const { data } = await getBoletos();
+        if (data) setAllBoletos(data);
+        toast.success('Boleto processado e salvo com sucesso!');
+      } else {
+        toast.error(`Erro ao salvar boleto: ${res.error || 'Erro desconhecido'}`);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar boleto do PDF:', error);
+      toast.error('Erro ao processar boleto do PDF.');
+    }
   };
   const handleImportPackages = async (packagesToImport: Package[]) => {
     for (const p of packagesToImport) {
@@ -2609,12 +2681,23 @@ const App: React.FC = () => {
             </p>
           </div>
         );
-      case 'boletos': 
-        if (role === 'MORADOR' && currentResident) {
-          const myBoletos = allBoletos.filter(b => b.unit === currentResident.unit);
-          return <BoletosView allBoletos={myBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={[currentResident]} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} showImportButton={false} isResidentView={true} />;
-        }
-        return <BoletosView allBoletos={allBoletos} boletoSearch={boletoSearch} setBoletoSearch={setBoletoSearch} allResidents={allResidents} onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }} onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }} onDeleteBoleto={handleDeleteBoleto} onImportClick={() => setIsImportBoletosModalOpen(true)} showImportButton={true} isResidentView={false} />;
+      case 'financeiro':
+        return <FinanceiroView
+          allBoletos={allBoletos}
+          boletoSearch={boletoSearch}
+          setBoletoSearch={setBoletoSearch}
+          allResidents={allResidents}
+          onViewBoleto={(boleto) => { if (boleto.pdfUrl) window.open(boleto.pdfUrl, '_blank'); }}
+          onDownloadBoleto={(boleto) => { if (boleto.pdfUrl) { const link = document.createElement('a'); link.href = boleto.pdfUrl; link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`; link.click(); } }}
+          onDeleteBoleto={handleDeleteBoleto}
+          onImportClick={() => setIsImportBoletosModalOpen(true)}
+          // onProcessPDFClick={() => setIsBoletoPDFModalOpen(true)}
+          showImportButton={role !== 'MORADOR'}
+          // showProcessPDFButton={role !== 'MORADOR'}
+          currentResident={currentResident}
+          role={role}
+          isLoadingBoletos={!boletosLoaded}
+        />;
       case 'visitors': 
         return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} role={role} />;
       case 'notifications':
@@ -3023,6 +3106,16 @@ const App: React.FC = () => {
       />
       <ImportResidentsModal isOpen={isImportResidentsModalOpen} onClose={() => setIsImportResidentsModalOpen(false)} onImport={handleImportResidents} existingResidents={allResidents} />
       <ImportBoletosModal isOpen={isImportBoletosModalOpen} onClose={() => setIsImportBoletosModalOpen(false)} onImport={handleImportBoletos} existingBoletos={allBoletos} allResidents={allResidents} />
+
+      {/* Temporariamente comentado até resolver dependências */}
+      {/*
+      <BoletoPDFModal
+        isOpen={isBoletoPDFModalOpen}
+        onClose={() => setIsBoletoPDFModalOpen(false)}
+        onSave={handleSaveBoletoFromPDF}
+        allResidents={allResidents}
+      />
+      */}
       <ImportPackagesModal isOpen={isImportPackagesModalOpen} onClose={() => setIsImportPackagesModalOpen(false)} onImport={handleImportPackages} existingPackages={allPackages} />
       <CameraScanModal isOpen={isCameraScanModalOpen} onClose={() => setIsCameraScanModalOpen(false)} onScanSuccess={handleCameraScanSuccess} allResidents={allResidents} />
       <ImportStaffModal isOpen={isImportStaffModalOpen} onClose={() => setIsImportStaffModalOpen(false)} onImport={handleImportStaff} existingStaff={allStaff} />

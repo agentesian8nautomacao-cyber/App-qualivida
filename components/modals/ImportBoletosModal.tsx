@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, CheckCircle2, AlertCircle, Download, File as FileIcon } from 'lucide-react';
 import { Boleto, BoletoType, Resident } from '../../types';
-import { uploadBoletoPdf } from '../../services/dataService';
+import { getResidents, uploadBoletoPdf } from '../../services/dataService';
 import { useToast } from '../../contexts/ToastContext';
+import { normalizeUnit, compareUnits } from '../../utils/unitFormatter';
+import { extractFieldsFromBoletoText, extractTextFromPdf } from '../../services/pdfBoletoExtractor';
 
 interface ImportBoletosModalProps {
   isOpen: boolean;
@@ -26,13 +28,30 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   const [errors, setErrors] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [remoteResidents, setRemoteResidents] = useState<Resident[] | null>(null);
   /** Designação manual: boleto.id -> File (PDF escolhido para aquele morador). */
   const [assignedPdfByBoletoId, setAssignedPdfByBoletoId] = useState<Record<string, File | null>>({});
-  /** Tipo padrão para importação em lote (Condomínio, Água ou Luz). */
+  /** Tipo padrão para importação em lote (Taxa/Condomínio, Água ou Luz). */
   const [defaultBoletoType, setDefaultBoletoType] = useState<BoletoType>('condominio');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const pdfAssignmentsRef = useRef<Map<string, File>>(new Map());
+
+  // Quando abrir o modal, tenta buscar moradores atualizados (Supabase) para evitar lista desatualizada
+  useEffect(() => {
+    if (!isOpen) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    (async () => {
+      try {
+        const { data } = await getResidents();
+        if (data && data.length > 0) setRemoteResidents(data);
+      } catch {
+        // silencioso: usa allResidents do App
+      }
+    })();
+  }, [isOpen]);
+
+  const residentsPool = (remoteResidents && remoteResidents.length > 0) ? remoteResidents : allResidents;
 
   const normalizeBoletoType = (v: string): BoletoType => {
     const t = (v || '').toLowerCase().trim();
@@ -54,10 +73,197 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
   if (!isOpen) return null;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      processFile(selectedFile);
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
+
+    // Se múltiplos arquivos foram selecionados
+    if (selectedFiles.length > 1) {
+      const pdfFiles = Array.from(selectedFiles).filter(f =>
+        f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+      );
+
+      if (pdfFiles.length > 0) {
+        // Mostrar informação sobre múltiplos PDFs selecionados
+        setFile(null); // Limpar arquivo único
+        processMultiplePDFFiles(pdfFiles);
+        return;
+      }
+    }
+
+    // Arquivo único
+    const selectedFile = selectedFiles[0];
+    setFile(selectedFile);
+    processFile(selectedFile);
+  };
+
+  const processMultiplePDFFiles = async (pdfFiles: File[]) => {
+    setPdfFiles(pdfFiles);
+    setErrors([]);
+    setPreviewData([]);
+    setIsProcessing(true);
+
+    try {
+      const boletoData: any[] = [];
+
+      for (const pdfFile of pdfFiles) {
+        // Mesmo código de extração usado no processPDFFile
+        const fileName = pdfFile.name.toLowerCase().replace('.pdf', '');
+
+        const patterns = {
+          unit: /(?:^|_|-)((?:\d{1,3})(?:[a-zA-Z]{0,2}))(?:_|-|$)/,
+          monthYear: [
+            /(?:^|_|-)(\d{1,2})[_\/-](\d{4})(?:_|-|$)/,
+            /(?:^|_|-)(\d{1,2})(\d{4})(?:_|-|$)/,
+            /(?:^|_|-)(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[_-]?(\d{4})(?:_|-|$)/i,
+            /(?:^|_|-)(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)[_-]?(\d{4})(?:_|-|$)/i
+          ],
+          type: /(?:^|_|-)(condominio|condomínio|agua|água|luz|condo|water|light|electricity)(?:_|-|$)/,
+          amount: /(?:^|_|-)R\$?[_]?([\d.,]+)(?:_|-|$)/,
+          dueDate: /(?:^|_|-)(\d{1,2})[_\/-](\d{1,2})[_\/-](\d{4})(?:_|-|$)/
+        };
+
+        let extractedUnit = '';
+
+        // Tentar padrões mais específicos primeiro
+        const unitPatterns = [
+          /(?:^|_|-)((?:\d{1,3})(?:[a-zA-Z]{0,2}))(?:_|-|$)/,  // 101A, 205, 45B
+          /(?:^|_|-)([a-zA-Z]{1,2}(\d{1,3}))(?:_|-|$)/,        // A101, B205
+          /(?:^|_|-)(apt|apto|unidade)[_-]?(\d{1,3}[a-zA-Z]{0,2})(?:_|-|$)/i, // apt101, unidade205A
+          /(?:^|_|-)(\d{1,3})(?:_|-|$)/,                       // 101, 205 (número simples)
+        ];
+
+        for (const pattern of unitPatterns) {
+          const match = fileName.match(pattern);
+          if (match) {
+            // Pegar o grupo de captura correto
+            extractedUnit = (match[1] || match[2] || '').toUpperCase();
+            if (extractedUnit) break;
+          }
+        }
+
+        let extractedMonth = '';
+        for (const pattern of patterns.monthYear) {
+          const match = fileName.match(pattern);
+          if (match) {
+            if (match[1] && match[2]) {
+              if (isNaN(Number(match[1]))) {
+                const months = {
+                  'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+                  'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12',
+                  'janeiro': '01', 'fevereiro': '02', 'marco': '03', 'abril': '04', 'maio': '05',
+                  'junho': '06', 'julho': '07', 'agosto': '08', 'setembro': '09', 'outubro': '10',
+                  'novembro': '11', 'dezembro': '12'
+                };
+                const monthNum = months[match[1].toLowerCase() as keyof typeof months];
+                if (monthNum) {
+                  extractedMonth = `${monthNum}/${match[2]}`;
+                }
+              } else {
+                extractedMonth = `${match[1].padStart(2, '0')}/${match[2]}`;
+              }
+            }
+            break;
+          }
+        }
+
+        let extractedType: BoletoType = 'condominio';
+        const typeMatch = fileName.match(patterns.type);
+        if (typeMatch) {
+          const typeStr = typeMatch[1].toLowerCase();
+          if (typeStr.includes('agua') || typeStr.includes('água') || typeStr === 'water') {
+            extractedType = 'agua';
+          } else if (typeStr.includes('luz') || typeStr === 'light' || typeStr === 'electricity') {
+            extractedType = 'luz';
+          }
+        }
+
+        let extractedAmount = 0;
+        const amountMatch = fileName.match(patterns.amount);
+        if (amountMatch) {
+          const amountStr = amountMatch[1].replace(/[.,]$/, '').replace(',', '.');
+          extractedAmount = parseFloat(amountStr) || 0;
+        }
+
+        let extractedDueDate = '';
+        let extractedBarcode = '';
+        let extractedNossoNumero = '';
+        const dueDateMatch = fileName.match(patterns.dueDate);
+        if (dueDateMatch) {
+          const [, day, month, year] = dueDateMatch;
+          extractedDueDate = `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+        }
+
+        // Log para debug
+        console.log(`[PDF Processing] ${pdfFile.name}:`, {
+          extractedUnit,
+          extractedMonth,
+          extractedType,
+          extractedAmount,
+          extractedDueDate
+        });
+
+        // Se faltou algum dado importante, tentar extrair do CONTEÚDO do PDF (texto)
+        try {
+          if (!extractedUnit || !extractedMonth || !extractedDueDate || extractedAmount <= 0) {
+            const pdfText = await extractTextFromPdf(pdfFile);
+            const fields = extractFieldsFromBoletoText(pdfText);
+
+            if (!extractedUnit && fields.unidade) extractedUnit = fields.unidade;
+            if (!extractedMonth && fields.referencia) extractedMonth = fields.referencia;
+            if (!extractedDueDate && fields.vencimento) extractedDueDate = fields.vencimento;
+            if ((extractedAmount <= 0 || Number.isNaN(extractedAmount)) && typeof fields.valor === 'number') extractedAmount = fields.valor;
+            if (!extractedBarcode && fields.codigoBarras) extractedBarcode = fields.codigoBarras;
+            if (!extractedNossoNumero && fields.nossoNumero) extractedNossoNumero = fields.nossoNumero;
+          }
+        } catch (e) {
+          console.warn('[PDF Processing] Falha ao extrair texto do PDF (conteúdo). Usando apenas nome do arquivo.', e);
+        }
+
+        // Se não conseguiu extrair unidade, tentar padrões mais simples
+        if (!extractedUnit) {
+          // Tentar encontrar qualquer número que possa ser unidade
+          const simpleNumberMatch = fileName.match(/(\d{1,3})/);
+          if (simpleNumberMatch) {
+            extractedUnit = simpleNumberMatch[1];
+            console.log(`[PDF Processing] Usando padrão simples para unidade: ${extractedUnit}`);
+          }
+        }
+
+        boletoData.push({
+          unidade: extractedUnit,
+          mes: extractedMonth,
+          vencimento: extractedDueDate,
+          valor: extractedAmount,
+          tipo: extractedType,
+          status: 'Pendente',
+          descricao: `Boleto importado de PDF: ${pdfFile.name}`,
+          codigo_barras: extractedBarcode,
+          nosso_numero: extractedNossoNumero,
+          pdf_associado: pdfFile.name
+        });
+      }
+
+      // Verificar se pelo menos uma unidade foi extraída
+      const validBoletos = boletoData.filter(b => b.unidade);
+      const invalidBoletos = boletoData.filter(b => !b.unidade);
+
+      if (invalidBoletos.length > 0) {
+        console.warn(`[ImportBoletos] ${invalidBoletos.length} PDFs não tiveram unidade extraída:`, invalidBoletos.map(b => b.pdf_associado));
+        setErrors(prev => [...prev, `Atenção: ${invalidBoletos.length} PDF(s) não puderam ter a unidade extraída automaticamente. Verifique os nomes dos arquivos e tente renomeá-los seguindo o padrão: unidade_mes_ano.pdf (ex: 101A_01_2025.pdf)`]);
+      }
+
+      // Processar apenas boletos válidos
+      if (validBoletos.length > 0) {
+        processJSONData(validBoletos);
+        console.log(`[ImportBoletos] ${validBoletos.length} PDFs processados com sucesso`);
+      } else {
+        setErrors(prev => [...prev, 'Nenhum PDF teve seus dados extraídos com sucesso. Renomeie os arquivos seguindo o padrão: unidade_mes_ano.pdf']);
+      }
+
+    } catch (error) {
+      setErrors([`Erro ao processar PDFs: ${error instanceof Error ? error.message : 'Erro desconhecido'}`]);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -72,10 +278,22 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     setPreviewData([]);
 
     try {
+      // Verificar se é um arquivo PDF
+      if (fileToProcess.type === 'application/pdf' || fileToProcess.name.toLowerCase().endsWith('.pdf')) {
+        await processPDFFile(fileToProcess);
+        return;
+      }
+
       const text = await fileToProcess.text();
 
-      // Tenta interpretar como JSON (array de boletos)
+      // Verificar se o conteúdo parece ser de um PDF
       const trimmed = text.trim();
+      if (trimmed.startsWith('%PDF-')) {
+        setErrors(['Este parece ser um arquivo PDF. PDFs devem ser processados como arquivos PDF.']);
+        return;
+      }
+
+      // Tenta interpretar como JSON (array de boletos)
       if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
         try {
           const data = JSON.parse(text);
@@ -100,32 +318,289 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     }
   };
 
+  const processPDFFile = async (pdfFile: File) => {
+    // Para PDFs únicos, criar entrada básica do boleto
+    const pdfFiles = [pdfFile];
+    setPdfFiles(pdfFiles);
+
+    // Tentar extrair informações básicas do nome do arquivo
+    const fileName = pdfFile.name.toLowerCase().replace('.pdf', '');
+
+    // Inicializar todas as variáveis primeiro
+    let extractedUnit = '';
+    let extractedMonth = '';
+    let extractedType: BoletoType = 'condominio';
+    let extractedAmount = 0;
+    let extractedDueDate = '';
+    let extractedBarcode = '';
+    let extractedNossoNumero = '';
+
+    // Padrões comuns para identificação de dados
+    const patterns = {
+      // Unidade: 101A, 205, 45B, etc.
+      unit: /(?:^|_|-)((?:\d{1,3})(?:[a-zA-Z]{0,2}))(?:_|-|$)/,
+
+      // Mês/Ano: 01_2025, 01-2025, 01/2025, 012025, jan2025, etc.
+      monthYear: [
+        /(?:^|_|-)(\d{1,2})[_\/-](\d{4})(?:_|-|$)/,  // 01_2025, 01/2025
+        /(?:^|_|-)(\d{1,2})(\d{4})(?:_|-|$)/,        // 012025
+        /(?:^|_|-)(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[_-]?(\d{4})(?:_|-|$)/i, // jan2025
+        /(?:^|_|-)(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)[_-]?(\d{4})(?:_|-|$)/i
+      ],
+
+      // Tipo: condominio, agua, luz, condo, etc.
+      type: /(?:^|_|-)(condominio|condomínio|agua|água|luz|condo|water|light|electricity)(?:_|-|$)/,
+
+      // Valor: pode ter pontos ou vírgulas
+      amount: /(?:^|_|-)R\$?[_]?([\d.,]+)(?:_|-|$)/,
+
+      // Vencimento: dd_mm_yyyy ou similar
+      dueDate: /(?:^|_|-)(\d{1,2})[_\/-](\d{1,2})[_\/-](\d{4})(?:_|-|$)/
+    };
+
+    // Extrair unidade
+    const unitPatterns = [
+      /(?:^|_|-)((?:\d{1,3})(?:[a-zA-Z]{0,2}))(?:_|-|$)/,  // 101A, 205, 45B
+      /(?:^|_|-)([a-zA-Z]{1,2}(\d{1,3}))(?:_|-|$)/,        // A101, B205
+      /(?:^|_|-)(apt|apto|unidade)[_-]?(\d{1,3}[a-zA-Z]{0,2})(?:_|-|$)/i, // apt101, unidade205A
+      /(?:^|_|-)(\d{1,3})(?:_|-|$)/,                       // 101, 205 (número simples)
+    ];
+
+    for (const pattern of unitPatterns) {
+      const match = fileName.match(pattern);
+      if (match) {
+        // Pegar o grupo de captura correto
+        extractedUnit = (match[1] || match[2] || '').toUpperCase();
+        if (extractedUnit) break;
+      }
+    }
+
+    // Se não conseguiu extrair unidade, tentar padrões mais simples
+    if (!extractedUnit) {
+      // Tentar encontrar qualquer número que possa ser unidade
+      const simpleNumberMatch = fileName.match(/(\d{1,3})/);
+      if (simpleNumberMatch) {
+        extractedUnit = simpleNumberMatch[1];
+        console.log(`[PDF Processing] Usando padrão simples para unidade: ${extractedUnit}`);
+      }
+    }
+
+    // Extrair mês/ano
+    for (const pattern of patterns.monthYear) {
+      const match = fileName.match(pattern);
+      if (match) {
+        if (match[1] && match[2]) {
+          // Se for mês por extenso, converter para número
+          if (isNaN(Number(match[1]))) {
+            const months = {
+              'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+              'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12',
+              'janeiro': '01', 'fevereiro': '02', 'marco': '03', 'abril': '04', 'maio': '05',
+              'junho': '06', 'julho': '07', 'agosto': '08', 'setembro': '09', 'outubro': '10',
+              'novembro': '11', 'dezembro': '12'
+            };
+            const monthNum = months[match[1].toLowerCase() as keyof typeof months];
+            if (monthNum) {
+              extractedMonth = `${monthNum}/${match[2]}`;
+            }
+          } else {
+            extractedMonth = `${match[1].padStart(2, '0')}/${match[2]}`;
+          }
+        }
+        break;
+      }
+    }
+
+    // Extrair tipo (já inicializada acima)
+    const typeMatch = fileName.match(patterns.type);
+    if (typeMatch) {
+      const typeStr = typeMatch[1].toLowerCase();
+      if (typeStr.includes('agua') || typeStr.includes('água') || typeStr === 'water') {
+        extractedType = 'agua';
+      } else if (typeStr.includes('luz') || typeStr === 'light' || typeStr === 'electricity') {
+        extractedType = 'luz';
+      }
+    }
+
+    // Extrair valor (já inicializada acima)
+    const amountMatch = fileName.match(patterns.amount);
+    if (amountMatch) {
+      const amountStr = amountMatch[1].replace(/[.,]$/, '').replace(',', '.');
+      extractedAmount = parseFloat(amountStr) || 0;
+    }
+
+    // Extrair data de vencimento (já inicializada acima)
+    const dueDateMatch = fileName.match(patterns.dueDate);
+    if (dueDateMatch) {
+      const [, day, month, year] = dueDateMatch;
+      extractedDueDate = `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+
+    // Log para debug
+    console.log(`[PDF Processing] ${pdfFile.name}:`, {
+      extractedUnit,
+      extractedMonth,
+      extractedType,
+      extractedAmount,
+      extractedDueDate
+    });
+
+    // Se faltou algum dado importante, tentar extrair do CONTEÚDO do PDF (texto)
+    try {
+      if (!extractedUnit || !extractedMonth || !extractedDueDate || extractedAmount <= 0) {
+        const pdfText = await extractTextFromPdf(pdfFile);
+        const fields = extractFieldsFromBoletoText(pdfText);
+
+        if (!extractedUnit && fields.unidade) extractedUnit = fields.unidade;
+        if (!extractedMonth && fields.referencia) extractedMonth = fields.referencia;
+        if (!extractedDueDate && fields.vencimento) extractedDueDate = fields.vencimento;
+        if ((extractedAmount <= 0 || Number.isNaN(extractedAmount)) && typeof fields.valor === 'number') extractedAmount = fields.valor;
+        if (!extractedBarcode && fields.codigoBarras) extractedBarcode = fields.codigoBarras;
+        if (!extractedNossoNumero && fields.nossoNumero) extractedNossoNumero = fields.nossoNumero;
+      }
+    } catch (e) {
+      console.warn('[PDF Processing] Falha ao extrair texto do PDF (conteúdo). Usando apenas nome do arquivo.', e);
+    }
+
+    // Criar entrada básica para o boleto
+    const boletoData = [{
+      unidade: extractedUnit,
+      mes: extractedMonth,
+      vencimento: extractedDueDate,
+      valor: extractedAmount,
+      tipo: extractedType,
+      status: 'Pendente',
+      descricao: `Boleto importado de PDF: ${pdfFile.name}`,
+      codigo_barras: extractedBarcode,
+      nosso_numero: extractedNossoNumero,
+      pdf_associado: pdfFile.name
+    }];
+
+    // Processar como dados JSON
+    processJSONData(boletoData);
+  };
+
   const getResidentByUnit = (unit: string): Resident | undefined => {
     return allResidents.find(r => r.unit.toLowerCase() === unit.toLowerCase());
+  };
+
+  /** Busca morador por unidade com flexibilidade: aceita "03", "03/005", "03 / 005", "03-005", etc. */
+  const getResidentByUnitFlexible = (unit: string): Resident | undefined => {
+    if (!unit || !unit.trim()) return undefined;
+
+    const trimmed = unit.trim();
+
+    // 1. Match exato
+    let found = getResidentByUnit(trimmed);
+    if (found) return found;
+
+    // 2. Match normalizado (03/005, 03 / 005, 03-005)
+    found = residentsPool.find(r => compareUnits(r.unit, trimmed));
+    if (found) return found;
+
+    // 3. Match por bloco/apartamento: "03" → "03/005"; "03/005" ou "03-005"
+    const blockMatch = trimmed.match(/^(\d{1,3})(?:\s*[\/\-]\s*(\d{1,3}))?$/);
+    if (blockMatch) {
+      const block = blockMatch[1].padStart(2, '0');
+      const apt = blockMatch[2] ? blockMatch[2].padStart(3, '0') : null;
+
+      if (apt) {
+        // Tem bloco e apt: "03/005" ou "03-005"
+        const target = `${block}/${apt}`;
+        found = residentsPool.find(r => compareUnits(r.unit, target) || normalizeUnit(r.unit) === target);
+        if (found) return found;
+      }
+
+      // Só bloco: "03" → busca residentes com bloco 03 (ex: 03/005)
+      const blockCandidates = residentsPool.filter(r => {
+        const n = normalizeUnit(r.unit);
+        return n.startsWith(`${block}/`) || n === block;
+      });
+      if (blockCandidates.length >= 1) return blockCandidates[0];
+    }
+
+    // 4. NOVO: Match apenas por apartamento (quando só tem número como "005")
+    // Procura moradores onde o apartamento seja igual ao número fornecido
+    if (/^\d+$/.test(trimmed)) {
+      const aptNumber = trimmed.padStart(3, '0'); // "005"
+
+      // Procura exato: */005
+      found = residentsPool.find(r => {
+        const n = normalizeUnit(r.unit);
+        return n.endsWith(`/${aptNumber}`) || n === aptNumber;
+      });
+      if (found) return found;
+
+      // Procura por padrões similares (ex: se "005" não encontra, tenta "05")
+      if (aptNumber.startsWith('0')) {
+        const shortApt = aptNumber.replace(/^0+/, ''); // "5"
+        found = residentsPool.find(r => {
+          const n = normalizeUnit(r.unit);
+          return n.endsWith(`/${shortApt}`) || n === shortApt;
+        });
+        if (found) return found;
+      }
+    }
+
+    // 5. Última tentativa: busca fuzzy por similaridade
+    const trimmedUpper = trimmed.toUpperCase();
+    found = residentsPool.find(r => {
+      const unitUpper = r.unit.toUpperCase();
+      return unitUpper.includes(trimmedUpper) || trimmedUpper.includes(unitUpper);
+    });
+
+    return found;
   };
 
   const processCSV = async (file: File) => {
     const text = await file.text();
     const lines = text.split('\n').filter(line => line.trim());
-    
+
     if (lines.length < 2) {
       setErrors(['Arquivo CSV deve ter pelo menos um cabeçalho e uma linha de dados.']);
       return;
     }
 
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const requiredFields = ['unidade', 'mes', 'vencimento', 'valor'];
-    const missingFields = requiredFields.filter(field => 
-      !headers.some(h => 
-        h.includes('unidade') || h.includes('unit') || h.includes('apto') ||
-        (field === 'mes' && (h.includes('mes') || h.includes('referencia') || h.includes('referência'))) ||
-        (field === 'vencimento' && (h.includes('vencimento') || h.includes('venc') || h.includes('data'))) ||
-        (field === 'valor' && (h.includes('valor') || h.includes('amount')))
-      )
-    );
-    
+    console.log('Headers encontrados no CSV:', headers);
+    console.log('Campos disponíveis para mapeamento:', headers.join(', '));
+
+    // Função para verificar se um campo obrigatório existe nos headers
+    const hasField = (fieldName: string, variations: string[]): boolean => {
+      return headers.some(h =>
+        variations.some(v => h.includes(v))
+      );
+    };
+
+    // Campos obrigatórios com suas variações aceitas
+    const requiredFieldsMap = {
+      unidade: ['unidade', 'unit', 'apto', 'apartamento', 'apt'],
+      mes: ['mes', 'referencia', 'referência', 'reference', 'mesref'],
+      vencimento: ['vencimento', 'venc', 'data', 'duedate', 'due_date', 'datavenc'],
+      valor: ['valor', 'amount', 'preco', 'price', 'total']
+    };
+
+    const missingFields: string[] = [];
+    for (const [fieldKey, variations] of Object.entries(requiredFieldsMap)) {
+      if (!hasField(fieldKey, variations)) {
+        missingFields.push(fieldKey);
+      }
+    }
+
     if (missingFields.length > 0) {
-      setErrors([`Campos obrigatórios não encontrados: ${missingFields.join(', ')}`]);
+      console.log('[ImportBoletos] Headers encontrados:', headers);
+      const errorMsg = `Campos obrigatórios não encontrados: ${missingFields.join(', ')}.
+
+Headers aceitos:
+• Unidade: unidade, unit, apto, apartamento, apt
+• Mês: mes, referencia, referência, reference, mesref
+• Vencimento: vencimento, venc, data, duedate, due_date, datavenc
+• Valor: valor, amount, preco, price, total
+
+Headers encontrados: ${headers.join(', ')}
+
+Baixe o template CSV para ver o formato correto.`;
+      setErrors([errorMsg]);
       return;
     }
 
@@ -145,39 +620,92 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       headers.forEach((header, index) => {
         const value = values[index] || '';
         const headerLower = header.toLowerCase().trim();
-        
-        if (headerLower.includes('unidade') || headerLower.includes('unit') || headerLower.includes('apto')) {
+
+        // Campos obrigatórios - DETECÇÃO MAIS FLEXÍVEL
+        if (headerLower.includes('unidade') || headerLower.includes('unit') ||
+            headerLower.includes('apto') || headerLower.includes('apartamento') ||
+            headerLower.includes('apt') || headerLower === 'apart' ||
+            headerLower.includes('numero') || headerLower === 'nº' ||
+            headerLower === 'n' || headerLower.includes('endereco')) {
           unit = value;
-        } else if (headerLower.includes('mes') || headerLower.includes('referencia') || headerLower.includes('referência')) {
+        } else if (headerLower.includes('mes') || headerLower.includes('referencia') ||
+                   headerLower.includes('referência') || headerLower.includes('reference') ||
+                   headerLower.includes('mesref') || headerLower.includes('competencia')) {
           referenceMonth = value;
-        } else if (headerLower.includes('vencimento') || headerLower.includes('venc') || (headerLower.includes('data') && !headerLower.includes('pagamento'))) {
-          dueDate = value;
-        } else if (headerLower.includes('valor') || headerLower.includes('amount')) {
+        } else if (headerLower.includes('vencimento') || headerLower.includes('venc') ||
+                   headerLower.includes('data') || headerLower.includes('duedate') ||
+                   headerLower.includes('due_date') || headerLower.includes('datavenc') ||
+                   headerLower.includes('validade')) {
+          if (!headerLower.includes('pagamento') && !headerLower.includes('paid') &&
+              !headerLower.includes('quitacao')) {
+            dueDate = value;
+          }
+        } else if (headerLower.includes('valor') || headerLower.includes('amount') ||
+                   headerLower.includes('preco') || headerLower.includes('price') ||
+                   headerLower.includes('total') || headerLower.includes('vlr') ||
+                   headerLower === 'preço') {
           amount = parseFloat(value.replace(/[^\d,.-]/g, '').replace(',', '.'));
-        } else if (headerLower.includes('nome') || headerLower.includes('name')) {
-          // Nome será buscado pela unidade
+        }
+        // Campos opcionais
+        else if (headerLower.includes('nome') || headerLower.includes('name') || headerLower.includes('morador') || headerLower.includes('resident')) {
+          // Nome será buscado pela unidade, mas pode ser usado para validação adicional
         } else if (headerLower.includes('status')) {
           boleto.status = value as 'Pendente' | 'Pago' | 'Vencido';
-        } else if (headerLower.includes('codigo') || headerLower.includes('cod') || headerLower.includes('barcode')) {
+        } else if (headerLower.includes('codigo') || headerLower.includes('cod') || headerLower.includes('barcode') || headerLower.includes('linha_digitavel')) {
           boleto.barcode = value;
-        } else if (headerLower.includes('descricao') || headerLower.includes('description')) {
+        } else if (headerLower.includes('descricao') || headerLower.includes('description') || headerLower.includes('observacao') || headerLower.includes('obs')) {
           boleto.description = value;
-        } else if (headerLower.includes('pagamento') || headerLower.includes('paid')) {
+        } else if (headerLower.includes('pagamento') || headerLower.includes('paid') || headerLower.includes('data_pagamento') || headerLower.includes('paid_date')) {
           boleto.paidDate = value;
-        } else if (headerLower.includes('tipo') || headerLower === 'type') {
+        } else if (headerLower.includes('tipo') || headerLower === 'type' || headerLower.includes('boleto_type')) {
           boleto.boletoType = normalizeBoletoType(value) || defaultBoletoType;
         }
       });
       if (!boleto.boletoType) boleto.boletoType = defaultBoletoType;
 
-      if (!unit) {
-        csvErrors.push(`Linha ${i + 1}: Unidade é obrigatória`);
-        continue;
+      // Validação mais flexível da unidade
+      if (!unit || unit.trim() === '') {
+        // Tentar encontrar unidade em outros campos (como nome que pode conter a unidade)
+        const possibleUnitFields = ['nome', 'name', 'morador', 'resident'];
+        let foundUnit = false;
+
+        headers.forEach((header, idx) => {
+          const hdrLower = header.toLowerCase().trim();
+          if (possibleUnitFields.some(field => hdrLower.includes(field))) {
+            const nameValue = values[idx] || '';
+            // Tentar extrair unidade do nome (ex: "João Silva - Apt 101" -> "101")
+            const unitMatch = nameValue.match(/\b(\d{1,3}[a-zA-Z]?\d*\/?\d*)\b/);
+            if (unitMatch && unitMatch[1]) {
+              unit = unitMatch[1];
+              foundUnit = true;
+            }
+          }
+        });
+
+        if (!foundUnit) {
+          csvErrors.push(`Linha ${i + 1}: Unidade não encontrada. Campos aceitos: unidade, unit, apto, apartamento, apt, numero, n, endereco. Ou inclua a unidade no campo nome (ex: 'João Silva - Apt 101')`);
+          continue;
+        }
       }
 
-      const resident = getResidentByUnit(unit);
+      const resident = getResidentByUnitFlexible(unit);
+      console.log(`🔍 Procurando morador para unidade "${unit}":`, resident ? `✅ Encontrado: ${resident.name} (${resident.unit})` : '❌ Não encontrado');
       if (!resident) {
-        csvErrors.push(`Linha ${i + 1}: Morador não encontrado para unidade ${unit}`);
+        // Busca moradores com unidades similares para sugerir
+        const similarUnits = allResidents.filter(r => {
+          const rUnit = r.unit.toLowerCase();
+          const searchUnit = unit.toLowerCase();
+          return rUnit.includes(searchUnit) || searchUnit.includes(rUnit) ||
+                 rUnit.replace(/[^\d]/g, '') === searchUnit.replace(/[^\d]/g, '');
+        }).slice(0, 3);
+
+        let errorMsg = `Linha ${i + 1}: Morador não encontrado para unidade "${unit}"`;
+        if (similarUnits.length > 0) {
+          errorMsg += `. Moradores similares encontrados: ${similarUnits.map(r => `"${r.name}" (${r.unit})`).join(', ')}`;
+        }
+        errorMsg += '. Verifique se a unidade está correta ou cadastre o morador.';
+
+        csvErrors.push(errorMsg);
         continue;
       }
 
@@ -216,10 +744,10 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
 
       const boletoType: BoletoType = (boleto.boletoType as BoletoType) || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
+        compareUnits(b.unit, resident.unit) && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        csvErrors.push(`Linha ${i + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
+        csvErrors.push(`Linha ${i + 1}: Boleto já existe para unidade ${resident.unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         continue;
       }
 
@@ -249,7 +777,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       boletos.push({
         id: boleto.id!,
         residentName: resident.name,
-        unit: unit,
+        unit: resident.unit,
         referenceMonth: referenceMonth,
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
@@ -258,6 +786,10 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         barcode: boleto.barcode,
         description: boleto.description,
         pdfUrl: pdfUrl || undefined,
+        // Campos de identificação para boletos importados
+        resident_id: resident.id, // ID do morador no sistema
+        unidade_id: resident.unit, // Usar unidade como ID (pode ser mapeado depois)
+        nosso_numero: boleto.nosso_numero || boleto.id, // Usar nosso_numero se disponível, senão o ID
         paidDate: boleto.paidDate
       });
     }
@@ -289,25 +821,50 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     const jsonErrors: string[] = [];
 
     data.forEach((item, index) => {
-      const unit = item.unidade || item.unit || item.apto;
-      if (!unit) {
-        jsonErrors.push(`Item ${index + 1}: Unidade é obrigatória`);
+      let unit = item.unidade || item.unit || item.apto || item.apartamento || item.apt ||
+                 item.numero || item.n || item.endereco;
+
+      // Se ainda não encontrou unidade, tentar extrair do nome
+      if (!unit && (item.nome || item.name || item.morador)) {
+        const nameField = item.nome || item.name || item.morador;
+        const unitMatch = nameField.match(/\b(\d{1,3}[a-zA-Z]?\d*\/?\d*)\b/);
+        if (unitMatch && unitMatch[1]) {
+          unit = unitMatch[1];
+        }
+      }
+
+      if (!unit || unit.toString().trim() === '') {
+        jsonErrors.push(`Item ${index + 1}: Unidade não encontrada. Campos aceitos: unidade, unit, apto, apartamento, apt, numero, n, endereco, ou unidade no campo nome (ex: "João Silva - Apt 101")`);
         return;
       }
 
-      const resident = getResidentByUnit(unit);
+      const resident = getResidentByUnitFlexible(unit.toString());
       if (!resident) {
-        jsonErrors.push(`Item ${index + 1}: Morador não encontrado para unidade ${unit}`);
+                // Busca moradores com unidades similares para sugerir
+        const similarUnits = allResidents.filter(r => {
+          const rUnit = r.unit.toLowerCase();
+          const searchUnit = unit.toString().toLowerCase();
+          return rUnit.includes(searchUnit) || searchUnit.includes(rUnit) ||
+                 rUnit.replace(/[^\d]/g, '') === searchUnit.replace(/[^\d]/g, '');
+        }).slice(0, 3);
+
+        let errorMsg = `Item ${index + 1}: Morador não encontrado para unidade "${unit}"`;
+        if (similarUnits.length > 0) {
+          errorMsg += `. Moradores similares encontrados: ${similarUnits.map(r => `"${r.name}" (${r.unit})`).join(', ')}`;
+        }
+        errorMsg += '. Verifique se a unidade está correta ou cadastre o morador.';
+
+        jsonErrors.push(errorMsg);
         return;
       }
 
-      const referenceMonth = item.mes || item.referencia || item.referência || item.referenceMonth;
+      const referenceMonth = item.mes || item.referencia || item.referência || item.reference || item.referenceMonth || item.mesref;
       if (!referenceMonth) {
         jsonErrors.push(`Item ${index + 1}: Mês de referência é obrigatório`);
         return;
       }
 
-      const dueDate = item.vencimento || item.venc || item.dataVencimento || item.dueDate;
+      const dueDate = item.vencimento || item.venc || item.dataVencimento || item.dueDate || item.data || item.datavenc || item.due_date;
       if (!dueDate) {
         jsonErrors.push(`Item ${index + 1}: Data de vencimento é obrigatória`);
         return;
@@ -329,18 +886,18 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         return;
       }
 
-      const amount = parseFloat(item.valor || item.amount || 0);
+      const amount = parseFloat(item.valor || item.amount || item.preco || item.price || item.total || 0);
       if (isNaN(amount) || amount <= 0) {
         jsonErrors.push(`Item ${index + 1}: Valor inválido`);
         return;
       }
 
-      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || '') || defaultBoletoType;
+      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || item.boleto_type || '') || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
+        compareUnits(b.unit, resident.unit) && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
+        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${resident.unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         return;
       }
 
@@ -369,16 +926,20 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       boletos.push({
         id: boletoId,
         residentName: resident.name,
-        unit: unit,
+        unit: resident.unit,
         referenceMonth: referenceMonth,
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
         status: status,
         boletoType: boletoType,
-        barcode: item.codigo || item.cod || item.barcode,
-        description: item.descricao || item.description,
+        barcode: item.codigo || item.cod || item.barcode || item.linha_digitavel || item.codigo_barras || item.codigoBarras,
+        description: item.descricao || item.description || item.observacao || item.obs,
         pdfUrl: pdfUrl || undefined,
-        paidDate: item.pagamento || item.paidDate
+        // Campos de identificação para boletos importados
+        resident_id: resident.id,
+        unidade_id: resident.unit,
+        nosso_numero: item.nosso_numero || item.nossoNumero || item.nosso_numero_boleto || undefined,
+        paidDate: item.pagamento || item.paidDate || item.data_pagamento || item.paid_date
       });
     });
 
@@ -394,25 +955,50 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     const jsonErrors: string[] = [];
 
     data.forEach((item, index) => {
-      const unit = item.unidade || item.unit || item.apto;
-      if (!unit) {
-        jsonErrors.push(`Item ${index + 1}: Unidade é obrigatória`);
+      let unit = item.unidade || item.unit || item.apto || item.apartamento || item.apt ||
+                 item.numero || item.n || item.endereco;
+
+      // Se ainda não encontrou unidade, tentar extrair do nome
+      if (!unit && (item.nome || item.name || item.morador)) {
+        const nameField = item.nome || item.name || item.morador;
+        const unitMatch = nameField.match(/\b(\d{1,3}[a-zA-Z]?\d*\/?\d*)\b/);
+        if (unitMatch && unitMatch[1]) {
+          unit = unitMatch[1];
+        }
+      }
+
+      if (!unit || unit.toString().trim() === '') {
+        jsonErrors.push(`Item ${index + 1}: Unidade não encontrada. Campos aceitos: unidade, unit, apto, apartamento, apt, numero, n, endereco, ou unidade no campo nome (ex: "João Silva - Apt 101")`);
         return;
       }
 
-      const resident = getResidentByUnit(unit);
+      const resident = getResidentByUnitFlexible(unit.toString());
       if (!resident) {
-        jsonErrors.push(`Item ${index + 1}: Morador não encontrado para unidade ${unit}`);
+                // Busca moradores com unidades similares para sugerir
+        const similarUnits = allResidents.filter(r => {
+          const rUnit = r.unit.toLowerCase();
+          const searchUnit = unit.toString().toLowerCase();
+          return rUnit.includes(searchUnit) || searchUnit.includes(rUnit) ||
+                 rUnit.replace(/[^\d]/g, '') === searchUnit.replace(/[^\d]/g, '');
+        }).slice(0, 3);
+
+        let errorMsg = `Item ${index + 1}: Morador não encontrado para unidade "${unit}"`;
+        if (similarUnits.length > 0) {
+          errorMsg += `. Moradores similares encontrados: ${similarUnits.map(r => `"${r.name}" (${r.unit})`).join(', ')}`;
+        }
+        errorMsg += '. Verifique se a unidade está correta ou cadastre o morador.';
+
+        jsonErrors.push(errorMsg);
         return;
       }
 
-      const referenceMonth = item.mes || item.referencia || item.referência || item.referenceMonth;
+      const referenceMonth = item.mes || item.referencia || item.referência || item.reference || item.referenceMonth || item.mesref;
       if (!referenceMonth) {
         jsonErrors.push(`Item ${index + 1}: Mês de referência é obrigatório`);
         return;
       }
 
-      const dueDate = item.vencimento || item.venc || item.dataVencimento || item.dueDate;
+      const dueDate = item.vencimento || item.venc || item.dataVencimento || item.dueDate || item.data || item.datavenc || item.due_date;
       if (!dueDate) {
         jsonErrors.push(`Item ${index + 1}: Data de vencimento é obrigatória`);
         return;
@@ -434,18 +1020,18 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         return;
       }
 
-      const amount = parseFloat(item.valor || item.amount || 0);
+      const amount = parseFloat(item.valor || item.amount || item.preco || item.price || item.total || 0);
       if (isNaN(amount) || amount <= 0) {
         jsonErrors.push(`Item ${index + 1}: Valor inválido`);
         return;
       }
 
-      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || '') || defaultBoletoType;
+      const boletoType: BoletoType = normalizeBoletoType(item.tipo || item.type || item.boleto_type || '') || defaultBoletoType;
       const exists = existingBoletos.some(b => 
-        b.unit === unit && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
+        compareUnits(b.unit, resident.unit) && b.referenceMonth === referenceMonth && (b.boletoType || 'condominio') === boletoType
       );
       if (exists) {
-        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${unit}, referência ${referenceMonth} e tipo ${boletoType}`);
+        jsonErrors.push(`Item ${index + 1}: Boleto já existe para unidade ${resident.unit}, referência ${referenceMonth} e tipo ${boletoType}`);
         return;
       }
 
@@ -474,16 +1060,16 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
       boletos.push({
         id: boletoId,
         residentName: resident.name,
-        unit: unit,
+        unit: resident.unit,
         referenceMonth: referenceMonth,
         dueDate: parsedDate.toISOString().split('T')[0],
         amount: amount,
         status: status,
         boletoType: boletoType,
-        barcode: item.codigo || item.cod || item.barcode,
-        description: item.descricao || item.description,
+        barcode: item.codigo || item.cod || item.barcode || item.linha_digitavel || item.codigo_barras || item.codigoBarras,
+        description: item.descricao || item.description || item.observacao || item.obs,
         pdfUrl: pdfUrl || undefined,
-        paidDate: item.pagamento || item.paidDate
+        paidDate: item.pagamento || item.paidDate || item.data_pagamento || item.paid_date
       });
     });
 
@@ -589,8 +1175,25 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
     const template = `unidade,mes,vencimento,valor,tipo,status,codigo_barras,descricao
 102A,01/2025,10/01/2025,450.00,condominio,Pendente,34191090000012345678901234567890123456789012,Taxa de condomínio
 405B,01/2025,10/01/2025,120.50,agua,Pendente,,Conta de água
-301,02/2025,15/02/2025,85.00,luz,Pendente,,Conta de luz`;
-    
+301,02/2025,15/02/2025,85.00,luz,Pendente,,Conta de luz
+
+Headers aceitos:
+- Unidade: unidade, unit, apto, apartamento, apt
+- Mês: mes, referencia, referência, reference, mesref
+- Vencimento: vencimento, venc, data, duedate, due_date, datavenc
+- Valor: valor, amount, preco, price, total
+- Tipo: tipo, type, boleto_type (condominio/agua/luz)
+- Status: status (Pendente/Pago/Vencido)
+- Código: codigo, cod, barcode, linha_digitavel
+- Descrição: descricao, description, observacao, obs
+- Pagamento: pagamento, paid, data_pagamento, paid_date
+
+Exemplos de nomes de arquivos PDF que o sistema reconhece:
+- boleto_102A_01_2025_condominio.pdf (unidade: 102A, mês: 01/2025, tipo: condominio)
+- agua_405B_jan2025_R$120,50.pdf (tipo: agua, unidade: 405B, mês: 01/2025, valor: 120.50)
+- luz_301_15_02_2025.pdf (tipo: luz, unidade: 301, vencimento: 15/02/2025)
+- 101_janeiro_2025_condominio_R$450.pdf (unidade: 101, mês: 01/2025, valor: 450)`;
+
     const blob = new Blob([template], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -613,7 +1216,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-2xl font-black uppercase tracking-tighter">Importar Boletos</h3>
-            <p className="text-xs opacity-40 mt-1">Selecione qualquer arquivo. O sistema detecta automaticamente CSV ou JSON. O arquivo ficará disponível para designar cada PDF ao morador correspondente.</p>
+            <p className="text-xs opacity-40 mt-1">Importe dados via CSV/JSON ou faça upload direto de PDFs dos boletos. O sistema tentará extrair informações automaticamente dos nomes dos arquivos.</p>
           </div>
           <button
             onClick={handleClose}
@@ -623,7 +1226,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
           </button>
         </div>
 
-        {/* Tipo padrão: Condomínio, Água ou Luz (usado quando o arquivo não informa a coluna tipo) */}
+        {/* Tipo padrão: Taxa/Condomínio, Água ou Luz (usado quando o arquivo não informa a coluna tipo) */}
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <span className="text-xs font-black uppercase tracking-wider opacity-60">Tipo padrão dos boletos:</span>
           <select
@@ -632,11 +1235,39 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
             className="px-4 py-2 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold outline-none focus:border-[var(--text-primary)]/50"
             style={{ color: 'var(--text-primary)' }}
           >
-            <option value="condominio">Condomínio</option>
+            <option value="condominio">Taxa/Condomínio</option>
             <option value="agua">Água</option>
             <option value="luz">Luz</option>
           </select>
           <span className="text-[10px] opacity-50">(CSV/JSON pode ter coluna &quot;tipo&quot;: condominio, agua ou luz)</span>
+        </div>
+
+        {/* Informações sobre campos aceitos */}
+        <div className="mb-6 p-4 bg-[var(--glass-bg)] border border-[var(--border-color)] rounded-xl">
+          <h4 className="text-sm font-bold mb-2">📋 Campos Aceitos para Importação</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <span className="font-medium text-red-400">* Obrigatórios:</span>
+              <ul className="mt-1 space-y-1 opacity-80">
+                <li><strong>Unidade:</strong> unidade, unit, apto, apartamento, apt, numero, n, endereco</li>
+                <li><strong>Mês/Ref:</strong> mes, referencia, referência, mesref, competencia</li>
+                <li><strong>Vencimento:</strong> vencimento, venc, data, duedate, datavenc</li>
+                <li><strong>Valor:</strong> valor, amount, preco, price, vlr, total</li>
+              </ul>
+            </div>
+            <div>
+              <span className="font-medium text-blue-400">* Opcionais:</span>
+              <ul className="mt-1 space-y-1 opacity-80">
+                <li><strong>Tipo:</strong> tipo, type, boleto_type (condominio/agua/luz)</li>
+                <li><strong>Status:</strong> status (Pendente/Pago/Vencido)</li>
+                <li><strong>Código:</strong> codigo, cod, barcode, linha_digitavel</li>
+                <li><strong>Nome:</strong> nome, name, morador</li>
+              </ul>
+            </div>
+          </div>
+          <p className="text-xs opacity-60 mt-2">
+            💡 <strong>Dica:</strong> Se não encontrar a unidade nos campos específicos, o sistema tenta extraí-la automaticamente do campo nome (ex: "João Silva - Apt 101").
+          </p>
         </div>
 
         {/* Importar: selecionar arquivo CSV ou JSON */}
@@ -647,13 +1278,14 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
           >
             <Upload className="w-12 h-12 mx-auto mb-4 opacity-40" />
             <p className="text-sm font-bold mb-2">
-              {file ? file.name : 'Clique para selecionar arquivo (qualquer tipo)'}
+              {file ? file.name : 'Clique para selecionar arquivos'}
             </p>
-            <p className="text-xs opacity-40">CSV e JSON são detectados automaticamente. O arquivo ficará disponível para designar PDFs a cada morador.</p>
+            <p className="text-xs opacity-40">Aceita CSV, JSON, TXT ou múltiplos PDFs. Para PDFs, o sistema tentará extrair dados automaticamente do nome do arquivo (unidade, mês, valor, etc.).</p>
             <input
               ref={fileInputRef}
               type="file"
-              accept="*/*"
+              accept=".csv,.json,.txt,.pdf,text/csv,application/json,text/plain,application/pdf"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -668,7 +1300,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
               <p className="text-sm font-bold mb-2">
                 {pdfFiles.length > 0 ? `${pdfFiles.length} PDF(s) disponível(eis) para designar` : 'Selecionar PDFs dos boletos (opcional)'}
               </p>
-              <p className="text-xs opacity-40">Designe cada PDF ao morador na tabela abaixo.</p>
+              <p className="text-xs opacity-40">Selecione os PDFs dos boletos para vincular aos respectivos moradores após importar os dados.</p>
               <input
                 ref={pdfInputRef}
                 type="file"
@@ -743,7 +1375,7 @@ const ImportBoletosModal: React.FC<ImportBoletosModalProps> = ({
                       <td className="p-3">{boleto.residentName}</td>
                       <td className="p-3">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-white/10">
-                          {boleto.boletoType === 'agua' ? 'Água' : boleto.boletoType === 'luz' ? 'Luz' : 'Condomínio'}
+                          {boleto.boletoType === 'agua' ? 'Água' : boleto.boletoType === 'luz' ? 'Luz' : 'Taxa/Condomínio'}
                         </span>
                       </td>
                       <td className="p-3">{boleto.referenceMonth}</td>

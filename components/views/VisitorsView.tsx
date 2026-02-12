@@ -30,16 +30,20 @@ const VisitorsView: React.FC<VisitorsViewProps> = ({
 }) => {
   const isResident = role === 'MORADOR';
   const isDoorman = role === 'PORTEIRO';
-  const canCreateVisitor = isResident || isDoorman;
+  const canCreateVisitor = isDoorman; // Apenas portaria pode registrar visitantes
   const canCheckoutVisitor = isResident;
   const displayVisitors = visitorLogs.filter(v => {
-    const matchSearch = (v.visitorNames || '').toLowerCase().includes(visitorSearch.toLowerCase()) || 
+    const matchSearch = (v.visitorNames || '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
                         (v.residentName || '').toLowerCase().includes(visitorSearch.toLowerCase()) ||
                         (v.unit || '').toLowerCase().includes(visitorSearch.toLowerCase());
-    
-    if (visitorTab === 'active') return v.status === 'active' && matchSearch;
-    if (visitorTab === 'history') return v.status === 'completed' && matchSearch;
-    if (visitorTab === 'service') return v.status === 'active' && v.type === 'Prestador' && matchSearch;
+
+    // Para moradores, mostrar apenas visitantes registrados pela portaria
+    const isRegisteredByPortaria = v.registeredBy && v.registeredBy.trim() !== '';
+    const showToResident = !isResident || isRegisteredByPortaria;
+
+    if (visitorTab === 'active') return v.status === 'active' && matchSearch && showToResident;
+    if (visitorTab === 'history') return v.status === 'completed' && matchSearch && showToResident;
+    if (visitorTab === 'service') return v.status === 'active' && v.type === 'Prestador' && matchSearch && showToResident;
     return false;
   });
 
@@ -66,7 +70,7 @@ const VisitorsView: React.FC<VisitorsViewProps> = ({
               onClick={() => setIsVisitorModalOpen(true)}
               className="px-6 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" /> {isResident ? 'Registrar Visita' : 'Novo Acesso'}
+              <Plus className="w-4 h-4" /> Novo Acesso
             </button>
           )}
         </div>

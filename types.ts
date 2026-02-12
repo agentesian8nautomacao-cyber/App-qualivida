@@ -112,6 +112,7 @@ export interface VisitorLog {
   doc?: string;
   vehicle?: string;
   plate?: string;
+  registeredBy?: string; // ID do usuário que registrou o visitante
 }
 
 // --- CRM TYPES ---
@@ -158,6 +159,11 @@ export interface Boleto {
   pdfUrl?: string; // URL para download do PDF
   paidDate?: string; // Data de pagamento
   description?: string; // Descrição adicional
+
+  // Campos para identificação de boletos importados
+  resident_id?: string; // ID do morador no sistema (referência para residents.id)
+  unidade_id?: string; // ID da unidade no sistema
+  nosso_numero?: string; // Nosso número do boleto
 }
 
 export interface Notification {
@@ -170,4 +176,20 @@ export interface Notification {
   image_url?: string | null; // Imagem da encomenda quando registro via foto (opcional)
   read: boolean;
   created_at: string;
+}
+
+// --- FINANCIAL ENTRY TYPES ---
+
+export type FinancialEntryType = 'receita' | 'despesa';
+
+export interface FinancialEntry {
+  id: string;
+  type: FinancialEntryType;
+  category: string; // ex: "Manutenção", "Limpeza", "Multas", "Aluguéis", etc.
+  description: string;
+  amount: number;
+  date: string; // ISO string
+  createdBy: string; // Nome do usuário que criou
+  createdAt: string; // ISO string
+  referenceMonth?: string; // Para agrupamento mensal (opcional)
 }

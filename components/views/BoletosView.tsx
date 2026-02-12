@@ -1,11 +1,30 @@
 
-import React, { useState, useMemo } from 'react';
-import { Search, Download, Eye, CheckCircle2, Clock, AlertCircle, FileText, Calendar, DollarSign, Upload, Trash2, Droplets, Zap, Building2 } from 'lucide-react';
+import React, { useMemo, useState, useCallback } from 'react';
+import {
+  AlertCircle,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  ChevronLeft,
+  Clock,
+  Copy,
+  DollarSign,
+  Download,
+  Droplets,
+  Eye,
+  FileText,
+  Search,
+  Share2,
+  Trash2,
+  Upload,
+  Zap
+} from 'lucide-react';
 import { Boleto, BoletoType, Resident } from '../../types';
 import { formatUnit } from '../../utils/unitFormatter';
+import { useAppConfig } from '../../contexts/AppConfigContext';
 
 const BOLETO_TYPE_LABELS: Record<BoletoType, string> = {
-  condominio: 'Condomínio',
+  condominio: 'Taxa/Condomínio',
   agua: 'Água',
   luz: 'Luz'
 };
@@ -25,8 +44,11 @@ interface BoletosViewProps {
   onDownloadBoleto?: (boleto: Boleto) => void;
   onDeleteBoleto?: (boleto: Boleto) => void;
   onImportClick?: () => void;
+  onProcessPDFClick?: () => void;
   showImportButton?: boolean;
+  showProcessPDFButton?: boolean;
   isResidentView?: boolean;
+  isLoading?: boolean;
 }
 
 const BoletosView: React.FC<BoletosViewProps> = ({
@@ -38,45 +60,55 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   onDownloadBoleto,
   onDeleteBoleto,
   onImportClick,
+  onProcessPDFClick,
   showImportButton = true,
-  isResidentView = false
+  showProcessPDFButton = true,
+  isResidentView = false,
+  isLoading = false
 }) => {
+  const { config } = useAppConfig();
   const [statusFilter, setStatusFilter] = useState<'all' | 'Pendente' | 'Pago' | 'Vencido'>('all');
   const [typeFilter, setTypeFilter] = useState<BoletoType | 'all'>('all');
+  const [selectedBoleto, setSelectedBoleto] = useState<Boleto | null>(null);
 
-  const filteredBoletos = useMemo(() => {
-    let filtered = allBoletos;
+  // Funções de filtro otimizadas com useCallback
+  const filterByType = useCallback((boletos: Boleto[]) => {
+    if (typeFilter === 'all') return boletos;
+    return boletos.filter(b => (b.boletoType || 'condominio') === typeFilter);
+  }, [typeFilter]);
 
-    // Filtro por tipo (Condomínio, Água, Luz)
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter(b => (b.boletoType || 'condominio') === typeFilter);
-    }
+  const filterBySearch = useCallback((boletos: Boleto[]) => {
+    if (!boletoSearch) return boletos;
+    const searchLower = boletoSearch.toLowerCase();
+    return boletos.filter(b =>
+      b.residentName.toLowerCase().includes(searchLower) ||
+      b.unit.toLowerCase().includes(searchLower) ||
+      b.referenceMonth.toLowerCase().includes(searchLower)
+    );
+  }, [boletoSearch]);
 
-    // Filtro por busca
-    if (boletoSearch) {
-      const searchLower = boletoSearch.toLowerCase();
-      filtered = filtered.filter(b => 
-        b.residentName.toLowerCase().includes(searchLower) ||
-        b.unit.toLowerCase().includes(searchLower) ||
-        b.referenceMonth.toLowerCase().includes(searchLower)
-      );
-    }
+  const filterByStatus = useCallback((boletos: Boleto[]) => {
+    if (statusFilter === 'all') return boletos;
+    return boletos.filter(b => b.status === statusFilter);
+  }, [statusFilter]);
 
-    // Filtro por status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(b => b.status === statusFilter);
-    }
-
-    // Ordenar: Vencidos primeiro, depois Pendentes, depois Pagos
-    return filtered.sort((a, b) => {
+  const sortBoletos = useCallback((boletos: Boleto[]) => {
+    return [...boletos].sort((a, b) => {
       const statusOrder = { 'Vencido': 0, 'Pendente': 1, 'Pago': 2 };
       const statusDiff = statusOrder[a.status] - statusOrder[b.status];
       if (statusDiff !== 0) return statusDiff;
-      
-      // Se mesmo status, ordenar por data de vencimento (mais recente primeiro)
       return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
     });
-  }, [allBoletos, boletoSearch, statusFilter, typeFilter]);
+  }, []);
+
+  const filteredBoletos = useMemo(() => {
+    // Aplicar filtros em sequência
+    let filtered = allBoletos;
+    filtered = filterByType(filtered);
+    filtered = filterBySearch(filtered);
+    filtered = filterByStatus(filtered);
+    return sortBoletos(filtered);
+  }, [allBoletos, filterByType, filterBySearch, filterByStatus, sortBoletos]);
 
   const getStatusIcon = (status: Boleto['status']) => {
     switch (status) {
@@ -116,25 +148,148 @@ const BoletosView: React.FC<BoletosViewProps> = ({
     });
   };
 
-  const stats = useMemo(() => {
-    const filteredForType = typeFilter === 'all' ? allBoletos : allBoletos.filter(b => (b.boletoType || 'condominio') === typeFilter);
-    const total = filteredForType.length;
-    const pendentes = filteredForType.filter(b => b.status === 'Pendente').length;
-    const pagos = filteredForType.filter(b => b.status === 'Pago').length;
-    const vencidos = filteredForType.filter(b => b.status === 'Vencido').length;
-    const totalAmount = filteredForType.reduce((sum, b) => sum + b.amount, 0);
-    const pendenteAmount = filteredForType
+  const formatBarcodeDisplay = (barcode?: string) => {
+    const raw = (barcode || '').replace(/\s+/g, '').trim();
+    if (!raw) return '';
+    if (raw.length <= 24) return raw;
+    const mid = Math.ceil(raw.length / 2);
+    return `${raw.slice(0, mid)}\n${raw.slice(mid)}`;
+  };
+
+  type CompositionItem = { label: string; amount?: number };
+
+  const parseCompositionFromDescription = (description?: string): CompositionItem[] => {
+    const desc = (description || '').trim();
+    if (!desc) return [];
+    const parts = desc
+      .split(/\r?\n|;|\|/g)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    const items: CompositionItem[] = [];
+    for (const p of parts) {
+      const m1 = p.match(/^(.*?)(?:\s*[-–]\s*)R\$\s*([\d.,]+)\s*$/i);
+      const m2 = p.match(/^(.*?)(?:\s*[-–]\s*)([\d.,]+)\s*$/i);
+      const pick = m1 || m2;
+      if (pick) {
+        const label = (pick[1] || '').trim();
+        const amountRaw = (pick[2] || '').trim();
+        const amount = Number(amountRaw.replace(/\./g, '').replace(',', '.'));
+        if (label) {
+          items.push({ label, amount: Number.isFinite(amount) ? amount : undefined });
+          continue;
+        }
+      }
+      items.push({ label: p });
+    }
+    return items;
+  };
+
+  const buildComposition = (boleto: Boleto): CompositionItem[] => {
+    const baseLabel =
+      boleto.boletoType === 'agua'
+        ? `Conta de Água - ${boleto.referenceMonth}`
+        : boleto.boletoType === 'luz'
+          ? `Conta de Luz - ${boleto.referenceMonth}`
+          : `Taxa de Condomínio - ${boleto.referenceMonth}`;
+
+    const parsed = parseCompositionFromDescription(boleto.description);
+    const parsedWithAmount = parsed.filter((i) => typeof i.amount === 'number' && Number.isFinite(i.amount));
+    const sumParsed = parsedWithAmount.reduce((acc, it) => acc + (it.amount || 0), 0);
+
+    if (parsedWithAmount.length >= 1 && sumParsed > 0 && sumParsed <= boleto.amount) {
+      const remaining = boleto.amount - sumParsed;
+      if (remaining > 0.009) return [{ label: baseLabel, amount: remaining }, ...parsed];
+      return parsed;
+    }
+
+    const notes = parsed.filter((i) => i.label && !i.amount);
+    return [{ label: baseLabel, amount: boleto.amount }, ...notes];
+  };
+
+  const statusLabel = (status: Boleto['status']) => {
+    if (status === 'Pago') return 'Pago';
+    if (status === 'Vencido') return 'Vencido';
+    return 'Pendente';
+  };
+
+  const statusPillClasses = (status: Boleto['status']) => {
+    const base = 'px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider';
+    if (status === 'Pago') return `${base} bg-green-500/20 text-green-400 border border-green-500/30`;
+    if (status === 'Vencido') return `${base} bg-red-500/20 text-red-400 border border-red-500/30`;
+    return `${base} bg-amber-500/20 text-amber-400 border border-amber-500/30`;
+  };
+
+  const copyToClipboard = async (text: string) => {
+    const value = (text || '').trim();
+    if (!value) return false;
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleShareBoleto = async (boleto: Boleto) => {
+    const shareText = `Boleto - ${formatUnit(boleto.unit)} - ${boleto.referenceMonth}`;
+    const url = boleto.pdfUrl;
+    const barcode = (boleto.barcode || '').trim();
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Boleto',
+          text: barcode ? `${shareText}\nCódigo de barras: ${barcode}` : shareText,
+          url: url || undefined
+        });
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    await copyToClipboard(barcode || url || shareText);
+  };
+
+  const calculateStats = useCallback((boletos: Boleto[]) => {
+    const total = boletos.length;
+    const pendentes = boletos.filter(b => b.status === 'Pendente').length;
+    const pagos = boletos.filter(b => b.status === 'Pago').length;
+    const vencidos = boletos.filter(b => b.status === 'Vencido').length;
+    const totalAmount = boletos.reduce((sum, b) => sum + b.amount, 0);
+    const pendenteAmount = boletos
       .filter(b => b.status === 'Pendente' || b.status === 'Vencido')
       .reduce((sum, b) => sum + b.amount, 0);
 
     return { total, pendentes, pagos, vencidos, totalAmount, pendenteAmount };
-  }, [allBoletos, typeFilter]);
+  }, []);
+
+  const stats = useMemo(() => {
+    const filteredForType = typeFilter === 'all' ? allBoletos : allBoletos.filter(b => (b.boletoType || 'condominio') === typeFilter);
+    return calculateStats(filteredForType);
+  }, [allBoletos, typeFilter, calculateStats]);
 
   // Versão simplificada para moradores
   if (isResidentView) {
+    const toRefTime = (ref: string, fallbackDue?: string) => {
+      const raw = (ref || '').trim();
+      const mmYyyy = raw.match(/^(\d{2})\/(\d{4})$/);
+      if (mmYyyy) {
+        const month = Number(mmYyyy[1]);
+        const year = Number(mmYyyy[2]);
+        const d = new Date(year, Math.max(0, month - 1), 1);
+        return d.getTime();
+      }
+      const t = Date.parse(raw);
+      if (!Number.isNaN(t)) return t;
+      const dueT = fallbackDue ? Date.parse(fallbackDue) : NaN;
+      return Number.isNaN(dueT) ? 0 : dueT;
+    };
+
     const sortedBoletos = [...allBoletos].sort((a, b) => {
-      // Ordenar por data de referência (mais recente primeiro)
-      return new Date(b.referenceMonth).getTime() - new Date(a.referenceMonth).getTime();
+      // Ordenar por referência (mais recente primeiro); fallback para vencimento
+      return toRefTime(b.referenceMonth, b.dueDate) - toRefTime(a.referenceMonth, a.dueDate);
     });
 
     return (
@@ -157,55 +312,164 @@ const BoletosView: React.FC<BoletosViewProps> = ({
         ) : (
           <div className="grid gap-4">
             {sortedBoletos.map((boleto) => (
-              <div
+              <button
                 key={boleto.id}
-                className="premium-glass rounded-2xl p-6 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all group"
+                onClick={() => setSelectedBoleto(boleto)}
+                className="text-left premium-glass rounded-2xl p-6 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all group"
               >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <FileText className="w-5 h-5 opacity-40" />
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-lg font-black uppercase tracking-tight">
-                            Boleto - {boleto.referenceMonth}
-                          </h4>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-white/10 text-[var(--text-primary)]">
-                            {BOLETO_TYPE_LABELS[boleto.boletoType || 'condominio']}
-                          </span>
-                        </div>
-                        <p className="text-xs opacity-40 font-bold uppercase tracking-wider">
-                          {formatUnit(boleto.unit)}
-                        </p>
-                      </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Taxa de Condomínio</p>
+                      <p className="text-sm font-bold opacity-80">{BOLETO_TYPE_LABELS[boleto.boletoType || 'condominio']}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Status</p>
+                      <span className={statusPillClasses(boleto.status)}>
+                        {statusLabel(boleto.status)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Valor $</p>
+                      <p className="text-lg font-black">{formatCurrency(boleto.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Vencimento</p>
+                      <p className="text-sm font-bold opacity-80">{formatDate(boleto.dueDate)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Referência</p>
+                      <p className="text-sm font-bold opacity-80">{boleto.referenceMonth}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Unidade</p>
+                      <p className="text-sm font-bold opacity-80">{formatUnit(boleto.unit)}</p>
                     </div>
                   </div>
-                  <div className="flex gap-3">
-                    {boleto.pdfUrl && (
-                      <>
-                        {onViewBoleto && (
-                          <button
-                            onClick={() => onViewBoleto(boleto)}
-                            className="px-6 py-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50 flex items-center gap-2 text-xs font-black uppercase tracking-wider"
-                            style={{ color: 'var(--text-primary)' }}
-                          >
-                            <Eye className="w-4 h-4" /> Visualizar
-                          </button>
-                        )}
-                        {onDownloadBoleto && (
-                          <button
-                            onClick={() => onDownloadBoleto(boleto)}
-                            className="px-6 py-3 rounded-xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center gap-2 text-xs font-black uppercase tracking-wider"
-                          >
-                            <Download className="w-4 h-4" /> Download
-                          </button>
-                        )}
-                      </>
+                  <div className="text-center pt-2 border-t border-[var(--border-color)]">
+                    <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Toque para detalhes</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Detalhes do boleto (padrão das imagens) */}
+        {selectedBoleto && (
+          <div className="fixed inset-0 z-[200] bg-[var(--bg-color)]">
+            <div className="h-full overflow-y-auto custom-scrollbar">
+              <div className="max-w-xl mx-auto px-4 py-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <button
+                    onClick={() => setSelectedBoleto(null)}
+                    className="p-2 rounded-xl hover:bg-white/10 transition-all"
+                    aria-label="Voltar"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                  <h3 className="text-lg font-black uppercase tracking-tight">Detalhes do boleto</h3>
+                </div>
+
+                <div className="text-center mb-6">
+                  <p className="text-xs font-black uppercase tracking-widest opacity-50">
+                    {(config.condominiumName || 'Condomínio').toUpperCase()}
+                  </p>
+                  <p className="text-2xl font-black tracking-tight mt-1">
+                    {formatUnit(selectedBoleto.unit).replace('/', ' / ')}
+                  </p>
+                </div>
+
+                <div className="premium-glass rounded-2xl p-6 border border-[var(--border-color)]">
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <h4 className="text-sm font-black uppercase tracking-wider opacity-70">Composição de arrecadação</h4>
+                    <span className={statusPillClasses(selectedBoleto.status)}>{statusLabel(selectedBoleto.status)}</span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {buildComposition(selectedBoleto).map((item, idx) => (
+                      <div key={idx} className="flex items-start justify-between gap-4">
+                        <p className="text-sm font-bold opacity-80">{item.label}</p>
+                        <p className="text-sm font-black whitespace-nowrap">
+                          {typeof item.amount === 'number' && Number.isFinite(item.amount) ? formatCurrency(item.amount) : ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 pt-5 border-t border-[var(--border-color)] flex items-center justify-between">
+                    <p className="text-sm font-black uppercase tracking-wider opacity-70">Total a pagar</p>
+                    <p className="text-xl font-black">{formatCurrency(selectedBoleto.amount)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 text-sm font-bold opacity-70">
+                  Vencimento: <span className="font-black opacity-100">{formatDate(selectedBoleto.dueDate)}</span>
+                </div>
+
+                <div className="mt-4">
+                  <p className="text-sm font-bold opacity-70 mb-2">
+                    Para realizar o pagamento, utilize o código de barras abaixo:
+                  </p>
+
+                  <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] flex items-start justify-between gap-3">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-words opacity-80 leading-relaxed m-0">
+                      {formatBarcodeDisplay(selectedBoleto.barcode) || 'Código de barras não informado'}
+                    </pre>
+                    <button
+                      onClick={() => copyToClipboard(selectedBoleto.barcode || '')}
+                      className="p-2 rounded-xl hover:bg-white/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label="Copiar código de barras"
+                      disabled={!selectedBoleto.barcode}
+                      title={selectedBoleto.barcode ? 'Copiar' : 'Indisponível'}
+                    >
+                      <Copy className="w-5 h-5 opacity-70" />
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid gap-3">
+                    <button
+                      onClick={() => copyToClipboard(selectedBoleto.barcode || '')}
+                      disabled={!selectedBoleto.barcode}
+                      className="w-full px-6 py-4 rounded-2xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <Copy className="w-5 h-5" /> Copiar código de barras
+                    </button>
+
+                    <button
+                      onClick={() => handleShareBoleto(selectedBoleto)}
+                      className="w-full px-6 py-4 rounded-2xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider"
+                      style={{ color: 'var(--text-primary)' }}
+                    >
+                      <Share2 className="w-5 h-5" /> Compartilhar boleto
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (onDownloadBoleto) onDownloadBoleto(selectedBoleto);
+                        else if (selectedBoleto.pdfUrl) window.open(selectedBoleto.pdfUrl, '_blank');
+                      }}
+                      disabled={!selectedBoleto.pdfUrl}
+                      className="w-full px-6 py-4 rounded-2xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={selectedBoleto.pdfUrl ? 'Baixar PDF' : 'PDF não disponível'}
+                    >
+                      <Download className="w-5 h-5" /> Baixar boleto
+                    </button>
+
+                    {selectedBoleto.pdfUrl && onViewBoleto && (
+                      <button
+                        onClick={() => onViewBoleto(selectedBoleto)}
+                        className="w-full px-6 py-4 rounded-2xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        <Eye className="w-5 h-5" /> Visualizar boleto
+                      </button>
                     )}
                   </div>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
@@ -221,8 +485,8 @@ const BoletosView: React.FC<BoletosViewProps> = ({
           <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">Condomínio, Água e Luz</p>
         </div>
         {showImportButton && onImportClick && (
-          <button 
-            onClick={onImportClick} 
+          <button
+            onClick={onImportClick}
             className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
           >
             <Upload className="w-4 h-4" /> Importar Boletos
@@ -311,7 +575,41 @@ const BoletosView: React.FC<BoletosViewProps> = ({
       </div>
 
       {/* Lista de Boletos */}
-      {filteredBoletos.length === 0 ? (
+      {isLoading ? (
+        <div className="grid gap-4">
+          {/* Skeleton loader para boletos */}
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="premium-glass rounded-2xl p-6 border border-[var(--border-color)] animate-pulse">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-5 h-5 bg-white/10 rounded-full"></div>
+                    <div>
+                      <div className="h-4 bg-white/10 rounded w-32 mb-1"></div>
+                      <div className="h-3 bg-white/10 rounded w-24"></div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 mt-3">
+                    <div className="h-3 bg-white/10 rounded w-20"></div>
+                    <div className="h-3 bg-white/10 rounded w-24"></div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-3">
+                  <div className="text-right">
+                    <div className="h-6 bg-white/10 rounded w-20 mb-1"></div>
+                    <div className="h-4 bg-white/10 rounded w-16"></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-8 h-8 bg-white/10 rounded-xl"></div>
+                    <div className="w-8 h-8 bg-white/10 rounded-xl"></div>
+                    <div className="w-8 h-8 bg-white/10 rounded-xl"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filteredBoletos.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-4">
           <FileText className="w-16 h-16 opacity-20" />
           <h3 className="text-xl font-black uppercase tracking-tight opacity-40">
