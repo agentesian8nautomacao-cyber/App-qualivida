@@ -17,6 +17,7 @@ import {
   Share2,
   Trash2,
   Upload,
+  X,
   Zap
 } from 'lucide-react';
 import { Boleto, BoletoType, Resident } from '../../types';
@@ -324,45 +325,69 @@ const BoletosView: React.FC<BoletosViewProps> = ({
         ) : (
           <div className="grid gap-4">
             {sortedBoletos.map((boleto) => (
-              <button
+              <div
                 key={boleto.id}
-                onClick={() => setSelectedBoleto(boleto)}
-                className="text-left premium-glass rounded-2xl p-6 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all group"
+                className="relative premium-glass rounded-2xl p-6 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all group"
               >
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Taxa de Condomínio</p>
-                      <p className="text-sm font-bold opacity-80">{BOLETO_TYPE_LABELS[boleto.boletoType || 'condominio']}</p>
+                {/* Botão de exclusão no canto superior direito - apenas para administradores */}
+                {!isResidentView && onDeleteBoleto && (
+                  <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Tem certeza que deseja excluir o boleto de ${boleto.referenceMonth}?`)) {
+                      if (onDeleteBoleto) {
+                        onDeleteBoleto(boleto);
+                      } else {
+                        alert('Função de exclusão não disponível. Entre em contato com a administração.');
+                      }
+                    }
+                  }}
+                  className="absolute top-3 right-3 p-2 rounded-xl bg-red-500/20 border border-red-500/40 hover:bg-red-500/30 transition-all opacity-70 group-hover:opacity-100"
+                  title="Excluir Boleto"
+                >
+                  <X className="w-4 h-4 text-red-400" />
+                </button>
+                )}
+
+                <button
+                  onClick={() => setSelectedBoleto(boleto)}
+                  className="w-full text-left"
+                >
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Taxa de Condomínio</p>
+                        <p className="text-sm font-bold opacity-80">{BOLETO_TYPE_LABELS[boleto.boletoType || 'condominio']}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Status</p>
+                        <span className={statusPillClasses(boleto.status)}>
+                          {statusLabel(boleto.status)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Valor $</p>
+                        <p className="text-lg font-black">{formatCurrency(boleto.amount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Vencimento</p>
+                        <p className="text-sm font-bold opacity-80">{formatDate(boleto.dueDate)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Referência</p>
+                        <p className="text-sm font-bold opacity-80">{boleto.referenceMonth}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest opacity-50">Unidade</p>
+                        <p className="text-sm font-bold opacity-80">{formatUnit(boleto.unit)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Status</p>
-                      <span className={statusPillClasses(boleto.status)}>
-                        {statusLabel(boleto.status)}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Valor $</p>
-                      <p className="text-lg font-black">{formatCurrency(boleto.amount)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Vencimento</p>
-                      <p className="text-sm font-bold opacity-80">{formatDate(boleto.dueDate)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Referência</p>
-                      <p className="text-sm font-bold opacity-80">{boleto.referenceMonth}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-widest opacity-50">Unidade</p>
-                      <p className="text-sm font-bold opacity-80">{formatUnit(boleto.unit)}</p>
+                    <div className="text-center pt-2 border-t border-[var(--border-color)]">
+                      <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Toque para detalhes</p>
                     </div>
                   </div>
-                  <div className="text-center pt-2 border-t border-[var(--border-color)]">
-                    <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest">Toque para detalhes</p>
-                  </div>
-                </div>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -424,19 +449,10 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                     Para realizar o pagamento, utilize o código de barras abaixo:
                   </p>
 
-                  <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)] flex items-start justify-between gap-3">
+                  <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)]">
                     <pre className="text-xs font-mono whitespace-pre-wrap break-words opacity-80 leading-relaxed m-0">
                       {formatBarcodeDisplay(selectedBoleto.barcode) || 'Código de barras não informado'}
                     </pre>
-                    <button
-                      onClick={() => copyToClipboard(selectedBoleto.barcode || '')}
-                      className="p-2 rounded-xl hover:bg-white/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      aria-label="Copiar código de barras"
-                      disabled={!selectedBoleto.barcode}
-                      title={selectedBoleto.barcode ? 'Copiar' : 'Indisponível'}
-                    >
-                      <Copy className="w-5 h-5 opacity-70" />
-                    </button>
                   </div>
 
                   <div className="mt-4 grid gap-3">
@@ -477,32 +493,57 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                     </button>
 
                     <button
-                      onClick={() => {
-                        // Tentar download direto primeiro
-                        if (selectedBoleto.pdfUrl) {
+                      onClick={async () => {
+                        let pdfUrlToDownload = selectedBoleto.pdfUrl;
+
+                        // Se não há PDF ou é uma URL expirada, gerar um novo
+                        if (!pdfUrlToDownload || pdfUrlToDownload.startsWith('blob:')) {
                           try {
-                            // Se for uma URL blob, tentar download direto
-                            if (selectedBoleto.pdfUrl.startsWith('blob:')) {
-                              const link = document.createElement('a');
-                              link.href = selectedBoleto.pdfUrl;
-                              link.download = `boleto_${selectedBoleto.unit}_${selectedBoleto.referenceMonth}.pdf`;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
+                            console.log('[Download] Gerando PDF para download...');
+                            const { generateBoletoPDF } = await import('../../services/dataService');
+                            const newPdfUrl = await generateBoletoPDF(selectedBoleto);
+
+                            if (newPdfUrl) {
+                              pdfUrlToDownload = newPdfUrl;
+                              console.log('[Download] PDF gerado com sucesso');
                             } else {
-                              // Para URLs normais, abrir em nova aba
-                              window.open(selectedBoleto.pdfUrl, '_blank');
+                              alert('Não foi possível gerar o PDF do boleto. Entre em contato com a administração.');
+                              return;
                             }
                           } catch (error) {
-                            console.error('Erro ao baixar PDF:', error);
-                            // Fallback: tentar copiar informações do boleto
-                            const boletoInfo = `BOLETO\nUnidade: ${formatUnit(selectedBoleto.unit)}\nReferência: ${selectedBoleto.referenceMonth}\nValor: ${formatCurrency(selectedBoleto.amount)}\nVencimento: ${formatDate(selectedBoleto.dueDate)}\n${selectedBoleto.barcode ? `Código: ${selectedBoleto.barcode}` : ''}`;
-                            copyToClipboard(boletoInfo);
+                            console.error('Erro ao gerar PDF:', error);
+                            alert('Erro ao gerar PDF do boleto. Entre em contato com a administração.');
+                            return;
                           }
-                        } else {
-                          // Se não há PDF, copiar as informações do boleto para facilitar o pagamento
-                          const boletoInfo = `BOLETO\nUnidade: ${formatUnit(selectedBoleto.unit)}\nReferência: ${selectedBoleto.referenceMonth}\nValor: ${formatCurrency(selectedBoleto.amount)}\nVencimento: ${formatDate(selectedBoleto.dueDate)}\n${selectedBoleto.barcode ? `Código de Barras: ${selectedBoleto.barcode}` : 'Código de barras não disponível'}`;
-                          copyToClipboard(boletoInfo);
+                        }
+
+                        // Fazer o download
+                        try {
+                          if (pdfUrlToDownload.startsWith('blob:')) {
+                            // URL blob gerada agora
+                            const link = document.createElement('a');
+                            link.href = pdfUrlToDownload;
+                            link.download = `boleto_${selectedBoleto.unit}_${selectedBoleto.referenceMonth}.pdf`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+
+                            // Limpar URL após download
+                            setTimeout(() => {
+                              try {
+                                URL.revokeObjectURL(pdfUrlToDownload);
+                              } catch (e) {
+                                // Ignore
+                              }
+                            }, 1000);
+                          } else {
+                            // URL do Supabase Storage
+                            window.open(pdfUrlToDownload, '_blank');
+                          }
+                          console.log('[Download] PDF baixado com sucesso');
+                        } catch (error) {
+                          console.error('Erro ao baixar PDF:', error);
+                          alert('Erro ao fazer download do boleto. Tente novamente.');
                         }
 
                         // Chamar callback adicional se disponível
@@ -513,7 +554,7 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                       className="w-full px-6 py-4 rounded-2xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider"
                       title={selectedBoleto.pdfUrl ? 'Baixar PDF do boleto' : 'Copiar informações do boleto (PDF não disponível)'}
                     >
-                      <Download className="w-5 h-5" /> {selectedBoleto.pdfUrl ? 'BAIXAR BOLETO' : 'COPIAR INFORMAÇÕES'}
+                      <Download className="w-5 h-5" /> BAIXAR BOLETO
                     </button>
 
                     {selectedBoleto.pdfUrl && onViewBoleto && (

@@ -674,7 +674,60 @@ export const saveBoleto = async (boleto: Boleto): Promise<{ success: boolean; er
     };
 
     const result = await createData('boletos', payload);
-    return { success: result.success, id: result.id, error: result.error };
+    if (!result.success) return { success: false, error: result.error };
+
+    // Se não há PDF associado, gerar um automaticamente
+    let pdfUrl = payload.pdf_url;
+    const shouldGeneratePdf = !pdfUrl || pdfUrl === '' || pdfUrl === null || pdfUrl === undefined;
+    console.log('[saveBoleto] Verificando geração de PDF:', {
+      boletoId: result.id,
+      pdfUrl: pdfUrl,
+      shouldGeneratePdf,
+      isOnline: typeof navigator !== 'undefined' && navigator.onLine
+    });
+
+    if (shouldGeneratePdf && result.id && typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        console.log('[saveBoleto] Gerando PDF automático para boleto:', result.id);
+        const generatedPdfUrl = await generateBoletoPDF(boleto);
+        console.log('[saveBoleto] PDF gerado, URL:', generatedPdfUrl ? 'sucesso' : 'falhou');
+
+        if (generatedPdfUrl) {
+          // Tentar fazer upload do PDF gerado
+          const uploadResult = await uploadBoletoPdfFromUrl(generatedPdfUrl, result.id);
+          console.log('[saveBoleto] Upload result:', uploadResult);
+
+          if (uploadResult.success && uploadResult.url) {
+            pdfUrl = uploadResult.url;
+            console.log('[saveBoleto] PDF enviado para Supabase Storage');
+          } else {
+            // Se o upload falhar, usar o PDF gerado diretamente (blob URL)
+            console.warn('[saveBoleto] Upload falhou, usando PDF gerado localmente:', uploadResult.error);
+            pdfUrl = generatedPdfUrl;
+          }
+
+          // Atualizar o boleto com a URL do PDF (seja do Supabase ou blob local)
+          const updateResult = await updateData('boletos', {
+            id: result.id,
+            pdf_url: pdfUrl
+          });
+          console.log('[saveBoleto] PDF automático associado ao boleto:', pdfUrl, 'Update result:', updateResult);
+        } else {
+          console.warn('[saveBoleto] Falha na geração do PDF');
+        }
+      } catch (err) {
+        console.error('[saveBoleto] Erro ao gerar PDF automático:', err);
+        // Não falhar a operação por causa do PDF
+      }
+    } else {
+      console.log('[saveBoleto] PDF já existe ou condições não atendidas:', {
+        shouldGeneratePdf,
+        hasId: !!result.id,
+        isOnline: typeof navigator !== 'undefined' && navigator.onLine
+      });
+    }
+
+    return { success: true, id: result.id };
   } catch (err: any) {
     console.error('Erro ao salvar boleto:', err);
     return { success: false, error: err.message || 'Erro ao salvar boleto' };
@@ -762,6 +815,161 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
 
 /** Nome do bucket de storage para PDFs de boleto (deve existir no Supabase e estar público). */
 const BOLETOS_STORAGE_BUCKET = 'boletos';
+
+/**
+ * Gera um boleto virtual em formato PDF com as informações básicas
+ * @param boleto Dados do boleto
+ * @returns Promise com a URL do blob do PDF gerado
+ */
+export const generateBoletoPDF = async (boleto: Boleto): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Criar canvas para gerar PDF
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Não foi possível criar contexto de canvas'));
+        return;
+      }
+
+      // Definir dimensões A4 (aproximadamente 595x842 pixels em 72 DPI)
+      canvas.width = 595;
+      canvas.height = 842;
+
+      // Fundo branco
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Configurar fonte e cor
+      ctx.fillStyle = 'black';
+      ctx.font = 'bold 24px Arial';
+
+      let y = 50;
+
+      // Título
+      ctx.textAlign = 'center';
+      ctx.fillText('BOLETO DE PAGAMENTO', canvas.width / 2, y);
+      y += 30;
+
+      ctx.font = '16px Arial';
+      ctx.fillText('Condomínio Qualivida Residence', canvas.width / 2, y);
+      y += 20;
+
+      ctx.font = '12px Arial';
+      ctx.fillText(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, canvas.width / 2, y);
+      y += 40;
+
+      // Linha separadora
+      ctx.beginPath();
+      ctx.moveTo(50, y);
+      ctx.lineTo(canvas.width - 50, y);
+      ctx.stroke();
+      y += 30;
+
+      // Informações do boleto
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 14px Arial';
+
+      const info = [
+        `Unidade: ${boleto.unit}`,
+        `Morador: ${boleto.residentName}`,
+        `Referência: ${boleto.referenceMonth}`,
+        `Vencimento: ${new Date(boleto.dueDate).toLocaleDateString('pt-BR')}`,
+        `Valor: R$ ${boleto.amount.toFixed(2).replace('.', ',')}`,
+        `Tipo: ${boleto.boletoType === 'condominio' ? 'Condomínio' : boleto.boletoType === 'agua' ? 'Água' : 'Luz'}`,
+        `Status: ${boleto.status.toUpperCase()}`
+      ];
+
+      info.forEach(line => {
+        ctx.fillText(line, 50, y);
+        y += 25;
+      });
+
+      // Descrição se existir
+      if (boleto.description) {
+        y += 20;
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText('Descrição:', 50, y);
+        y += 20;
+        ctx.font = '12px Arial';
+
+        // Quebrar texto longo
+        const words = boleto.description.split(' ');
+        let line = '';
+        words.forEach(word => {
+          const testLine = line + word + ' ';
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > canvas.width - 100 && line !== '') {
+            ctx.fillText(line, 50, y);
+            line = word + ' ';
+            y += 15;
+          } else {
+            line = testLine;
+          }
+        });
+        ctx.fillText(line, 50, y);
+        y += 30;
+      }
+
+      // Código de barras se existir
+      if (boleto.barcode) {
+        y += 20;
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText('CÓDIGO DE BARRAS PARA PAGAMENTO:', 50, y);
+        y += 20;
+
+        ctx.font = '10px monospace';
+        // Quebrar código de barras em linhas
+        const barcodeLines = boleto.barcode.match(/.{1,40}/g) || [boleto.barcode];
+        barcodeLines.forEach(line => {
+          ctx.fillText(line, 50, y);
+          y += 15;
+        });
+      }
+
+      // Rodapé
+      y = canvas.height - 60;
+      ctx.font = '10px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Este documento foi gerado automaticamente pelo sistema de gestão condominial.', canvas.width / 2, y);
+      y += 15;
+      ctx.fillText('Para pagamentos, utilize o código de barras acima ou as informações bancárias do condomínio.', canvas.width / 2, y);
+
+      // Converter canvas para blob
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          resolve(url);
+        } else {
+          reject(new Error('Falha ao gerar blob do PDF'));
+        }
+      }, 'application/pdf');
+
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+/**
+ * Faz upload de um PDF gerado (via URL blob) para o Supabase Storage
+ * @param blobUrl URL do blob contendo o PDF
+ * @param boletoId ID do boleto para nomear o arquivo
+ * @returns Promise com resultado do upload
+ */
+const uploadBoletoPdfFromUrl = async (blobUrl: string, boletoId: string): Promise<{ success: boolean; url?: string; error?: string }> => {
+  try {
+    // Converter blob URL para File
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    const file = new File([blob], `boleto_${boletoId}.pdf`, { type: 'application/pdf' });
+
+    return await uploadBoletoPdf(file, boletoId);
+  } catch (error) {
+    console.error('Erro ao fazer upload do PDF gerado:', error);
+    return { success: false, error: 'Erro ao fazer upload do PDF gerado' };
+  }
+};
 
 /**
  * Faz upload do PDF do boleto para o Supabase Storage e retorna a URL pública.

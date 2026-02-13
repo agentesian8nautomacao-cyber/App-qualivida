@@ -55,7 +55,7 @@ import { getNotifications, deleteNotification, markNotificationAsRead, markAllNo
 import { supabase, isSupabasePlaceholder } from './services/supabase';
 
 // Modals
-import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal, type StaffFormData } from './components/modals/ActionModals';
+import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal, AdminUserModal, type StaffFormData } from './components/modals/ActionModals';
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
 import ImportBoletosModal from './components/modals/ImportBoletosModal';
@@ -618,7 +618,15 @@ const App: React.FC = () => {
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [staffSearch, setStaffSearch] = useState('');
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [isAdminUserModalOpen, setIsAdminUserModalOpen] = useState(false);
   const [staffFormData, setStaffFormData] = useState<StaffFormData>({});
+  const [adminUserData, setAdminUserData] = useState({
+    name: '',
+    email: '',
+    role: '',
+    password: '',
+    confirmPassword: ''
+  });
   const [isImportStaffModalOpen, setIsImportStaffModalOpen] = useState(false);
 
   const [noticeFilter, setNoticeFilter] = useState<'all' | 'urgent' | 'unread'>('all');
@@ -1934,6 +1942,72 @@ const App: React.FC = () => {
   };
 
 
+  const handleSaveAdminUser = async () => {
+    if (!adminUserData.name || !adminUserData.email || !adminUserData.role || !adminUserData.password) {
+      toast.error('Todos os campos são obrigatórios');
+      return;
+    }
+
+    if (adminUserData.password !== adminUserData.confirmPassword) {
+      toast.error('Senhas não coincidem');
+      return;
+    }
+
+    if (adminUserData.password.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    try {
+      // Criar usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: adminUserData.email,
+        password: adminUserData.password,
+        options: {
+          data: {
+            full_name: adminUserData.name,
+            role: adminUserData.role
+          }
+        }
+      });
+
+      if (authError) {
+        toast.error('Erro ao criar usuário: ' + authError.message);
+        return;
+      }
+
+      // Criar registro na tabela users
+      const { error: dbError } = await supabase
+        .from('users')
+        .insert({
+          auth_user_id: authData.user?.id,
+          username: adminUserData.email,
+          role: adminUserData.role,
+          name: adminUserData.name,
+          email: adminUserData.email,
+          is_active: true
+        });
+
+      if (dbError) {
+        console.error('Erro ao salvar na tabela users:', dbError);
+        toast.error('Usuário criado, mas houve erro no registro interno');
+      } else {
+        toast.success('Usuário administrativo criado com sucesso!');
+        setAdminUserData({
+          name: '',
+          email: '',
+          role: '',
+          password: '',
+          confirmPassword: ''
+        });
+        setIsAdminUserModalOpen(false);
+      }
+    } catch (error) {
+      console.error('Erro ao criar usuário administrativo:', error);
+      toast.error('Erro inesperado ao criar usuário');
+    }
+  };
+
   const handleSaveStaff = async () => {
     if (!staffFormData.name || !staffFormData.role) return;
     const isNewStaff = !staffFormData.id || String(staffFormData.id).startsWith('temp-');
@@ -2682,6 +2756,17 @@ const App: React.FC = () => {
           </div>
         );
       case 'financeiro':
+        if (role !== 'SINDICO') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+              <AlertCircle className="w-16 h-16 text-red-500 opacity-50" />
+              <h3 className="text-2xl font-black uppercase tracking-tight">Acesso Restrito</h3>
+              <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">
+                Esta página é de acesso exclusivo do Síndico para gestão financeira.
+              </p>
+            </div>
+          );
+        }
         return <FinanceiroView
           allBoletos={allBoletos}
           boletoSearch={boletoSearch}
@@ -2788,7 +2873,7 @@ const App: React.FC = () => {
             </div>
           );
         }
-        return <SettingsView />;
+        return <SettingsView onOpenAdminUserModal={() => setIsAdminUserModalOpen(true)} />;
       case 'occurrences': 
         if (role === 'MORADOR') {
           if (!currentResident) {
@@ -2932,6 +3017,14 @@ const App: React.FC = () => {
       <NewVisitorModal isOpen={isVisitorModalOpen} onClose={resetVisitorModal} step={newVisitorStep} setStep={setNewVisitorStep} data={newVisitorData} setData={setNewVisitorData} searchResident={searchResident} setSearchResident={setSearchResident} filteredResidents={filteredResidents} accessTypes={visitorAccessTypes} handleRemoveAccessType={handleRemoveAccessType} isAddingAccessType={isAddingAccessType} setIsAddingAccessType={setIsAddingAccessType} newAccessTypeInput={newAccessTypeInput} setNewAccessTypeInput={setNewAccessTypeInput} handleAddAccessType={handleAddAccessType} onConfirm={handleRegisterVisitor} />
       <NewPackageModal isOpen={isNewPackageModalOpen} onClose={resetPackageModal} step={packageStep} setStep={setPackageStep} searchResident={searchResident} setSearchResident={setSearchResident} selectedResident={selectedResident} setSelectedResident={setSelectedResident} filteredResidents={filteredResidents} allResidents={allResidents} residentsLoading={residentsLoading} residentsError={residentsError} onRetryResidents={() => fetchResidents(false)} packageSaving={packageSaving} pendingImage={pendingPackageImage} pendingQrData={pendingPackageQrData} packageType={packageType} setPackageType={setPackageType} packageCategories={packageCategories} isAddingPkgCategory={isAddingPkgCategory} setIsAddingPkgCategory={setIsAddingPkgCategory} newPkgCatName={newPkgCatName} setNewPkgCatName={setNewPkgCatName} handleAddPkgCategory={handleAddPkgCategory} numItems={numItems} packageItems={packageItems} handleAddItemRow={handleAddItemRow} handleRemoveItemRow={handleRemoveItemRow} updateItem={updateItem} packageMessage={packageMessage} setPackageMessage={setPackageMessage} onConfirm={handleRegisterPackageFinal} />
       <StaffFormModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)} data={staffFormData} setData={setStaffFormData} onSave={handleSaveStaff} />
+      <AdminUserModal
+        isOpen={isAdminUserModalOpen}
+        onClose={() => setIsAdminUserModalOpen(false)}
+        data={adminUserData}
+        setData={setAdminUserData}
+        onSave={handleSaveAdminUser}
+        currentRole={role}
+      />
 
       {showFirstLoginChangePasswordModal && currentAdminUser && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">

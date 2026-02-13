@@ -672,6 +672,112 @@ export const NewPackageModal = ({
 
 // --- MODAL STAFF (FUNCIONÁRIOS) ---
 export type StaffFormData = Partial<Staff> & { passwordPlain?: string; passwordConfirm?: string };
+// Modal para criar usuários administrativos (Porteiro/Síndico)
+export const AdminUserModal = ({ isOpen, onClose, data, setData, onSave, currentRole }: {
+  isOpen: boolean,
+  onClose: () => void,
+  data: { name: string, email: string, role: string, password: string, confirmPassword: string },
+  setData: (d: any) => void,
+  onSave: () => void,
+  currentRole: string
+}) => {
+  if (!isOpen) return null;
+
+  // Apenas síndico pode criar outros administradores
+  if (currentRole !== 'SINDICO') {
+    return null;
+  }
+
+  const isValid = data.name && data.email && data.role && data.password && data.password === data.confirmPassword && data.password.length >= 6;
+
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-4 sm:p-6 md:p-8 lg:p-10 animate-in duration-300">
+        <header className="flex justify-between items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div>
+            <h4 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Novo Usuário Administrativo</h4>
+            <p className="text-[9px] sm:text-[10px] font-bold opacity-30 uppercase tracking-[0.2em]">Criação de Administrador</p>
+          </div>
+          <button onClick={onClose} className="p-2 sm:p-3 bg-zinc-100 rounded-xl sm:rounded-2xl hover:bg-zinc-200 transition-all flex-shrink-0">
+            <X className="w-4 h-4 sm:w-5 sm:h-5"/>
+          </button>
+        </header>
+
+        <div className="space-y-4 sm:space-y-5">
+          <div>
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Nome Completo</label>
+            <input
+              type="text"
+              value={data.name}
+              onChange={e => setData({...data, name: e.target.value})}
+              className="w-full p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm outline-none border focus:border-black/10"
+              placeholder="Nome do administrador"
+            />
+          </div>
+
+          <div>
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">E-mail (Obrigatório)</label>
+            <input
+              type="email"
+              value={data.email}
+              onChange={e => setData({...data, email: e.target.value})}
+              className="w-full p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm outline-none border focus:border-black/10"
+              placeholder="email@exemplo.com"
+            />
+          </div>
+
+          <div>
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Função</label>
+            <select
+              value={data.role}
+              onChange={e => setData({...data, role: e.target.value})}
+              className="w-full p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm outline-none border focus:border-black/10"
+            >
+              <option value="">Selecione a função</option>
+              <option value="PORTEIRO">Porteiro</option>
+              <option value="SINDICO">Síndico</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Senha (Mínimo 6 caracteres)</label>
+            <input
+              type="password"
+              value={data.password}
+              onChange={e => setData({...data, password: e.target.value})}
+              className="w-full p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm outline-none border focus:border-black/10"
+              placeholder="Digite a senha"
+            />
+          </div>
+
+          <div>
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-40 ml-2 mb-1 block">Confirmar Senha</label>
+            <input
+              type="password"
+              value={data.confirmPassword}
+              onChange={e => setData({...data, confirmPassword: e.target.value})}
+              className="w-full p-3 sm:p-4 bg-zinc-50 rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm outline-none border focus:border-black/10"
+              placeholder="Confirme a senha"
+            />
+            {data.password && data.confirmPassword && data.password !== data.confirmPassword && (
+              <p className="text-red-500 text-xs mt-1">Senhas não coincidem</p>
+            )}
+          </div>
+
+          <button
+            onClick={onSave}
+            disabled={!isValid}
+            className="w-full py-3 sm:py-4 bg-black text-white rounded-xl sm:rounded-2xl font-black uppercase text-[9px] sm:text-[10px] shadow-xl mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Criar Usuário Administrativo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const StaffFormModal = ({ isOpen, onClose, data, setData, onSave }: { isOpen: boolean, onClose: () => void, data: StaffFormData, setData: (d: StaffFormData) => void, onSave: () => void }) => {
   if (!isOpen) return null;
   const isNewStaff = !data.id || String(data.id).startsWith('temp-');

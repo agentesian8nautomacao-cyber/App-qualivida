@@ -4,8 +4,13 @@ import CondominiumNameSection from '../settings/CondominiumNameSection';
 import CondominiumWhatsAppSection from '../settings/CondominiumWhatsAppSection';
 import WhatsAppTemplatesSection from '../settings/WhatsAppTemplatesSection';
 import ThemeSelectionSection from '../settings/ThemeSelectionSection';
+import AdminUsersSection from '../settings/AdminUsersSection';
 
-const SettingsView: React.FC = () => {
+interface SettingsViewProps {
+  onOpenAdminUserModal?: () => void;
+}
+
+const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdminUserModal }) => {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
       <header className="px-2">
@@ -24,6 +29,7 @@ const SettingsView: React.FC = () => {
         <CondominiumNameSection />
         <CondominiumWhatsAppSection />
         <ThemeSelectionSection />
+        <AdminUsersSection onOpenAdminUserModal={onOpenAdminUserModal} />
         <WhatsAppTemplatesSection />
       </div>
     </div>
