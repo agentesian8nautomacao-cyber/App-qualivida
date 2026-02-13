@@ -495,7 +495,7 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                     <button
                       onClick={async () => {
                         try {
-                          console.log('[Boleto] Iniciando geração/visualização...');
+                          console.log('[Boleto] Iniciando geração e download...');
 
                           // Sempre gerar um novo boleto em HTML para visualização
                           const { generateBoletoPDF } = await import('../../services/dataService');
@@ -526,7 +526,7 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                                       box-shadow: 0 4px 8px rgba(0,0,0,0.3);
                                     `;
                                     instructions.innerHTML = `
-                                      <strong style="color: #1976d2;">📄 Como salvar como PDF:</strong><br><br>
+                                      <strong style="color: #1976d2;">📄 Boleto pronto para download!</strong><br><br>
                                       <strong>Tecla de atalho:</strong><br>
                                       • Windows/Linux: <kbd>Ctrl</kbd> + <kbd>P</kbd><br>
                                       • Mac: <kbd>Cmd</kbd> + <kbd>P</kbd><br><br>
@@ -540,23 +540,23 @@ const BoletosView: React.FC<BoletosViewProps> = ({
 
                                     // Também mostrar um alert com instruções
                                     setTimeout(() => {
-                                      alert(`📄 Boleto aberto em nova janela!\n\nPara salvar como PDF:\n• Pressione Ctrl+P (ou Cmd+P no Mac)\n• Selecione "Salvar como PDF"\n• Clique em "Salvar"`);
+                                      alert(`📄 Boleto pronto para download!\n\nPara salvar como PDF:\n• Pressione Ctrl+P (ou Cmd+P no Mac)\n• Selecione "Salvar como PDF"\n• Clique em "Salvar"`);
                                     }, 500);
                                   } catch (e) {
                                     console.warn('Não foi possível adicionar instruções na janela');
                                   }
                                 }, 100);
                               };
-                              console.log('[Boleto] Boleto aberto com sucesso para visualização/impressão');
+                              console.log('[Boleto] Boleto gerado com sucesso para download');
                             } else {
-                              alert('❌ Não foi possível abrir a janela do boleto.\n\nVerifique se o bloqueador de pop-ups está desabilitado e tente novamente.');
+                              alert('❌ Não foi possível abrir o boleto para download.\n\nVerifique se o bloqueador de pop-ups está desabilitado e tente novamente.');
                             }
                           } else {
                             alert('❌ Não foi possível gerar o boleto.\n\nEntre em contato com a administração.');
                           }
                         } catch (error) {
-                          console.error('Erro ao gerar/visualizar boleto:', error);
-                          alert('❌ Erro ao abrir o boleto.\n\nEntre em contato com a administração.');
+                          console.error('Erro ao gerar boleto para download:', error);
+                          alert('❌ Erro ao baixar o boleto.\n\nEntre em contato com a administração.');
                         }
 
                         // Chamar callback adicional se disponível
@@ -565,9 +565,9 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                         }
                       }}
                       className="w-full px-6 py-4 rounded-2xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider"
-                      title="Abrir boleto para visualização e impressão em PDF"
+                      title="Baixar boleto em formato PDF"
                     >
-                      <Download className="w-5 h-5" /> VISUALIZAR BOLETO
+                      <Download className="w-5 h-5" /> BAIXAR BOLETO
                     </button>
 
                     {selectedBoleto.pdfUrl && onViewBoleto && (
