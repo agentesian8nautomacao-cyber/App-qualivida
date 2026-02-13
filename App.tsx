@@ -2147,7 +2147,6 @@ const App: React.FC = () => {
             onDownloadBoleto={async (boleto) => {
               await handleDownloadBoleto(boleto);
             }}
-            }}
             onViewPackage={setSelectedPackageForDetail}
             onViewNotice={(_notice) => {
               setActiveTab('notices');
