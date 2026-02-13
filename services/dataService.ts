@@ -676,56 +676,8 @@ export const saveBoleto = async (boleto: Boleto): Promise<{ success: boolean; er
     const result = await createData('boletos', payload);
     if (!result.success) return { success: false, error: result.error };
 
-    // Se não há PDF associado, gerar um automaticamente
-    let pdfUrl = payload.pdf_url;
-    const shouldGeneratePdf = !pdfUrl || pdfUrl === '' || pdfUrl === null || pdfUrl === undefined;
-    console.log('[saveBoleto] Verificando geração de PDF:', {
-      boletoId: result.id,
-      pdfUrl: pdfUrl,
-      shouldGeneratePdf,
-      isOnline: typeof navigator !== 'undefined' && navigator.onLine
-    });
-
-    if (shouldGeneratePdf && result.id && typeof navigator !== 'undefined' && navigator.onLine) {
-      try {
-        console.log('[saveBoleto] Gerando PDF automático para boleto:', result.id);
-        const generatedPdfUrl = await generateBoletoPDF(boleto);
-        console.log('[saveBoleto] PDF gerado, URL:', generatedPdfUrl ? 'sucesso' : 'falhou');
-
-        if (generatedPdfUrl) {
-          // Tentar fazer upload do PDF gerado
-          const uploadResult = await uploadBoletoPdfFromUrl(generatedPdfUrl, result.id);
-          console.log('[saveBoleto] Upload result:', uploadResult);
-
-          if (uploadResult.success && uploadResult.url) {
-            pdfUrl = uploadResult.url;
-            console.log('[saveBoleto] PDF enviado para Supabase Storage');
-          } else {
-            // Se o upload falhar, usar o PDF gerado diretamente (blob URL)
-            console.warn('[saveBoleto] Upload falhou, usando PDF gerado localmente:', uploadResult.error);
-            pdfUrl = generatedPdfUrl;
-          }
-
-          // Atualizar o boleto com a URL do PDF (seja do Supabase ou blob local)
-          const updateResult = await updateData('boletos', {
-            id: result.id,
-            pdf_url: pdfUrl
-          });
-          console.log('[saveBoleto] PDF automático associado ao boleto:', pdfUrl, 'Update result:', updateResult);
-        } else {
-          console.warn('[saveBoleto] Falha na geração do PDF');
-        }
-      } catch (err) {
-        console.error('[saveBoleto] Erro ao gerar PDF automático:', err);
-        // Não falhar a operação por causa do PDF
-      }
-    } else {
-      console.log('[saveBoleto] PDF já existe ou condições não atendidas:', {
-        shouldGeneratePdf,
-        hasId: !!result.id,
-        isOnline: typeof navigator !== 'undefined' && navigator.onLine
-      });
-    }
+    // Os PDFs são gerados on-demand quando o usuário solicita visualização
+    // Não precisamos gerar PDFs automaticamente no momento do salvamento
 
     return { success: true, id: result.id };
   } catch (err: any) {
@@ -817,133 +769,236 @@ export const getBoletos = async (): Promise<GetBoletosResult> => {
 const BOLETOS_STORAGE_BUCKET = 'boletos';
 
 /**
- * Gera um boleto virtual em formato PDF com as informações básicas
+ * Gera um boleto virtual em formato HTML que pode ser impresso como PDF
  * @param boleto Dados do boleto
- * @returns Promise com a URL do blob do PDF gerado
+ * @returns Promise com a URL do blob do HTML gerado
  */
 export const generateBoletoPDF = async (boleto: Boleto): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
-      // Criar canvas para gerar PDF
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Não foi possível criar contexto de canvas'));
-        return;
-      }
+      // Gerar HTML estruturado para impressão como PDF
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Boleto - ${boleto.unit} - ${boleto.referenceMonth}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 1cm;
+            }
 
-      // Definir dimensões A4 (aproximadamente 595x842 pixels em 72 DPI)
-      canvas.width = 595;
-      canvas.height = 842;
+            * {
+              box-sizing: border-box;
+            }
 
-      // Fundo branco
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+            body {
+              font-family: 'Courier New', monospace;
+              font-size: 12px;
+              line-height: 1.4;
+              color: #000;
+              background: #fff;
+              margin: 0;
+              padding: 20px;
+            }
 
-      // Configurar fonte e cor
-      ctx.fillStyle = 'black';
-      ctx.font = 'bold 24px Arial';
+            .boleto-container {
+              max-width: 800px;
+              margin: 0 auto;
+              border: 2px solid #000;
+              padding: 20px;
+            }
 
-      let y = 50;
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
+            }
 
-      // Título
-      ctx.textAlign = 'center';
-      ctx.fillText('BOLETO DE PAGAMENTO', canvas.width / 2, y);
-      y += 30;
+            .header h1 {
+              font-size: 20px;
+              font-weight: bold;
+              margin: 0 0 10px 0;
+              text-transform: uppercase;
+            }
 
-      ctx.font = '16px Arial';
-      ctx.fillText('Condomínio Qualivida Residence', canvas.width / 2, y);
-      y += 20;
+            .header .subtitle {
+              font-size: 14px;
+              margin: 0;
+            }
 
-      ctx.font = '12px Arial';
-      ctx.fillText(`Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}`, canvas.width / 2, y);
-      y += 40;
+            .header .date {
+              font-size: 10px;
+              margin: 5px 0 0 0;
+            }
 
-      // Linha separadora
-      ctx.beginPath();
-      ctx.moveTo(50, y);
-      ctx.lineTo(canvas.width - 50, y);
-      ctx.stroke();
-      y += 30;
+            .info-section {
+              display: table;
+              width: 100%;
+              margin-bottom: 20px;
+              border-collapse: collapse;
+            }
 
-      // Informações do boleto
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 14px Arial';
+            .info-row {
+              display: table-row;
+            }
 
-      const info = [
-        `Unidade: ${boleto.unit}`,
-        `Morador: ${boleto.residentName}`,
-        `Referência: ${boleto.referenceMonth}`,
-        `Vencimento: ${new Date(boleto.dueDate).toLocaleDateString('pt-BR')}`,
-        `Valor: R$ ${boleto.amount.toFixed(2).replace('.', ',')}`,
-        `Tipo: ${boleto.boletoType === 'condominio' ? 'Condomínio' : boleto.boletoType === 'agua' ? 'Água' : 'Luz'}`,
-        `Status: ${boleto.status.toUpperCase()}`
-      ];
+            .info-cell {
+              display: table-cell;
+              padding: 8px 12px;
+              border: 1px solid #ccc;
+              vertical-align: top;
+            }
 
-      info.forEach(line => {
-        ctx.fillText(line, 50, y);
-        y += 25;
-      });
+            .info-label {
+              font-weight: bold;
+              font-size: 10px;
+              text-transform: uppercase;
+              margin-bottom: 3px;
+              display: block;
+            }
 
-      // Descrição se existir
-      if (boleto.description) {
-        y += 20;
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText('Descrição:', 50, y);
-        y += 20;
-        ctx.font = '12px Arial';
+            .info-value {
+              font-size: 12px;
+            }
 
-        // Quebrar texto longo
-        const words = boleto.description.split(' ');
-        let line = '';
-        words.forEach(word => {
-          const testLine = line + word + ' ';
-          const metrics = ctx.measureText(testLine);
-          if (metrics.width > canvas.width - 100 && line !== '') {
-            ctx.fillText(line, 50, y);
-            line = word + ' ';
-            y += 15;
-          } else {
-            line = testLine;
-          }
-        });
-        ctx.fillText(line, 50, y);
-        y += 30;
-      }
+            .status-section {
+              text-align: center;
+              margin: 20px 0;
+              padding: 10px;
+              border: 2px solid #000;
+              background: #f9f9f9;
+            }
 
-      // Código de barras se existir
-      if (boleto.barcode) {
-        y += 20;
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText('CÓDIGO DE BARRAS PARA PAGAMENTO:', 50, y);
-        y += 20;
+            .status-text {
+              font-size: 14px;
+              font-weight: bold;
+              text-transform: uppercase;
+            }
 
-        ctx.font = '10px monospace';
-        // Quebrar código de barras em linhas
-        const barcodeLines = boleto.barcode.match(/.{1,40}/g) || [boleto.barcode];
-        barcodeLines.forEach(line => {
-          ctx.fillText(line, 50, y);
-          y += 15;
-        });
-      }
+            .barcode-section {
+              margin: 20px 0;
+              padding: 15px;
+              border: 2px solid #000;
+              background: #f9f9f9;
+              text-align: center;
+            }
 
-      // Rodapé
-      y = canvas.height - 60;
-      ctx.font = '10px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('Este documento foi gerado automaticamente pelo sistema de gestão condominial.', canvas.width / 2, y);
-      y += 15;
-      ctx.fillText('Para pagamentos, utilize o código de barras acima ou as informações bancárias do condomínio.', canvas.width / 2, y);
+            .barcode-label {
+              font-weight: bold;
+              font-size: 12px;
+              margin-bottom: 10px;
+              text-transform: uppercase;
+            }
 
-      // Converter canvas para blob
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          resolve(url);
-        } else {
-          reject(new Error('Falha ao gerar blob do PDF'));
-        }
-      }, 'application/pdf');
+            .barcode {
+              font-family: 'Courier New', monospace;
+              font-size: 11px;
+              letter-spacing: 0.5px;
+              word-break: break-all;
+              line-height: 1.3;
+              font-weight: bold;
+            }
+
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              font-size: 9px;
+              color: #666;
+              border-top: 1px solid #ccc;
+              padding-top: 15px;
+            }
+
+            .footer p {
+              margin: 3px 0;
+            }
+
+            @media print {
+              body {
+                background: white !important;
+              }
+
+              .boleto-container {
+                border: 2px solid #000 !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="boleto-container">
+            <div class="header">
+              <h1>Boleto de Pagamento</h1>
+              <p class="subtitle">Condomínio Qualivida Residence</p>
+              <p class="date">Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}</p>
+            </div>
+
+            <div class="info-section">
+              <div class="info-row">
+                <div class="info-cell">
+                  <span class="info-label">Unidade:</span>
+                  <span class="info-value">${boleto.unit}</span>
+                </div>
+                <div class="info-cell">
+                  <span class="info-label">Morador:</span>
+                  <span class="info-value">${boleto.residentName}</span>
+                </div>
+                <div class="info-cell">
+                  <span class="info-label">Referência:</span>
+                  <span class="info-value">${boleto.referenceMonth}</span>
+                </div>
+              </div>
+              <div class="info-row">
+                <div class="info-cell">
+                  <span class="info-label">Vencimento:</span>
+                  <span class="info-value">${new Date(boleto.dueDate).toLocaleDateString('pt-BR')}</span>
+                </div>
+                <div class="info-cell">
+                  <span class="info-label">Valor:</span>
+                  <span class="info-value">R$ ${boleto.amount.toFixed(2).replace('.', ',')}</span>
+                </div>
+                <div class="info-cell">
+                  <span class="info-label">Tipo:</span>
+                  <span class="info-value">${boleto.boletoType === 'condominio' ? 'Condomínio' : boleto.boletoType === 'agua' ? 'Água' : 'Luz'}</span>
+                </div>
+              </div>
+              ${boleto.description ? `
+              <div class="info-row">
+                <div class="info-cell" style="width: 100%;">
+                  <span class="info-label">Descrição:</span>
+                  <span class="info-value">${boleto.description}</span>
+                </div>
+              </div>
+              ` : ''}
+            </div>
+
+            <div class="status-section">
+              <span class="status-text">Status: ${boleto.status.toUpperCase()}</span>
+            </div>
+
+            ${boleto.barcode ? `
+            <div class="barcode-section">
+              <div class="barcode-label">Código de Barras para Pagamento:</div>
+              <div class="barcode">${boleto.barcode}</div>
+            </div>
+            ` : ''}
+
+            <div class="footer">
+              <p>Este documento foi gerado automaticamente pelo sistema de gestão condominial.</p>
+              <p>Para pagamentos, utilize o código de barras acima ou as informações bancárias do condomínio.</p>
+              <p>Documento gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Criar blob HTML
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      resolve(url);
 
     } catch (error) {
       reject(error);

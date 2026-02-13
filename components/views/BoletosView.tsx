@@ -494,56 +494,69 @@ const BoletosView: React.FC<BoletosViewProps> = ({
 
                     <button
                       onClick={async () => {
-                        let pdfUrlToDownload = selectedBoleto.pdfUrl;
-
-                        // Se não há PDF ou é uma URL expirada, gerar um novo
-                        if (!pdfUrlToDownload || pdfUrlToDownload.startsWith('blob:')) {
-                          try {
-                            console.log('[Download] Gerando PDF para download...');
-                            const { generateBoletoPDF } = await import('../../services/dataService');
-                            const newPdfUrl = await generateBoletoPDF(selectedBoleto);
-
-                            if (newPdfUrl) {
-                              pdfUrlToDownload = newPdfUrl;
-                              console.log('[Download] PDF gerado com sucesso');
-                            } else {
-                              alert('Não foi possível gerar o PDF do boleto. Entre em contato com a administração.');
-                              return;
-                            }
-                          } catch (error) {
-                            console.error('Erro ao gerar PDF:', error);
-                            alert('Erro ao gerar PDF do boleto. Entre em contato com a administração.');
-                            return;
-                          }
-                        }
-
-                        // Fazer o download
                         try {
-                          if (pdfUrlToDownload.startsWith('blob:')) {
-                            // URL blob gerada agora
-                            const link = document.createElement('a');
-                            link.href = pdfUrlToDownload;
-                            link.download = `boleto_${selectedBoleto.unit}_${selectedBoleto.referenceMonth}.pdf`;
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
+                          console.log('[Boleto] Iniciando geração/visualização...');
 
-                            // Limpar URL após download
-                            setTimeout(() => {
-                              try {
-                                URL.revokeObjectURL(pdfUrlToDownload);
-                              } catch (e) {
-                                // Ignore
-                              }
-                            }, 1000);
+                          // Sempre gerar um novo boleto em HTML para visualização
+                          const { generateBoletoPDF } = await import('../../services/dataService');
+                          const boletoUrl = await generateBoletoPDF(selectedBoleto);
+
+                          if (boletoUrl) {
+                            // Abrir em nova janela com instruções para salvar como PDF
+                            const printWindow = window.open(boletoUrl, '_blank', 'width=900,height=700,scrollbars=yes,resizable=yes');
+
+                            if (printWindow) {
+                              printWindow.onload = () => {
+                                // Adicionar instruções na página
+                                setTimeout(() => {
+                                  try {
+                                    const instructions = printWindow.document.createElement('div');
+                                    instructions.style.cssText = `
+                                      position: fixed;
+                                      top: 10px;
+                                      right: 10px;
+                                      background: #e3f2fd;
+                                      border: 2px solid #2196f3;
+                                      border-radius: 8px;
+                                      padding: 15px;
+                                      font-family: Arial, sans-serif;
+                                      font-size: 14px;
+                                      z-index: 10000;
+                                      max-width: 300px;
+                                      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                                    `;
+                                    instructions.innerHTML = `
+                                      <strong style="color: #1976d2;">📄 Como salvar como PDF:</strong><br><br>
+                                      <strong>Tecla de atalho:</strong><br>
+                                      • Windows/Linux: <kbd>Ctrl</kbd> + <kbd>P</kbd><br>
+                                      • Mac: <kbd>Cmd</kbd> + <kbd>P</kbd><br><br>
+                                      <strong>Passos:</strong><br>
+                                      1. Selecione "Salvar como PDF"<br>
+                                      2. Clique em "Salvar"<br>
+                                      3. Escolha onde salvar<br><br>
+                                      <em style="font-size: 12px; color: #666;">Feche esta janela quando terminar.</em>
+                                    `;
+                                    printWindow.document.body.appendChild(instructions);
+
+                                    // Também mostrar um alert com instruções
+                                    setTimeout(() => {
+                                      alert(`📄 Boleto aberto em nova janela!\n\nPara salvar como PDF:\n• Pressione Ctrl+P (ou Cmd+P no Mac)\n• Selecione "Salvar como PDF"\n• Clique em "Salvar"`);
+                                    }, 500);
+                                  } catch (e) {
+                                    console.warn('Não foi possível adicionar instruções na janela');
+                                  }
+                                }, 100);
+                              };
+                              console.log('[Boleto] Boleto aberto com sucesso para visualização/impressão');
+                            } else {
+                              alert('❌ Não foi possível abrir a janela do boleto.\n\nVerifique se o bloqueador de pop-ups está desabilitado e tente novamente.');
+                            }
                           } else {
-                            // URL do Supabase Storage
-                            window.open(pdfUrlToDownload, '_blank');
+                            alert('❌ Não foi possível gerar o boleto.\n\nEntre em contato com a administração.');
                           }
-                          console.log('[Download] PDF baixado com sucesso');
                         } catch (error) {
-                          console.error('Erro ao baixar PDF:', error);
-                          alert('Erro ao fazer download do boleto. Tente novamente.');
+                          console.error('Erro ao gerar/visualizar boleto:', error);
+                          alert('❌ Erro ao abrir o boleto.\n\nEntre em contato com a administração.');
                         }
 
                         // Chamar callback adicional se disponível
@@ -552,9 +565,9 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                         }
                       }}
                       className="w-full px-6 py-4 rounded-2xl bg-[var(--text-primary)] text-[var(--bg-color)] border border-[var(--text-primary)] hover:opacity-90 transition-all flex items-center justify-center gap-3 text-sm font-black uppercase tracking-wider"
-                      title={selectedBoleto.pdfUrl ? 'Baixar PDF do boleto' : 'Copiar informações do boleto (PDF não disponível)'}
+                      title="Abrir boleto para visualização e impressão em PDF"
                     >
-                      <Download className="w-5 h-5" /> BAIXAR BOLETO
+                      <Download className="w-5 h-5" /> VISUALIZAR BOLETO
                     </button>
 
                     {selectedBoleto.pdfUrl && onViewBoleto && (
