@@ -828,6 +828,61 @@ export const uploadBoletoOriginalPdf = async (
 };
 
 /**
+ * Adiciona PDF original a um boleto existente que não tem PDF
+ * @param boletoId ID do boleto
+ * @param pdfFile Arquivo PDF a ser anexado
+ * @returns Promise com resultado da operação
+ */
+export const addBoletoOriginalPdf = async (
+  boletoId: string,
+  pdfFile: File
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Verificar se o boleto existe e não tem PDF
+    const { data: boleto, error: fetchError } = await supabase
+      .from('boletos')
+      .select('id, pdf_original_path, pdf_url')
+      .eq('id', boletoId)
+      .single();
+
+    if (fetchError || !boleto) {
+      return { success: false, error: 'Boleto não encontrado' };
+    }
+
+    if (boleto.pdf_original_path) {
+      return { success: false, error: 'Este boleto já possui PDF original' };
+    }
+
+    // Upload do PDF original
+    const uploadResult = await uploadBoletoOriginalPdf(pdfFile, boletoId);
+    if (!uploadResult.path) {
+      return { success: false, error: uploadResult.error || 'Falha no upload do PDF' };
+    }
+
+    // Atualizar o boleto com o caminho do PDF
+    const { error: updateError } = await supabase
+      .from('boletos')
+      .update({
+        pdf_original_path: uploadResult.path,
+        checksum_pdf: uploadResult.checksum,
+        pdf_url: null // Limpar pdf_url antigo se existir
+      })
+      .eq('id', boletoId);
+
+    if (updateError) {
+      console.error('[addBoletoOriginalPdf] Erro ao atualizar boleto:', updateError);
+      return { success: false, error: 'Erro ao atualizar boleto com PDF' };
+    }
+
+    console.log(`[addBoletoOriginalPdf] PDF adicionado com sucesso ao boleto ${boletoId}`);
+    return { success: true };
+  } catch (err: any) {
+    console.error('[addBoletoOriginalPdf] Erro:', err);
+    return { success: false, error: err?.message || 'Erro ao adicionar PDF' };
+  }
+};
+
+/**
  * Faz download do PDF original do boleto e verifica integridade
  * @param pdfOriginalPath Caminho do PDF original no storage
  * @param expectedChecksum Hash SHA-256 esperado para verificação

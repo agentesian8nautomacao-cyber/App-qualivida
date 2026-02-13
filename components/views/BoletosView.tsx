@@ -496,43 +496,68 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                     <button
                       onClick={async () => {
                         try {
-                          console.log('[Boleto] Iniciando download do PDF original...');
+                          console.log('[Boleto] Iniciando download...');
 
-                          // Verificar se temos o caminho do PDF original
-                          if (!selectedBoleto.pdf_original_path) {
-                            alert('❌ Este boleto não possui PDF original disponível.\n\nEntre em contato com a administração.');
+                          // Estratégia de download por prioridade:
+                          // 1. PDF Original (novo sistema) - com verificação de integridade
+                          // 2. PDF URL (sistema antigo) - download direto
+                          // 3. Fallback: informar que não há PDF disponível
+
+                          let downloadUrl = '';
+                          let fileName = `boleto_${selectedBoleto.referenceMonth.replace('/', '_')}_${formatUnit(selectedBoleto.unit).replace('/', '_')}.pdf`;
+                          let pdfSource = '';
+
+                          // 1. Tentar PDF Original (sistema novo)
+                          if (selectedBoleto.pdf_original_path) {
+                            console.log('[Boleto] Usando PDF original (sistema novo)');
+                            pdfSource = 'PDF original (importado recentemente)';
+                            const result = await downloadBoletoOriginalPdf(
+                              selectedBoleto.pdf_original_path,
+                              selectedBoleto.checksum_pdf
+                            );
+
+                            if (result.url) {
+                              downloadUrl = result.url;
+                            } else {
+                              alert(`❌ Erro ao baixar o boleto: ${result.error}\n\nEntre em contato com a administração.`);
+                              return;
+                            }
+                          }
+                          // 2. Tentar PDF URL (sistema antigo)
+                          else if (selectedBoleto.pdfUrl) {
+                            console.log('[Boleto] Usando PDF URL (sistema antigo)');
+                            pdfSource = 'PDF do sistema antigo';
+                            downloadUrl = selectedBoleto.pdfUrl;
+                          }
+                          // 3. Nenhum PDF disponível
+                          else {
+                            const detalhesBoleto = `📋 BOLETO SEM PDF DISPONÍVEL\n\n• Unidade: ${formatUnit(selectedBoleto.unit)}\n• Morador: ${selectedBoleto.residentName}\n• Referência: ${selectedBoleto.referenceMonth}\n• Valor: ${formatCurrency(selectedBoleto.amount)}\n• Status: ${selectedBoleto.status}\n• Vencimento: ${formatDate(selectedBoleto.dueDate)}`;
+
+                            const mensagemOrientacao = `\n\n❌ Este boleto foi importado sem anexar o arquivo PDF original.\n\nPara resolver:\n• Peça ao síndico para reimportar este boleto com o PDF anexado\n• Ou solicite o boleto por e-mail/Whatsapp diretamente\n\nCódigo do boleto: ${selectedBoleto.barcode || 'Não informado'}`;
+
+                            alert(detalhesBoleto + mensagemOrientacao);
                             return;
                           }
 
-                          // Baixar PDF original com verificação de integridade
-                          const result = await downloadBoletoOriginalPdf(
-                            selectedBoleto.pdf_original_path,
-                            selectedBoleto.checksum_pdf
-                          );
+                          // Criar link para download direto
+                          const link = document.createElement('a');
+                          link.href = downloadUrl;
+                          link.download = fileName;
+                          link.style.display = 'none';
 
-                          if (result.url) {
-                            // Criar nome amigável para o arquivo
-                            const fileName = `boleto_${selectedBoleto.referenceMonth.replace('/', '_')}_${formatUnit(selectedBoleto.unit).replace('/', '_')}.pdf`;
+                          // Adicionar ao DOM e clicar
+                          document.body.appendChild(link);
+                          link.click();
 
-                            // Criar link para download direto
-                            const link = document.createElement('a');
-                            link.href = result.url;
-                            link.download = fileName;
-                            link.style.display = 'none';
-
-                            // Adicionar ao DOM e clicar
-                            document.body.appendChild(link);
-                            link.click();
-
-                            // Limpar
-                            document.body.removeChild(link);
-                            URL.revokeObjectURL(result.url);
-
-                            console.log(`[Boleto] PDF original baixado com sucesso: ${fileName}`);
-                            alert(`✅ Boleto baixado com sucesso!\n\nArquivo: ${fileName}`);
-                          } else {
-                            alert(`❌ Erro ao baixar o boleto: ${result.error}\n\nEntre em contato com a administração.`);
+                          // Limpar
+                          document.body.removeChild(link);
+                          // Só revoke se for blob URL (do sistema novo)
+                          if (downloadUrl.startsWith('blob:')) {
+                            URL.revokeObjectURL(downloadUrl);
                           }
+
+                          console.log(`[Boleto] PDF baixado com sucesso: ${fileName}`);
+                          alert(`✅ Boleto baixado com sucesso!\n\nArquivo: ${fileName}`);
                         } catch (error) {
                           console.error('Erro ao baixar boleto:', error);
                           alert('❌ Erro ao baixar o boleto.\n\nEntre em contato com a administração.');
@@ -779,9 +804,9 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                       </span>
                     </div>
                     <div className="flex gap-2">
-                      {boleto.pdfUrl && (
+                      {(boleto.pdfUrl || boleto.pdf_original_path) ? (
                         <>
-                          {onViewBoleto && (
+                          {onViewBoleto && boleto.pdfUrl && (
                             <button
                               onClick={() => onViewBoleto(boleto)}
                               className="p-2 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50"
@@ -796,12 +821,47 @@ const BoletosView: React.FC<BoletosViewProps> = ({
                               onClick={() => onDownloadBoleto(boleto)}
                               className="p-2 rounded-xl bg-[var(--glass-bg)] border border-[var(--border-color)] hover:bg-[var(--border-color)] transition-all group-hover:border-[var(--text-primary)]/50"
                               style={{ color: 'var(--text-primary)' }}
-                              title="Baixar PDF"
+                              title={boleto.pdf_original_path ? "Baixar PDF Original" : "Baixar PDF"}
                             >
                               <Download className="w-4 h-4" />
                             </button>
                           )}
                         </>
+                      ) : (
+                        // Botão para anexar PDF quando não há nenhum
+                        <button
+                          onClick={() => {
+                            // Criar input file oculto
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = '.pdf';
+                            input.onchange = async (e) => {
+                              const file = (e.target as HTMLInputElement).files?.[0];
+                              if (!file) return;
+
+                              try {
+                                const { addBoletoOriginalPdf } = await import('../../services/dataService');
+                                const result = await addBoletoOriginalPdf(boleto.id, file);
+
+                                if (result.success) {
+                                  alert(`✅ PDF anexado com sucesso ao boleto de ${boleto.residentName} - ${boleto.referenceMonth}`);
+                                  // Recarregar dados
+                                  window.location.reload();
+                                } else {
+                                  alert(`❌ Erro ao anexar PDF: ${result.error}`);
+                                }
+                              } catch (error) {
+                                console.error('Erro ao anexar PDF:', error);
+                                alert('❌ Erro ao anexar PDF. Tente novamente.');
+                              }
+                            };
+                            input.click();
+                          }}
+                          className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-all"
+                          title="Anexar PDF ao boleto"
+                        >
+                          <Upload className="w-4 h-4 text-amber-500" />
+                        </button>
                       )}
                       {onDeleteBoleto && (
                         <button
