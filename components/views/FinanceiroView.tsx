@@ -407,6 +407,7 @@ const FinanceiroView: React.FC<FinanceiroViewProps> = ({
           onImportClick={onImportClick}
           showImportButton={showImportButton}
           isResidentView={role === 'MORADOR'}
+          currentResident={role === 'MORADOR' ? currentResident : null}
           isLoading={isLoadingBoletos}
         />
       </div>

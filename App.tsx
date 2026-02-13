@@ -1622,6 +1622,74 @@ const App: React.FC = () => {
       toast.error('Erro ao remover boleto: ' + (result.error || 'Erro desconhecido'));
     }
   };
+
+  const handleDownloadBoleto = useCallback(async (boleto: Boleto) => {
+    try {
+      console.log('[App] Iniciando download de boleto:', boleto.id);
+
+      // Estratégia de download por prioridade:
+      // 1. PDF Original (novo sistema) - com verificação de integridade
+      // 2. PDF URL (sistema antigo) - download direto
+      // 3. Fallback: informar que não há PDF disponível
+
+      let downloadUrl = '';
+      let fileName = `boleto_${boleto.referenceMonth.replace('/', '_')}_${formatUnit(boleto.unit).replace('/', '_')}.pdf`;
+      let pdfSource = '';
+
+      // 1. Tentar PDF Original (sistema novo)
+      if (boleto.pdf_original_path) {
+        console.log('[App] Usando PDF original (sistema novo)');
+        pdfSource = 'PDF original (importado recentemente)';
+        const { downloadBoletoOriginalPdf } = await import('./services/dataService');
+        const result = await downloadBoletoOriginalPdf(
+          boleto.pdf_original_path,
+          boleto.checksum_pdf
+        );
+
+        if (result.url) {
+          downloadUrl = result.url;
+        } else {
+          toast.error(`Erro ao baixar o boleto: ${result.error}`);
+          return;
+        }
+      }
+      // 2. Tentar PDF URL (sistema antigo)
+      else if (boleto.pdfUrl) {
+        console.log('[App] Usando PDF URL (sistema antigo)');
+        pdfSource = 'PDF do sistema antigo';
+        downloadUrl = boleto.pdfUrl;
+      }
+      // 3. Nenhum PDF disponível
+      else {
+        toast.error(`Este boleto não possui PDF disponível.\n\nEntre em contato com a administração para obter o boleto.`);
+        return;
+      }
+
+      // Criar link para download direto
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.style.display = 'none';
+
+      // Adicionar ao DOM e clicar
+      document.body.appendChild(link);
+      link.click();
+
+      // Limpar
+      document.body.removeChild(link);
+      // Só revoke se for blob URL (do sistema novo)
+      if (downloadUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+
+      console.log(`[App] PDF baixado com sucesso: ${fileName}`);
+      toast.success(`Boleto baixado com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao baixar boleto:', error);
+      toast.error('Erro ao baixar o boleto. Tente novamente.');
+    }
+  }, [toast]);
+
   const findResidentByQRData = (qrData: string): Resident | undefined => {
     const raw = (qrData || '').trim();
     if (!raw) return undefined;
@@ -2076,13 +2144,9 @@ const App: React.FC = () => {
                 window.open(boleto.pdfUrl, '_blank');
               }
             }}
-            onDownloadBoleto={(boleto) => {
-              if (boleto.pdfUrl) {
-                const link = document.createElement('a');
-                link.href = boleto.pdfUrl;
-                link.download = `boleto-${boleto.unit}-${boleto.referenceMonth}.pdf`;
-                link.click();
-              }
+            onDownloadBoleto={async (boleto) => {
+              await handleDownloadBoleto(boleto);
+            }}
             }}
             onViewPackage={setSelectedPackageForDetail}
             onViewNotice={(_notice) => {

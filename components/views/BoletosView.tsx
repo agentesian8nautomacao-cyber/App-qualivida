@@ -21,7 +21,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Boleto, BoletoType, Resident } from '../../types';
-import { formatUnit } from '../../utils/unitFormatter';
+import { formatUnit, compareUnits } from '../../utils/unitFormatter';
 import { useAppConfig } from '../../contexts/AppConfigContext';
 import { downloadBoletoOriginalPdf } from '../../services/dataService';
 
@@ -50,6 +50,7 @@ interface BoletosViewProps {
   showImportButton?: boolean;
   showProcessPDFButton?: boolean;
   isResidentView?: boolean;
+  currentResident?: Resident | null; // Para filtrar boletos do morador logado
   isLoading?: boolean;
 }
 
@@ -66,6 +67,7 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   showImportButton = true,
   showProcessPDFButton = true,
   isResidentView = false,
+  currentResident = null,
   isLoading = false
 }) => {
   const { config } = useAppConfig();
@@ -73,6 +75,15 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   const [typeFilter, setTypeFilter] = useState<BoletoType | 'all'>('all');
   const [selectedBoleto, setSelectedBoleto] = useState<Boleto | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Filtrar boletos do morador logado quando for vista de morador
+  const residentBoletos = useMemo(() => {
+    if (!isResidentView || !currentResident) return allBoletos;
+    return allBoletos.filter(boleto => compareUnits(boleto.unit, currentResident.unit));
+  }, [allBoletos, isResidentView, currentResident]);
+
+  // Usar os boletos filtrados para moradores, ou todos para administradores
+  const boletosToShow = isResidentView ? residentBoletos : allBoletos;
 
   // Funções de filtro otimizadas com useCallback
   const filterByType = useCallback((boletos: Boleto[]) => {
@@ -106,12 +117,12 @@ const BoletosView: React.FC<BoletosViewProps> = ({
 
   const filteredBoletos = useMemo(() => {
     // Aplicar filtros em sequência
-    let filtered = allBoletos;
+    let filtered = boletosToShow;
     filtered = filterByType(filtered);
     filtered = filterBySearch(filtered);
     filtered = filterByStatus(filtered);
     return sortBoletos(filtered);
-  }, [allBoletos, filterByType, filterBySearch, filterByStatus, sortBoletos]);
+  }, [boletosToShow, filterByType, filterBySearch, filterByStatus, sortBoletos]);
 
   const getStatusIcon = (status: Boleto['status']) => {
     switch (status) {
@@ -280,9 +291,9 @@ const BoletosView: React.FC<BoletosViewProps> = ({
   }, []);
 
   const stats = useMemo(() => {
-    const filteredForType = typeFilter === 'all' ? allBoletos : allBoletos.filter(b => (b.boletoType || 'condominio') === typeFilter);
+    const filteredForType = typeFilter === 'all' ? boletosToShow : boletosToShow.filter(b => (b.boletoType || 'condominio') === typeFilter);
     return calculateStats(filteredForType);
-  }, [allBoletos, typeFilter, calculateStats]);
+  }, [boletosToShow, typeFilter, calculateStats]);
 
   // Versão simplificada para moradores
   if (isResidentView) {
