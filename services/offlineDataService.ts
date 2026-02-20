@@ -45,13 +45,44 @@ export async function getData<T extends { id: string; updated_at?: string }>(
   // 1) Sempre tentar ler do cache primeiro
   const cached = await getCachedTable<T>(table);
 
+  const toTime = (v: any): number => {
+    if (!v) return 0;
+    const d = new Date(String(v));
+    const t = d.getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+
   // 2) Se tiver callback de fetch remoto e estiver online, dispara em paralelo
   if (options?.fetchRemote && isOnline()) {
     (async () => {
       try {
         const remote = await options.fetchRemote!();
-        await setCachedTable<T>(table, remote as any);
-        options.onRemoteUpdate?.(remote);
+        // Merge remoto -> cache (last-write-wins por updated_at)
+        // Evita "reaparecer" item após reload quando houve update local ainda não refletido no servidor.
+        const localNow = await getCachedTable<T>(table);
+        const localMap = new Map<string, T>((localNow || []).map((r: any) => [String(r.id), r]));
+        const mergedMap = new Map<string, T>();
+
+        for (const r of (remote || []) as any[]) {
+          const id = String(r?.id ?? '');
+          if (!id) continue;
+          const localRow = localMap.get(id);
+          if (!localRow) {
+            mergedMap.set(id, r as T);
+            continue;
+          }
+          const keepLocal = toTime((localRow as any)?.updated_at) > toTime((r as any)?.updated_at);
+          mergedMap.set(id, (keepLocal ? localRow : (r as T)));
+        }
+
+        // manter registros que existem só no cache local (ex.: inseridos/atualizados offline)
+        for (const [id, localRow] of localMap.entries()) {
+          if (!mergedMap.has(id)) mergedMap.set(id, localRow);
+        }
+
+        const merged = Array.from(mergedMap.values());
+        await setCachedTable<T>(table, merged as any);
+        options.onRemoteUpdate?.(merged);
       } catch (err) {
         console.warn('[offlineDataService] Erro ao atualizar cache remoto de', table, err);
       }

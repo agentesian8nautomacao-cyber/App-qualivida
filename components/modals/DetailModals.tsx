@@ -67,10 +67,10 @@ export const ResidentProfileModal = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 md:gap-10">
           <div className="space-y-8">
              <div className="flex items-center gap-3 mb-4"><PackageIcon className="w-6 h-6 text-blue-400" /><h3 className="text-xl font-black uppercase tracking-tight">Logística</h3></div>
-             {allPackages.filter(p => p.recipient === resident.name && p.status === 'Pendente').length > 0 ? (
+             {allPackages.filter(p => p.recipient === resident.name && p.status === 'pendente').length > 0 ? (
                 <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-[32px] space-y-4">
                    <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase tracking-widest text-blue-400 animate-pulse">Aguardando Retirada</span><span className="px-3 py-1 bg-blue-500 text-white rounded-lg text-[10px] font-bold">Prioridade</span></div>
-                   {allPackages.filter(p => p.recipient === resident.name && p.status === 'Pendente').map(pkg => (
+                   {allPackages.filter(p => p.recipient === resident.name && p.status === 'pendente').map(pkg => (
                       <div key={pkg.id} className="p-4 bg-zinc-900/50 rounded-2xl flex justify-between items-center group cursor-pointer hover:bg-black/40 transition-all" onClick={() => onPackageSelect(pkg)}>
                          <div><h6 className="font-bold text-sm uppercase text-blue-100">{pkg.type}</h6><p className="text-[10px] opacity-60 font-medium">Chegou às {pkg.displayTime}</p></div>
                          <div className="p-2 bg-blue-500 text-white rounded-xl shadow-lg group-hover:scale-110 transition-transform"><MessageCircle className="w-4 h-4" /></div>
@@ -84,10 +84,10 @@ export const ResidentProfileModal = ({
                 <h6 className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-6">Histórico</h6>
                 <div className="space-y-6 relative pl-2">
                    <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-white/10" />
-                   {allPackages.filter(p => p.recipient === resident.name && p.status === 'Entregue').slice(0, 4).map(pkg => (
+                   {allPackages.filter(p => p.recipient === resident.name && p.status === 'recebida').slice(0, 4).map(pkg => (
                       <div key={pkg.id} className="relative flex items-center gap-4 pl-6 group">
                          <div className="absolute left-0 w-8 h-8 rounded-full bg-zinc-800 border-2 border-green-500 flex items-center justify-center z-10"><Check className="w-3 h-3 text-green-500" /></div>
-                         <div className="flex-1 p-3 rounded-xl hover:bg-white/5 transition-all"><h6 className="text-sm font-bold uppercase">{pkg.type}</h6><p className="text-[10px] opacity-40">Entregue em {new Date(pkg.receivedAt).toLocaleDateString()}</p></div>
+                         <div className="flex-1 p-3 rounded-xl hover:bg-white/5 transition-all"><h6 className="text-sm font-bold uppercase">{pkg.type}</h6><p className="text-[10px] opacity-40">Recebida em {new Date(pkg.receiptAt || pkg.receivedAt).toLocaleDateString()}</p></div>
                       </div>
                    ))}
                 </div>
@@ -97,9 +97,17 @@ export const ResidentProfileModal = ({
              <div className="flex items-center gap-3 mb-4"><ShieldCheck className="w-6 h-6 text-purple-400" /><h3 className="text-xl font-black uppercase tracking-tight">Acessos</h3></div>
              <div className="space-y-4">
                 <h6 className="text-[10px] font-black uppercase tracking-widest opacity-40 px-2">Visitantes (Agora)</h6>
-                {visitorLogs.filter(v => v.residentName === resident.name && v.status === 'active').map(visitor => (
+               {visitorLogs.filter(v => {
+                 const st = String(v.status || '').toLowerCase();
+                 return v.residentName === resident.name && (st === 'confirmado' || st === 'active');
+               }).map(visitor => (
                    <div key={visitor.id} className="p-6 bg-purple-500/10 border border-purple-500/20 rounded-[32px] flex justify-between items-center">
-                      <div><h6 className="font-black text-sm uppercase text-purple-200">{visitor.visitorNames}</h6><p className="text-[10px] text-purple-300/60 font-medium">Entrada: {new Date(visitor.entryTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p></div>
+                      <div>
+                        <h6 className="font-black text-sm uppercase text-purple-200">{(visitor as any).visitorName || visitor.visitorNames}</h6>
+                        <p className="text-[10px] text-purple-300/60 font-medium">
+                          Entrada: {visitor.entryTime ? new Date(visitor.entryTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--'}
+                        </p>
+                      </div>
                       <button onClick={() => onCheckOutVisitor(visitor.id)} className="px-4 py-2 bg-purple-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-purple-400 transition-colors">Saída</button>
                    </div>
                 ))}
@@ -122,9 +130,9 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
   if (!pkg) return null;
   
   // Verificar se o morador pode dar baixa (só em encomendas da sua unidade)
-  const canResidentDeliver = currentRole === 'MORADOR' && currentResident && pkg.unit === currentResident.unit && pkg.status === 'Pendente';
+  const canResidentDeliver = currentRole === 'MORADOR' && currentResident && (pkg.recipientId ? pkg.recipientId === currentResident.id : pkg.unit === currentResident.unit) && pkg.status === 'pendente';
   // Porteiro/Síndico sempre pode dar baixa
-  const canStaffDeliver = (currentRole === 'PORTEIRO' || currentRole === 'SINDICO') && pkg.status === 'Pendente';
+  const canStaffDeliver = (currentRole === 'PORTEIRO' || currentRole === 'SINDICO') && pkg.status === 'pendente';
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/90 backdrop-blur-2xl" onClick={onClose} />
@@ -161,7 +169,7 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
            
            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="p-4 sm:p-6 md:p-8 bg-zinc-50 rounded-[24px] sm:rounded-[32px] border border-black/5 shadow-inner"><span className="text-[8px] font-black uppercase tracking-widest opacity-30 block mb-1 sm:mb-2">Registro de Entrada</span><div className="flex items-center gap-2"><Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 opacity-40" /><span className="text-base sm:text-lg font-black uppercase">{pkg.displayTime}</span></div></div>
-              <div className="p-4 sm:p-6 md:p-8 bg-black text-white rounded-[24px] sm:rounded-[32px] shadow-2xl relative overflow-hidden"><span className="text-[8px] font-black uppercase tracking-widest opacity-40 block mb-1 sm:mb-2">Tempo em Custódia</span><div className="flex items-center gap-2"><ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" /><span className="text-base sm:text-lg font-black uppercase">{pkg.status === 'Entregue' ? 'FINALIZADO' : calculatePermanence(pkg.receivedAt)}</span></div><div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-blue-500 opacity-10 rounded-full blur-2xl -mr-8 -mt-8 sm:-mr-10 sm:-mt-10" /></div>
+              <div className="p-4 sm:p-6 md:p-8 bg-black text-white rounded-[24px] sm:rounded-[32px] shadow-2xl relative overflow-hidden"><span className="text-[8px] font-black uppercase tracking-widest opacity-40 block mb-1 sm:mb-2">Tempo em Custódia</span><div className="flex items-center gap-2"><ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" /><span className="text-base sm:text-lg font-black uppercase">{pkg.status === 'recebida' ? 'FINALIZADO' : calculatePermanence(pkg.receivedAt)}</span></div><div className="absolute top-0 right-0 w-16 h-16 sm:w-20 sm:h-20 bg-blue-500 opacity-10 rounded-full blur-2xl -mr-8 -mt-8 sm:-mr-10 sm:-mt-10" /></div>
            </div>
            <section className="space-y-4">
               <label className="text-[10px] font-black uppercase tracking-widest opacity-30 px-2">Detalhes do Volume</label>
@@ -171,7 +179,7 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
               </div>
            </section>
            <div className="flex flex-col gap-4">
-             {pkg.status === 'Pendente' ? (
+             {pkg.status === 'pendente' ? (
                <>
                  {/* Botão de notificar - apenas para porteiro/síndico */}
                  {(currentRole === 'PORTEIRO' || currentRole === 'SINDICO') && (
@@ -189,19 +197,19 @@ export const PackageDetailModal = ({ pkg, onClose, onDeliver, onNotify, calculat
                    >
                      <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" /> 
                      <span className="whitespace-nowrap">
-                       {canResidentDeliver ? 'Confirmar Retirada' : 'Marcar como Entregue'}
+                      {canResidentDeliver ? 'Confirmar Retirada' : 'Marcar como Recebida'}
                      </span>
                    </button>
                  )}
                  {/* Mensagem quando morador não pode dar baixa (não é sua encomenda) */}
-                 {currentRole === 'MORADOR' && !canResidentDeliver && pkg.status === 'Pendente' && (
+                 {currentRole === 'MORADOR' && !canResidentDeliver && pkg.status === 'pendente' && (
                    <div className="w-full py-4 bg-amber-50 border border-amber-200 rounded-[24px] text-center">
                      <p className="text-xs font-bold text-amber-800">Esta encomenda não pertence à sua unidade</p>
                    </div>
                  )}
                </>
              ) : (
-               <div className="w-full py-8 bg-zinc-50 border border-black/5 rounded-[32px] flex items-center justify-center gap-4"><Check className="w-6 h-6 text-green-600" /><span className="text-[11px] font-black uppercase tracking-widest opacity-40 text-black">Este volume já foi entregue</span></div>
+               <div className="w-full py-8 bg-zinc-50 border border-black/5 rounded-[32px] flex items-center justify-center gap-4"><Check className="w-6 h-6 text-green-600" /><span className="text-[11px] font-black uppercase tracking-widest opacity-40 text-black">Este volume já foi recebido</span></div>
              )}
            </div>
         </div>

@@ -139,7 +139,8 @@ const ImportPackagesModal: React.FC<ImportPackagesModalProps> = ({
       }
 
       const displayTime = getVal(row, 'hora exibição', 'display_time', 'displaytime') || new Date(receivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const status = (getVal(row, 'status') || 'Pendente').trim() === 'Entregue' ? 'Entregue' : 'Pendente';
+      const statusRaw = String(getVal(row, 'status') || '').trim().toLowerCase();
+      const status: PackageType['status'] = (statusRaw === 'recebida' || statusRaw === 'entregue') ? 'recebida' : 'pendente';
       const itemsStr = getVal(row, 'itens', 'items') || '';
       const items = itemsStr ? itemsStr.split(';').map(s => ({ id: '', name: s.trim(), description: '' })).filter(it => it.name) : [];
 
@@ -179,7 +180,8 @@ const ImportPackagesModal: React.FC<ImportPackagesModalProps> = ({
       if (!receivedAt) receivedAt = new Date().toISOString();
       else if (typeof receivedAt === 'string' && !receivedAt.includes('T')) receivedAt = new Date(receivedAt).toISOString();
       const displayTime = item.displayTime || item.display_time || new Date(receivedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const status = (item.status || 'Pendente') === 'Entregue' ? 'Entregue' : 'Pendente';
+      const statusRaw = String(item.status || '').trim().toLowerCase();
+      const status: PackageType['status'] = (statusRaw === 'recebida' || statusRaw === 'entregue') ? 'recebida' : 'pendente';
       const rawItems = item.items || [];
       const items = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
         id: '',

@@ -9,6 +9,22 @@ import { calculateFileSHA256 } from '../utils/hashUtils';
 // SERVIÇOS PARA PACOTES (ENCOMENDAS)
 // ============================================
 
+type DbPackageStatus = 'pendente' | 'recebida';
+
+function toDbPackageStatus(status: any): DbPackageStatus {
+  const raw = String(status ?? '').trim().toLowerCase();
+  if (raw === 'pendente' || raw === 'p') return 'pendente';
+  if (raw === 'recebida' || raw === 'entregue' || raw === 'e') return 'recebida';
+  // legado PT-BR
+  if (raw === 'pendente') return 'pendente';
+  if (raw === 'entregue') return 'recebida';
+  return 'pendente';
+}
+
+function fromDbPackageStatus(status: any): DbPackageStatus {
+  return toDbPackageStatus(status);
+}
+
 export const savePackage = async (pkg: Package): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     console.log('[savePackage] Iniciando salvamento de encomenda:', {
@@ -64,10 +80,12 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
       type: pkg.type,
       received_at: pkg.receivedAt,
       display_time: pkg.displayTime,
-      status: pkg.status,
+      status: toDbPackageStatus(pkg.status),
       deadline_minutes: pkg.deadlineMinutes || 45,
       resident_phone: pkg.residentPhone || null,
-      received_by_name: pkg.receivedByName || null
+      received_by_name: pkg.receivedByName || null,
+      oculta_para_morador: false,
+      data_recebimento: null
     };
 
     // Adicionar campos opcionais se existirem
@@ -139,19 +157,20 @@ export const savePackage = async (pkg: Package): Promise<{ success: boolean; err
 
 export const updatePackage = async (pkg: Package, deliveredBy?: string | null): Promise<{ success: boolean; error?: string }> => {
   try {
+    const dbStatus = toDbPackageStatus(pkg.status);
+    const receiptAt = dbStatus === 'recebida' ? new Date().toISOString() : null;
+
     const updateDataObj: any = {
       id: pkg.id,
-      recipient_name: pkg.recipient,
-      unit: pkg.unit,
-      type: pkg.type,
-      status: pkg.status,
-      delivered_at: pkg.status === 'Entregue' ? new Date().toISOString() : null
+      status: dbStatus,
+      data_recebimento: receiptAt,
+      delivered_at: receiptAt
     };
 
     // Se foi marcado como entregue, registrar quem entregou
-    if (pkg.status === 'Entregue' && deliveredBy) {
+    if (dbStatus === 'recebida' && deliveredBy) {
       updateDataObj.delivered_by = deliveredBy;
-    } else if (pkg.status !== 'Entregue') {
+    } else if (dbStatus !== 'recebida') {
       // Se não está entregue, limpar delivered_by
       updateDataObj.delivered_by = null;
     }
@@ -162,6 +181,16 @@ export const updatePackage = async (pkg: Package, deliveredBy?: string | null): 
   } catch (err: any) {
     console.error('Erro ao atualizar pacote:', err);
     return { success: false, error: err.message || 'Erro ao atualizar pacote' };
+  }
+};
+
+export const hidePackageForResident = async (id: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const result = await updateData('packages', { id, oculta_para_morador: true });
+    return { success: result.success, error: result.error };
+  } catch (err: any) {
+    console.error('Erro ao ocultar encomenda:', err);
+    return { success: false, error: err?.message || 'Erro ao ocultar encomenda' };
   }
 };
 
@@ -199,6 +228,8 @@ export const getPackages = async (): Promise<GetPackagesResult> => {
           received_by_name,
           qr_code_data,
           image_url,
+          oculta_para_morador,
+          data_recebimento,
           created_at,
           updated_at
         `)
@@ -229,13 +260,15 @@ export const getPackages = async (): Promise<GetPackagesResult> => {
       type: p.type,
       receivedAt: p.received_at,
       displayTime: p.display_time || new Date(p.received_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      status: p.status as 'Pendente' | 'Entregue',
+      status: fromDbPackageStatus(p.status),
       deadlineMinutes: p.deadline_minutes || 45,
       residentPhone: p.resident_phone || undefined,
       recipientId: p.recipient_id || undefined,
       imageUrl: p.image_url || null,
       qrCodeData: p.qr_code_data || null,
       receivedByName: p.received_by_name || null,
+      receiptAt: p.data_recebimento ?? p.delivered_at ?? null,
+      hiddenForResident: !!p.oculta_para_morador,
       items: packageItemsMap[p.id] || []
     }));
 
@@ -423,6 +456,27 @@ export const deleteResident = async (id: string): Promise<{ success: boolean; er
 // SERVIÇOS PARA VISITANTES
 // ============================================
 
+type DbVisitorStatus = 'pendente' | 'confirmado' | 'finalizado';
+
+function toDbVisitorStatus(status: any): DbVisitorStatus {
+  const raw = String(status ?? '').trim().toLowerCase();
+  if (raw === 'pendente') return 'pendente';
+  if (raw === 'confirmado') return 'confirmado';
+  if (raw === 'finalizado') return 'finalizado';
+  // legado
+  if (raw === 'active') return 'confirmado';
+  if (raw === 'completed') return 'finalizado';
+  return 'pendente';
+}
+
+function fromDbVisitorStatus(status: any): VisitorLog['status'] {
+  const raw = String(status ?? '').trim().toLowerCase();
+  if (raw === 'pendente' || raw === 'confirmado' || raw === 'finalizado') return raw as any;
+  if (raw === 'active') return 'confirmado';
+  if (raw === 'completed') return 'finalizado';
+  return 'pendente';
+}
+
 export const saveVisitor = async (visitor: VisitorLog): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
     // Buscar resident_id (apenas se online)
@@ -445,15 +499,21 @@ export const saveVisitor = async (visitor: VisitorLog): Promise<{ success: boole
       resident_id: residentId,
       resident_name: visitor.residentName,
       unit: visitor.unit,
-      visitor_count: visitor.visitorCount || 1,
-      visitor_names: visitor.visitorNames || null,
-      type: visitor.type ?? 'Visita',
-      doc: visitor.doc ?? null,
-      vehicle: visitor.vehicle ?? null,
-      plate: visitor.plate ?? null,
-      entry_time: visitor.entryTime,
+      morador_id: visitor.moradorId ?? residentId,
+      nome_visitante: visitor.visitorName ?? visitor.visitorNames ?? null,
+      observacao: visitor.observation ?? null,
+      visitor_count: visitor.visitorCount || 1, // legado
+      visitor_names: visitor.visitorNames || visitor.visitorName || null, // legado
+      type: visitor.type ?? 'Visita', // legado
+      doc: visitor.doc ?? null, // legado
+      vehicle: visitor.vehicle ?? null, // legado
+      plate: visitor.plate ?? null, // legado
+      data_registro: new Date().toISOString(),
+      data_confirmacao: null,
+      porteiro_id: null,
+      entry_time: visitor.entryTime || null,
       exit_time: visitor.exitTime || null,
-      status: visitor.status
+      status: toDbVisitorStatus(visitor.status)
     };
 
     const result = await createData('visitors', payload);
@@ -469,12 +529,23 @@ export const updateVisitor = async (visitor: VisitorLog): Promise<{ success: boo
     const result = await updateData('visitors', {
       id: visitor.id,
       exit_time: visitor.exitTime || null,
-      status: visitor.status
+      status: toDbVisitorStatus(visitor.status)
     });
     return { success: result.success, error: result.error };
   } catch (err: any) {
     console.error('Erro ao atualizar visitante:', err);
     return { success: false, error: err.message || 'Erro ao atualizar visitante' };
+  }
+};
+
+/** Confirma entrada do visitante (porteiro/síndico) via RPC. */
+export const confirmExpectedVisitor = async (visitorId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.rpc('confirm_expected_visitor', { p_visitor_id: visitorId });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? 'Erro ao confirmar visitante' };
   }
 };
 
@@ -486,7 +557,7 @@ export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsRes
       fetchRemote: async () => {
         let query = supabase
           .from('visitors')
-          .select('id, resident_name, unit, visitor_count, visitor_names, type, entry_time, exit_time, status, registered_by');
+          .select('id, morador_id, resident_id, resident_name, unit, nome_visitante, observacao, visitor_count, visitor_names, type, entry_time, exit_time, status, registered_by, porteiro_id, data_registro, data_confirmacao');
         
         // Se fornecido, filtrar por unidade (para moradores verem apenas seus visitantes)
         if (filterByUnit) {
@@ -501,15 +572,20 @@ export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsRes
 
     const list: VisitorLog[] = result.data.map((v: any) => ({
       id: v.id,
+      moradorId: v.morador_id ?? v.resident_id ?? undefined,
       residentName: v.resident_name,
       unit: v.unit,
       visitorCount: v.visitor_count ?? 1,
-      visitorNames: v.visitor_names ?? undefined,
+      visitorName: v.nome_visitante ?? undefined,
+      observation: v.observacao ?? undefined,
+      visitorNames: v.visitor_names ?? undefined, // legado
       type: v.type ?? 'Visita',
       entryTime: v.entry_time,
       exitTime: v.exit_time ?? undefined,
-      status: v.status as 'active' | 'completed',
-      registeredBy: v.registered_by ?? undefined
+      status: fromDbVisitorStatus(v.status) as any,
+      registeredBy: v.registered_by ?? undefined,
+      confirmedAt: v.data_confirmacao ?? undefined,
+      doormanId: v.porteiro_id ?? undefined
     }));
     return { data: list, error: result.error };
   } catch (err: any) {
@@ -521,6 +597,28 @@ export const getVisitors = async (filterByUnit?: string): Promise<GetVisitorsRes
 // ============================================
 // SERVIÇOS PARA OCORRÊNCIAS
 // ============================================
+
+type DbOccurrenceStatus = 'aberta' | 'em_andamento' | 'resolvida';
+
+function toDbOccurrenceStatus(status: Occurrence['status'] | string | null | undefined): DbOccurrenceStatus {
+  const raw = String(status ?? '').trim();
+  const lower = raw.toLowerCase();
+  // UI legado (PT-BR)
+  if (lower === 'aberto' || lower === 'aberta') return 'aberta';
+  if (lower.includes('andamento') || lower.replace(/\s+/g, '_') === 'em_andamento') return 'em_andamento';
+  if (lower === 'resolvido' || lower === 'resolvida') return 'resolvida';
+  // Padrão seguro
+  return 'aberta';
+}
+
+function fromDbOccurrenceStatus(status: string | null | undefined): Occurrence['status'] {
+  const raw = String(status ?? '').trim().toLowerCase();
+  if (raw === 'aberta' || raw === 'aberto') return 'Aberto';
+  if (raw === 'em_andamento' || raw.includes('andamento')) return 'Em Andamento';
+  if (raw === 'resolvida' || raw === 'resolvido') return 'Resolvido';
+  // fallback para não quebrar UI em dados inesperados
+  return 'Aberto';
+}
 
 export const saveOccurrence = async (occurrence: Occurrence): Promise<{ success: boolean; error?: string; id?: string }> => {
   try {
@@ -545,11 +643,12 @@ export const saveOccurrence = async (occurrence: Occurrence): Promise<{ success:
       resident_name: occurrence.residentName,
       unit: occurrence.unit,
       description: occurrence.description,
-      status: occurrence.status,
+      status: toDbOccurrenceStatus(occurrence.status),
       date: occurrence.date,
       reported_by: occurrence.reportedBy,
       image_url: occurrence.imageUrl || null,
-      messages: occurrence.messages || []
+      messages: occurrence.messages || [],
+      deleted_by_admin: false
     };
 
     const result = await createData('occurrences', payload);
@@ -581,7 +680,7 @@ export const updateOccurrence = async (occurrence: Occurrence): Promise<{ succes
     const result = await updateData('occurrences', {
       id: occurrence.id,
       description: occurrence.description,
-      status: occurrence.status,
+      status: toDbOccurrenceStatus(occurrence.status),
       messages: occurrence.messages || []
     });
     return { success: result.success, error: result.error };
@@ -593,7 +692,8 @@ export const updateOccurrence = async (occurrence: Occurrence): Promise<{ succes
 
 export const deleteOccurrence = async (id: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    const result = await deleteData('occurrences', id);
+    // Soft delete: mantém histórico no banco.
+    const result = await updateData('occurrences', { id, deleted_by_admin: true });
     return { success: result.success, error: result.error };
   } catch (err: any) {
     console.error('Erro ao deletar ocorrência:', err);
@@ -609,7 +709,7 @@ export const getOccurrences = async (): Promise<GetOccurrencesResult> => {
       fetchRemote: async () => {
         const { data, error } = await supabase
           .from('occurrences')
-          .select('id, resident_name, unit, description, status, date, reported_by, image_url, messages')
+          .select('id, resident_id, resident_name, unit, description, status, date, reported_by, image_url, messages, deleted_by_admin')
           .order('date', { ascending: false });
         if (error) throw error;
         return data || [];
@@ -618,14 +718,16 @@ export const getOccurrences = async (): Promise<GetOccurrencesResult> => {
 
     const list: Occurrence[] = result.data.map((o: any) => ({
       id: o.id,
+      residentId: o.resident_id ?? undefined,
       residentName: o.resident_name,
       unit: o.unit,
       description: o.description,
-      status: o.status as 'Aberto' | 'Em Andamento' | 'Resolvido',
+      status: fromDbOccurrenceStatus(o.status),
       date: typeof o.date === 'string' ? o.date : new Date(o.date).toISOString(),
       reportedBy: o.reported_by,
       imageUrl: o.image_url || null,
-      messages: o.messages || []
+      messages: o.messages || [],
+      deletedByAdmin: !!o.deleted_by_admin
     }));
     return { data: list, error: result.error };
   } catch (err: any) {
@@ -948,7 +1050,10 @@ export const downloadBoletoOriginalPdf = async (
 
     // Verificar integridade se checksum foi fornecido
     if (expectedChecksum) {
-      const actualChecksum = await calculateFileSHA256(data);
+      const fileLike = (data instanceof File)
+        ? data
+        : new File([data], 'boleto-original.pdf', { type: data.type || 'application/pdf' });
+      const actualChecksum = await calculateFileSHA256(fileLike);
       if (actualChecksum !== expectedChecksum) {
         console.error(`[downloadBoletoOriginalPdf] ❌ CHECKSUM INVÁLIDO! Esperado: ${expectedChecksum}, Calculado: ${actualChecksum}`);
         return {
@@ -1311,8 +1416,12 @@ const createUserFromStaff = async (staff: Staff, passwordPlain?: string, authUse
 
     // 1) Backend com service_role
     if (!authUserId && staff.email) {
-      const serviceKey = (typeof process !== 'undefined' && process.env?.SUPABASE_SERVICE_ROLE_KEY)?.trim();
-      const supabaseUrl = (typeof process !== 'undefined' && process.env?.SUPABASE_URL)?.trim();
+      const serviceKey = (typeof process !== 'undefined'
+        ? process.env?.SUPABASE_SERVICE_ROLE_KEY
+        : undefined)?.trim();
+      const supabaseUrl = (typeof process !== 'undefined'
+        ? process.env?.SUPABASE_URL
+        : undefined)?.trim();
       if (serviceKey && supabaseUrl) {
         try {
           const adminSup = createClient(supabaseUrl, serviceKey);

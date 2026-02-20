@@ -4,6 +4,8 @@ import { jsPDF } from 'jspdf';
 
 /** Normaliza registro do cache para formato Package */
 function normalizeCachedPackage(p: any): Package {
+  const statusRaw = String(p.status ?? '').trim().toLowerCase();
+  const status: Package['status'] = (statusRaw === 'recebida' || statusRaw === 'entregue') ? 'recebida' : 'pendente';
   return {
     id: p.id || '',
     recipient: p.recipient_name || p.recipient || '',
@@ -11,14 +13,16 @@ function normalizeCachedPackage(p: any): Package {
     type: p.type || '',
     receivedAt: p.received_at || p.receivedAt || '',
     displayTime: p.display_time || p.displayTime || '',
-    status: p.status || 'Pendente',
+    status,
     deadlineMinutes: (p.deadline_minutes ?? p.deadlineMinutes) ?? 45,
     residentPhone: p.resident_phone || p.residentPhone || undefined,
     recipientId: p.recipient_id || p.recipientId || undefined,
     imageUrl: p.image_url ?? p.imageUrl ?? null,
     qrCodeData: p.qr_code_data ?? p.qrCodeData ?? null,
     items: p.items || [],
-    receivedByName: p.received_by_name ?? p.receivedByName ?? null
+    receivedByName: p.received_by_name ?? p.receivedByName ?? null,
+    receiptAt: p.data_recebimento ?? p.receiptAt ?? p.delivered_at ?? null,
+    hiddenForResident: !!(p.oculta_para_morador ?? p.hiddenForResident)
   };
 }
 
@@ -65,6 +69,7 @@ export async function exportPackagesToCSV(allPackages?: Package[]): Promise<void
 
     // Criar linhas CSV
     const rows = packages.map(pkg => {
+      const statusLabel = pkg.status === 'pendente' ? 'Pendente' : 'Recebida';
       const receivedDate = pkg.receivedAt 
         ? new Date(pkg.receivedAt).toLocaleString('pt-BR', { 
             day: '2-digit', 
@@ -86,7 +91,7 @@ export async function exportPackagesToCSV(allPackages?: Package[]): Promise<void
         pkg.type,
         receivedDate,
         pkg.displayTime,
-        pkg.status,
+        statusLabel,
         pkg.deadlineMinutes.toString(),
         pkg.residentPhone || '',
         items,
@@ -248,7 +253,7 @@ export async function exportPackagesToPDF(allPackages?: Package[]): Promise<void
         (pkg.type || '-').slice(0, 10),
         receivedStr.slice(0, 14),
         receivedBy,
-        pkg.status || '-',
+        (pkg.status === 'pendente' ? 'Pendente' : 'Recebida'),
         itemsStr
       ];
       texts.forEach((t, i) => doc.text(String(t), margin + i * colW, y));

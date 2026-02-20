@@ -6,9 +6,12 @@ import { Resident, PackageItem, Staff } from '../../types';
 // --- MODAL NOVA RESERVA ---
 export const NewReservationModal = ({
   isOpen, onClose, data, setData, areasStatus, searchQuery, setSearchQuery, 
-  showSuggestions, setShowSuggestions, filteredResidents, hasConflict, onConfirm
+  showSuggestions, setShowSuggestions, filteredResidents, hasConflict, onConfirm,
+  currentRole, currentResident
 }: any) => {
   if (!isOpen) return null;
+  const isMorador = String(currentRole || '').toUpperCase() === 'MORADOR';
+  const isResidentLocked = isMorador;
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-zinc-950/90 backdrop-blur-2xl" onClick={onClose} />
@@ -45,39 +48,54 @@ export const NewReservationModal = ({
             <div className="grid grid-cols-2 gap-4">
                <div className="space-y-2 relative">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-2">Morador</label>
-                  <div className="relative group">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-white transition-colors" />
-                     <input 
-                       type="text" 
-                       placeholder="Buscar..."
-                       value={searchQuery || data.resident}
-                       onChange={(e) => {
-                          setSearchQuery(e.target.value);
-                          setData({...data, resident: e.target.value});
-                          setShowSuggestions(true);
-                       }}
-                       onFocus={() => setShowSuggestions(true)}
-                       className="w-full pl-12 pr-4 p-5 bg-white/5 rounded-2xl outline-none font-bold text-sm border-none focus:ring-1 focus:ring-white/30 text-white placeholder:text-zinc-600 transition-all shadow-inner"
-                       autoComplete="off"
-                     />
-                  </div>
-                  {showSuggestions && searchQuery && filteredResidents.length > 0 && (
-                     <div className="absolute top-full left-0 w-full mt-2 bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-top-2">
-                        {filteredResidents.map((r: Resident) => (
-                           <div 
-                             key={r.id}
-                             onClick={() => {
-                                setData({ ...data, resident: r.name, unit: r.unit, residentId: r.id });
-                                setSearchQuery(r.name);
-                                setShowSuggestions(false);
-                             }}
-                             className="p-4 hover:bg-white/10 cursor-pointer flex justify-between items-center group transition-colors border-b border-white/5 last:border-0"
-                           >
-                              <span className="text-xs font-bold uppercase text-white group-hover:text-blue-400">{r.name}</span>
-                              <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest group-hover:text-white">UN {r.unit}</span>
-                           </div>
-                        ))}
-                     </div>
+                  {isResidentLocked ? (
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={data.resident || currentResident?.name || ''}
+                        className="w-full pl-12 pr-4 p-5 bg-black/20 rounded-2xl outline-none font-black text-sm border border-transparent text-white/70 cursor-not-allowed shadow-inner"
+                        placeholder={currentResident?.id ? 'Seu usuário' : 'Carregando...'}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative group">
+                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-white transition-colors" />
+                         <input 
+                           type="text" 
+                           placeholder="Buscar..."
+                           value={searchQuery || data.resident}
+                           onChange={(e) => {
+                              setSearchQuery(e.target.value);
+                              setData({...data, resident: e.target.value});
+                              setShowSuggestions(true);
+                           }}
+                           onFocus={() => setShowSuggestions(true)}
+                           className="w-full pl-12 pr-4 p-5 bg-white/5 rounded-2xl outline-none font-bold text-sm border-none focus:ring-1 focus:ring-white/30 text-white placeholder:text-zinc-600 transition-all shadow-inner"
+                           autoComplete="off"
+                         />
+                      </div>
+                      {showSuggestions && searchQuery && filteredResidents.length > 0 && (
+                         <div className="absolute top-full left-0 w-full mt-2 bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-top-2">
+                            {filteredResidents.map((r: Resident) => (
+                               <div 
+                                 key={r.id}
+                                 onClick={() => {
+                                    setData({ ...data, resident: r.name, unit: r.unit, residentId: r.id });
+                                    setSearchQuery(r.name);
+                                    setShowSuggestions(false);
+                                 }}
+                                 className="p-4 hover:bg-white/10 cursor-pointer flex justify-between items-center group transition-colors border-b border-white/5 last:border-0"
+                               >
+                                  <span className="text-xs font-bold uppercase text-white group-hover:text-blue-400">{r.name}</span>
+                                  <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest group-hover:text-white">UN {r.unit}</span>
+                               </div>
+                            ))}
+                         </div>
+                      )}
+                    </>
                   )}
                </div>
                <div className="space-y-2">
@@ -135,7 +153,7 @@ export const NewReservationModal = ({
 
             <button 
               onClick={onConfirm}
-              disabled={!data.resident || !data.date || hasConflict}
+              disabled={!data.residentId || !data.date || hasConflict}
               className="w-full py-6 bg-white text-black rounded-[24px] font-black uppercase text-[11px] tracking-[0.2em] hover:bg-zinc-200 hover:scale-[1.02] active:scale-95 transition-all mt-6 shadow-xl disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
                {hasConflict ? 'Verifique o Horário' : 'Confirmar Agendamento'}
@@ -298,6 +316,65 @@ export const NewVisitorModal = ({
               </div>
            </div>
          )}
+      </div>
+    </div>
+  );
+};
+
+// --- MODAL NOVO VISITANTE (MORADOR - PRÉ-CADASTRO) ---
+export const NewExpectedVisitorModal = ({
+  isOpen,
+  onClose,
+  data,
+  setData,
+  onConfirm
+}: any) => {
+  if (!isOpen) return null;
+  const canConfirm = !!(data?.visitorName || '').trim() && !!(data?.observation || '').trim();
+  return (
+    <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-xl" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white text-black rounded-[32px] sm:rounded-[48px] shadow-2xl p-6 sm:p-8 md:p-10 animate-in zoom-in duration-300">
+        <header className="flex justify-between items-start gap-3 mb-6">
+          <div>
+            <h4 className="text-2xl sm:text-3xl font-black uppercase tracking-tight">Cadastrar visitante</h4>
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">Pré-cadastro para portaria confirmar</p>
+          </div>
+          <button onClick={onClose} className="p-3 bg-zinc-50 rounded-2xl hover:bg-zinc-100 transition-all">
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-1">Nome do visitante</label>
+            <input
+              type="text"
+              value={data?.visitorName || ''}
+              onChange={(e) => setData({ ...data, visitorName: e.target.value })}
+              className="w-full px-5 py-4 bg-zinc-50 rounded-[20px] font-bold outline-none border-2 border-transparent focus:border-black/10 placeholder:opacity-30"
+              placeholder="Ex.: João Silva"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-1">Observação (motivo/detalhes)</label>
+            <textarea
+              value={data?.observation || ''}
+              onChange={(e) => setData({ ...data, observation: e.target.value })}
+              className="w-full px-5 py-4 bg-zinc-50 rounded-[20px] font-bold outline-none border-2 border-transparent focus:border-black/10 placeholder:opacity-30 min-h-[110px] resize-none"
+              placeholder="Ex.: Visita familiar • Chega às 19:30 • Aguardar na portaria"
+            />
+          </div>
+
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className="w-full py-4 bg-black text-white rounded-[22px] font-black uppercase text-[10px] tracking-widest shadow-xl hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
+          >
+            Enviar para a portaria
+          </button>
+        </div>
       </div>
     </div>
   );

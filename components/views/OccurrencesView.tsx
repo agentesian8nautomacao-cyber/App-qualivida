@@ -35,8 +35,8 @@ const OccurrencesView: React.FC<OccurrencesViewProps> = ({
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h3 className="text-3xl font-black uppercase tracking-tighter">Ocorrências</h3>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 sm:w-64">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
              <input 
                 type="text" 
@@ -46,7 +46,7 @@ const OccurrencesView: React.FC<OccurrencesViewProps> = ({
                 className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-full text-xs font-bold outline-none focus:border-white/30 transition-all placeholder:opacity-20"
              />
           </div>
-          <button onClick={() => setIsOccurrenceModalOpen(true)} className="px-6 py-3 bg-red-600 text-white rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap"><Plus className="w-4 h-4 inline mr-2" /> Nova Ocorrência</button>
+          <button onClick={() => setIsOccurrenceModalOpen(true)} className="px-6 py-3 bg-red-600 text-white rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap w-full sm:w-auto flex items-center justify-center"><Plus className="w-4 h-4 mr-2" /> Nova Ocorrência</button>
         </div>
       </header>
       <div className="space-y-4">

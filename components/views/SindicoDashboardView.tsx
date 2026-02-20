@@ -40,8 +40,11 @@ const SindicoDashboardView: React.FC<SindicoDashboardViewProps> = ({
 
   // Cálculos e análises
   const metrics = useMemo(() => {
-    const activeVisitors = visitorLogs.filter(v => v.status === 'active').length;
-    const pendingPackages = allPackages.filter(p => p.status === 'Pendente').length;
+    const activeVisitors = visitorLogs.filter(v => {
+      const st = String(v.status || '').toLowerCase();
+      return st === 'confirmado' || st === 'active';
+    }).length;
+    const pendingPackages = allPackages.filter(p => p.status === 'pendente').length;
     const openOccurrences = allOccurrences.filter(o => o.status === 'Aberto').length;
     const resolvedOccurrences = allOccurrences.filter(o => o.status === 'Resolvido').length;
     const totalOccurrences = allOccurrences.length;
@@ -315,7 +318,7 @@ const SindicoDashboardView: React.FC<SindicoDashboardViewProps> = ({
         <h3 className="text-lg font-black uppercase tracking-tight mb-4 text-contrast-high">
           Estatísticas do Condomínio
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="premium-glass rounded-[20px] p-5 border border-[var(--border-color)]">
             <span className="text-[9px] font-black uppercase text-[var(--text-secondary)] block mb-2">
               Ocupação

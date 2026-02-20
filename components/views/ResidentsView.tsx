@@ -45,8 +45,8 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
           <h3 className="text-3xl font-black uppercase tracking-tighter">Moradores</h3>
           <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mt-1">Gestão de Unidades</p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 sm:w-64">
              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-30" />
              <input 
                 type="text" 
@@ -60,7 +60,7 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
           {canManageResidents && onImportClick && (
             <button 
               onClick={onImportClick} 
-              className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2 hover:bg-[var(--border-color)]"
+              className="px-6 py-3 bg-[var(--glass-bg)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center justify-center gap-2 hover:bg-[var(--border-color)] w-full sm:w-auto"
             >
               <Upload className="w-4 h-4" /> Importar
             </button>
@@ -68,7 +68,7 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
           {canManageResidents && (
             <button 
               onClick={() => handleOpenResidentModal()} 
-              className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center gap-2"
+              className="px-6 py-3 bg-[var(--text-primary)] text-[var(--bg-color)] rounded-full text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-transform whitespace-nowrap flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               <UserPlus className="w-4 h-4" /> Novo Morador
             </button>
@@ -78,8 +78,11 @@ const ResidentsView: React.FC<ResidentsViewProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayResidents.map(resident => {
-          const hasPendingPackage = allPackages.some(p => p.recipient === resident.name && p.status === 'Pendente');
-          const hasActiveVisitor = visitorLogs.some(v => v.residentName === resident.name && v.status === 'active');
+          const hasPendingPackage = allPackages.some(p => p.recipient === resident.name && p.status === 'pendente');
+          const hasActiveVisitor = visitorLogs.some(v => {
+            const st = String(v.status || '').toLowerCase();
+            return v.residentName === resident.name && (st === 'confirmado' || st === 'active');
+          });
           
           return (
             <div 

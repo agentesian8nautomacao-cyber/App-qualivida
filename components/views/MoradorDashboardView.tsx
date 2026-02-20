@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Bell, Receipt, Calendar, Package, AlertCircle, FileText, Eye, Download } from 'lucide-react';
+import { Megaphone, Receipt, Calendar, Package, AlertCircle, FileText, Eye, Download } from 'lucide-react';
 import { Boleto, Notice, Package as PackageType, Resident } from '../../types';
 import { formatUnit, compareUnits } from '../../utils/unitFormatter';
 
@@ -39,9 +39,9 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
     [allBoletos, residentId, residentUnit]
   );
 
-  const myPackages = useMemo(() => 
-    allPackages.filter(p => compareUnits(p.unit, residentUnit)),
-    [allPackages, residentUnit]
+  const myPackages = useMemo(
+    () => allPackages.filter((p) => p.recipientId === residentId && !p.hiddenForResident),
+    [allPackages, residentId]
   );
 
   const myReservations = useMemo(() => 
@@ -89,7 +89,7 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewNotice && allNotices.length > 0 && onViewNotice(allNotices[0])}>
           <div className="flex items-center justify-between mb-1 sm:mb-2">
-            <Bell className="w-5 h-5 sm:w-6 sm:h-6 opacity-40 group-hover:opacity-100 transition-opacity" />
+            <Megaphone className="w-5 h-5 sm:w-6 sm:h-6 opacity-40 group-hover:opacity-100 transition-opacity" />
             {unreadNotices > 0 && (
               <span className="w-4 h-4 sm:w-5 sm:h-5 bg-red-500 rounded-full flex items-center justify-center text-[9px] sm:text-[10px] font-black text-white">
                 {unreadNotices}
@@ -104,10 +104,10 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Boletos</p>
           <p className="text-xl sm:text-2xl font-black text-amber-400">{pendingBoletos.length}</p>
         </div>
-        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewPackage && myPackages.filter(p => p.status === 'Pendente').length > 0 && onViewPackage(myPackages.filter(p => p.status === 'Pendente')[0])}>
+        <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all cursor-pointer group" onClick={() => onViewPackage && myPackages.filter(p => p.status === 'pendente').length > 0 && onViewPackage(myPackages.filter(p => p.status === 'pendente')[0])}>
           <Package className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 opacity-40 group-hover:opacity-100 transition-opacity" />
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider opacity-40 mb-0.5 sm:mb-1">Encomendas</p>
-          <p className="text-xl sm:text-2xl font-black">{myPackages.filter(p => p.status === 'Pendente').length}</p>
+          <p className="text-xl sm:text-2xl font-black">{myPackages.filter(p => p.status === 'pendente').length}</p>
         </div>
         <div className="premium-glass rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-[var(--border-color)] hover:border-[var(--text-primary)]/30 transition-all">
           <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2 opacity-40" />
@@ -179,17 +179,17 @@ const MoradorDashboardView: React.FC<MoradorDashboardViewProps> = ({
         <div className="premium-glass rounded-2xl p-6 border border-[var(--border-color)]">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-lg font-black uppercase">Encomendas Pendentes</h4>
-            {myPackages.filter(p => p.status === 'Pendente').length > 0 && (
+            {myPackages.filter(p => p.status === 'pendente').length > 0 && (
               <span className="px-2 py-1 bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase rounded-full">
-                {myPackages.filter(p => p.status === 'Pendente').length}
+                {myPackages.filter(p => p.status === 'pendente').length}
               </span>
             )}
           </div>
-          {myPackages.filter(p => p.status === 'Pendente').length === 0 ? (
+          {myPackages.filter(p => p.status === 'pendente').length === 0 ? (
             <p className="text-xs opacity-40">Nenhuma encomenda pendente</p>
           ) : (
             <div className="space-y-2">
-              {myPackages.filter(p => p.status === 'Pendente').slice(0, 3).map(pkg => (
+              {myPackages.filter(p => p.status === 'pendente').slice(0, 3).map(pkg => (
                 <div 
                   key={pkg.id} 
                   className="flex justify-between items-center p-3 bg-[var(--glass-bg)] rounded-xl hover:bg-[var(--border-color)] transition-all cursor-pointer group border border-[var(--border-color)]"

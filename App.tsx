@@ -41,9 +41,9 @@ import { openWhatsApp } from './utils/phoneNormalizer';
 
 // Services
 import {
-  getResidents, getPackages, savePackage, updatePackage, deletePackage,
+  getResidents, getPackages, savePackage, updatePackage, hidePackageForResident, deletePackage,
   saveResident, deleteResident,
-  getVisitors, saveVisitor, updateVisitor,
+  getVisitors, saveVisitor, updateVisitor, confirmExpectedVisitor,
   getOccurrences, saveOccurrence, updateOccurrence, deleteOccurrence,
   getBoletos, saveBoleto, updateBoleto, deleteBoleto,
   getNotices, saveNotice, updateNotice, deleteNotice,
@@ -55,7 +55,7 @@ import { getNotifications, deleteNotification, markNotificationAsRead, markAllNo
 import { supabase, isSupabasePlaceholder } from './services/supabase';
 
 // Modals
-import { NewReservationModal, NewVisitorModal, NewPackageModal, StaffFormModal, AdminUserModal, type StaffFormData } from './components/modals/ActionModals';
+import { NewReservationModal, NewVisitorModal, NewExpectedVisitorModal, NewPackageModal, StaffFormModal, AdminUserModal, type StaffFormData } from './components/modals/ActionModals';
 import { ResidentProfileModal, PackageDetailModal, VisitorDetailModal, OccurrenceDetailModal, ResidentFormModal, NewOccurrenceModal, NoticeEditModal } from './components/modals/DetailModals';
 import ImportResidentsModal from './components/modals/ImportResidentsModal';
 // Temporariamente comentado até resolver dependências
@@ -499,7 +499,7 @@ const App: React.FC = () => {
   const [quickViewCategory, setQuickViewCategory] = useState<QuickViewCategory>(null);
 
   // Visitors Specific State
-  const [visitorTab, setVisitorTab] = useState<'active' | 'history' | 'service'>('active');
+  const [visitorTab, setVisitorTab] = useState<'pending' | 'confirmed' | 'history'>('pending');
   const [visitorSearch, setVisitorSearch] = useState('');
   const [isVisitorModalOpen, setIsVisitorModalOpen] = useState(false);
   const [newVisitorStep, setNewVisitorStep] = useState(1);
@@ -508,6 +508,13 @@ const App: React.FC = () => {
   const [newAccessTypeInput, setNewAccessTypeInput] = useState('');
   
   const [selectedVisitorForDetail, setSelectedVisitorForDetail] = useState<any | null>(null);
+
+  // Novo fluxo (morador): pré-cadastro de visitante
+  const [isExpectedVisitorModalOpen, setIsExpectedVisitorModalOpen] = useState(false);
+  const [expectedVisitorData, setExpectedVisitorData] = useState<{ visitorName: string; observation: string }>({
+    visitorName: '',
+    observation: ''
+  });
   
   const [newVisitorData, setNewVisitorData] = useState({
     unit: '',
@@ -876,6 +883,20 @@ const App: React.FC = () => {
   const [showResSuggestions, setShowResSuggestions] = useState(false);
   const [newReservationData, setNewReservationData] = useState({ area: '', areaId: '', resident: '', unit: '', residentId: '', date: '', startTime: '', endTime: '' });
 
+  useEffect(() => {
+    if (!isReservationModalOpen) return;
+    if (role === 'MORADOR' && currentResident?.id) {
+      setNewReservationData((prev) => ({
+        ...prev,
+        resident: currentResident.name,
+        unit: currentResident.unit,
+        residentId: currentResident.id
+      }));
+      setReservationSearchQuery(currentResident.name);
+      setShowResSuggestions(false);
+    }
+  }, [isReservationModalOpen, role, currentResident]);
+
   const hasTimeConflict = useMemo(() => {
     if (!newReservationData.date || !newReservationData.startTime || !newReservationData.endTime || !newReservationData.area) return false;
     const toMins = (t: string) => { const [h, m] = (t || '0:0').split(':').map(Number); return h * 60 + m; };
@@ -904,12 +925,17 @@ const App: React.FC = () => {
   };
 
   const handleCreateReservation = async () => {
-    if (!newReservationData.resident || !newReservationData.date || !newReservationData.areaId || !newReservationData.residentId || hasTimeConflict) return;
+    const isMorador = role === 'MORADOR' && !!currentResident?.id;
+    const residentId = isMorador ? currentResident!.id : newReservationData.residentId;
+    const residentName = isMorador ? currentResident!.name : newReservationData.resident;
+    const unit = isMorador ? currentResident!.unit : newReservationData.unit;
+
+    if (!residentName || !newReservationData.date || !newReservationData.areaId || !residentId || hasTimeConflict) return;
     const res = await saveReservation({
       areaId: newReservationData.areaId,
-      residentId: newReservationData.residentId,
-      residentName: newReservationData.resident,
-      unit: newReservationData.unit,
+      residentId,
+      residentName,
+      unit,
       date: newReservationData.date,
       startTime: newReservationData.startTime,
       endTime: newReservationData.endTime,
@@ -940,8 +966,8 @@ const App: React.FC = () => {
     const month = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase().replace('.', '');
     const today = `${month} ${d.getDate()}`;
     return {
-      hasNewPackage: allPackages.some(p => p.status === 'Pendente'),
-      hasActiveVisitor: visitorLogs.some(v => v.status === 'active'),
+      hasNewPackage: allPackages.some(p => p.status === 'pendente' && !p.hiddenForResident),
+      hasActiveVisitor: visitorLogs.some(v => String(v.status).toLowerCase() === 'confirmado' || String(v.status).toLowerCase() === 'active'),
       hasOpenOccurrences: allOccurrences.some(o => o.status === 'Aberto'),
       hasUpcomingReservation: dayReservations.some(r => r.date === today && (r.status === 'scheduled' || r.status === 'active')),
       hasNewNotice: allNotices.some(n => isWithin(n.date, 1440))
@@ -951,8 +977,11 @@ const App: React.FC = () => {
   const quickViewData = useMemo(() => {
     if (!quickViewCategory) return [];
     switch (quickViewCategory) {
-      case 'packages': return allPackages.filter(p => p.status === 'Pendente');
-      case 'visitors': return visitorLogs.filter(v => v.status === 'active');
+      case 'packages': return allPackages.filter(p => p.status === 'pendente' && !p.hiddenForResident);
+      case 'visitors': return visitorLogs.filter(v => {
+        const st = String(v.status || '').toLowerCase();
+        return st === 'confirmado' || st === 'active';
+      });
       case 'occurrences': return allOccurrences.filter(o => o.status === 'Aberto');
       case 'reservations': {
         const d = new Date();
@@ -1039,7 +1068,16 @@ const App: React.FC = () => {
     return {
       residents: allResidents.filter(r => r.name.toLowerCase().includes(q) || r.unit.toLowerCase().includes(q)).slice(0, 4),
       packages: allPackages.filter(p => p.recipient.toLowerCase().includes(q) || p.unit.toLowerCase().includes(q) || p.type.toLowerCase().includes(q) || p.status.toLowerCase().includes(q) || (p.displayTime && p.displayTime.toLowerCase().includes(q))).slice(0, 4),
-      visitors: visitorLogs.filter(v => (v.visitorNames?.toLowerCase().includes(q) || v.unit.toLowerCase().includes(q) || v.residentName.toLowerCase().includes(q) || v.status.toLowerCase().includes(q)) && v.status === 'active').slice(0, 4),
+      visitors: visitorLogs
+        .filter(v => {
+          const st = String(v.status || '').toLowerCase();
+          const name = String((v as any).visitorName || v.visitorNames || '').toLowerCase();
+          return (
+            (name.includes(q) || String(v.unit || '').toLowerCase().includes(q) || String(v.residentName || '').toLowerCase().includes(q) || st.includes(q)) &&
+            (st === 'confirmado' || st === 'active')
+          );
+        })
+        .slice(0, 4),
       occurrences: allOccurrences.filter(o => o.description.toLowerCase().includes(q) || o.unit.toLowerCase().includes(q) || o.residentName.toLowerCase().includes(q) || o.status.toLowerCase().includes(q)).slice(0, 4),
       reservations: dayReservations.filter(r => resFilter(r)).slice(0, 4)
     };
@@ -1192,7 +1230,7 @@ const App: React.FC = () => {
   const handleVisitorCheckOut = async (id: string) => {
     const visitor = visitorLogs.find((v) => v.id === id);
     if (!visitor) return;
-    const updatedVisitor = { ...visitor, status: 'completed' as const, exitTime: new Date().toISOString() };
+    const updatedVisitor = { ...visitor, status: 'finalizado' as const, exitTime: new Date().toISOString() };
     const result = await updateVisitor(updatedVisitor);
     if (result.success) {
       const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
@@ -1201,6 +1239,48 @@ const App: React.FC = () => {
     } else {
       console.error('Erro ao atualizar visitante:', result.error);
       toast.error('Erro ao fazer checkout: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+
+  const handleConfirmExpectedVisitor = async (id: string) => {
+    const result = await confirmExpectedVisitor(id);
+    if (result.success) {
+      const unitFilter = role === 'MORADOR' && currentResident ? currentResident.unit : undefined;
+      const { data } = await getVisitors(unitFilter);
+      if (data) setVisitorLogs(data);
+      toast.success('Entrada confirmada com sucesso');
+    } else {
+      toast.error('Erro ao confirmar entrada: ' + (result.error || 'Erro desconhecido'));
+    }
+  };
+
+  const handleResidentRegisterExpectedVisitor = async () => {
+    if (role !== 'MORADOR' || !currentResident) return;
+    const name = expectedVisitorData.visitorName.trim();
+    const obs = expectedVisitorData.observation.trim();
+    if (!name || !obs) return;
+
+    const newVisitor: VisitorLog = {
+      id: `temp-${Date.now()}`,
+      moradorId: currentResident.id,
+      residentName: currentResident.name,
+      unit: currentResident.unit,
+      visitorCount: 1,
+      visitorName: name,
+      observation: obs,
+      entryTime: '', // será preenchido ao confirmar entrada
+      status: 'pendente'
+    };
+    const result = await saveVisitor(newVisitor);
+    if (result.success) {
+      const unitFilter = currentResident.unit;
+      const { data } = await getVisitors(unitFilter);
+      if (data) setVisitorLogs(data);
+      setIsExpectedVisitorModalOpen(false);
+      setExpectedVisitorData({ visitorName: '', observation: '' });
+      toast.success('Visitante cadastrado. A portaria confirmará na chegada.');
+    } else {
+      toast.error('Erro ao cadastrar visitante: ' + (result.error || 'Erro desconhecido'));
     }
   };
   const resetVisitorModal = () => { setIsVisitorModalOpen(false); setNewVisitorStep(1); setNewVisitorData({ unit: '', name: '', doc: '', type: 'Visita', vehicle: '', plate: '', residentName: '' }); setSearchResident(''); };
@@ -1280,7 +1360,7 @@ const App: React.FC = () => {
         type: packageType,
         receivedAt: new Date().toISOString(),
         displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        status: 'Pendente',
+        status: 'pendente',
         deadlineMinutes: 45,
         residentPhone: selectedResident.phone,
         items: packageItems.filter((it) => it.name.trim() !== ''),
@@ -1346,39 +1426,36 @@ const App: React.FC = () => {
     
     // Verificar se é morador tentando dar baixa em encomenda que não é dele
     if (role === 'MORADOR' && currentResident) {
-      // Morador só pode dar baixa em encomendas da sua unidade
-      if (pkg.unit !== currentResident.unit) {
-        toast.error('Você só pode dar baixa em encomendas da sua unidade.');
+      const sameRecipient = pkg.recipientId ? pkg.recipientId === currentResident.id : false;
+      const sameUnitLegacy = pkg.unit === currentResident.unit;
+      // Morador só pode dar baixa em encomendas da sua conta (fallback por unidade para legado)
+      if (!sameRecipient && !sameUnitLegacy) {
+        toast.error('Você só pode dar baixa em encomendas da sua unidade/conta.');
         return;
       }
     }
     
     // Determinar quem está dando a baixa
     let deliveredBy: string | null = null;
-    if (role === 'MORADOR' && currentResident) {
-      // Se for morador, usar o recipient_id (ID do morador)
-      deliveredBy = pkg.recipientId || currentResident.id;
-    } else if (role === 'PORTEIRO' || role === 'SINDICO') {
+    if (role === 'PORTEIRO' || role === 'SINDICO') {
       // Se for porteiro/síndico, usar o ID do usuário admin
       deliveredBy = currentAdminUser?.id || null;
     }
     
-    const updatedPkg = { ...pkg, status: 'Entregue' as const };
+    const updatedPkg = { ...pkg, status: 'recebida' as const, receiptAt: new Date().toISOString() };
     const result = await updatePackage(updatedPkg, deliveredBy);
     
     if (result.success) {
       setAllPackages(prev => prev.map(p => p.id === id ? updatedPkg : p));
       setSelectedPackageForDetail(null);
-      toast.success('Encomenda marcada como entregue com sucesso!');
+      toast.success('Encomenda marcada como recebida com sucesso!');
     } else {
       console.error('Erro ao atualizar pacote:', result.error);
-      toast.error('Erro ao marcar como entregue: ' + (result.error || 'Erro desconhecido'));
+      toast.error('Erro ao marcar como recebida: ' + (result.error || 'Erro desconhecido'));
     }
   };
 
   const handleDeletePackage = async (id: string) => {
-    if (!confirm('Excluir esta encomenda? A ação não pode ser desfeita.')) return;
-    
     // Se for um ID temporário ou não for um UUID válido, apenas remover do estado local
     const isTempId = id.startsWith('temp-');
     const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
@@ -1389,7 +1466,24 @@ const App: React.FC = () => {
       setSelectedPackageForDetail(prev => (prev?.id === id ? null : prev));
       return;
     }
-    
+
+    // Morador: "apagar" = ocultar (não deletar)
+    if (role === 'MORADOR') {
+      if (!confirm('Ocultar esta encomenda? Ela não aparecerá mais para você.')) return;
+      const result = await hidePackageForResident(id);
+      if (result.success) {
+        setAllPackages(prev => prev.filter(p => p.id !== id));
+        setSelectedPackageForDetail(prev => (prev?.id === id ? null : prev));
+        toast.success('Encomenda ocultada com sucesso.');
+      } else {
+        console.error('Erro ao ocultar encomenda:', result.error);
+        toast.error('Erro ao ocultar encomenda: ' + (result.error || 'Erro desconhecido'));
+      }
+      return;
+    }
+
+    // Staff: delete real (se permitido)
+    if (!confirm('Excluir esta encomenda? A ação não pode ser desfeita.')) return;
     const result = await deletePackage(id);
     if (result.success) {
       setAllPackages(prev => prev.filter(p => p.id !== id));
@@ -1424,7 +1518,8 @@ const App: React.FC = () => {
     
     const result = await deleteOccurrence(id);
     if (result.success) {
-      setAllOccurrences(prev => prev.filter(occ => occ.id !== id));
+      // Soft delete: não remover do estado global (morador deve manter histórico).
+      setAllOccurrences(prev => prev.map(occ => occ.id === id ? { ...occ, deletedByAdmin: true } : occ));
       setSelectedOccurrenceForDetail(prev => (prev?.id === id ? null : prev));
       toast.success('Ocorrência excluída com sucesso');
     } else {
@@ -1680,7 +1775,7 @@ const App: React.FC = () => {
         type: p.type || 'Outros',
         receivedAt: p.receivedAt || new Date().toISOString(),
         displayTime: p.displayTime || new Date(p.receivedAt || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        status: p.status || 'Pendente',
+        status: (String((p as any)?.status ?? '').trim().toLowerCase() === 'recebida' || String((p as any)?.status ?? '').trim().toLowerCase() === 'entregue') ? 'recebida' : 'pendente',
         deadlineMinutes: p.deadlineMinutes ?? 45,
         items: p.items
       };
@@ -1943,7 +2038,7 @@ const App: React.FC = () => {
           type: item.title || 'Encomenda',
           receivedAt: new Date().toISOString(),
           displayTime: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-          status: 'Pendente',
+          status: 'pendente',
           deadlineMinutes: 45,
           recipientId: resident?.id ?? undefined,
           receivedByName: reporterName
@@ -2295,11 +2390,12 @@ const App: React.FC = () => {
         );
       }
       if (role === 'SINDICO') {
+        const staffOccurrences = allOccurrences.filter(o => !o.deletedByAdmin);
         return (
           <SindicoDashboardView 
             allPackages={allPackages}
             visitorLogs={visitorLogs}
-            allOccurrences={allOccurrences}
+            allOccurrences={staffOccurrences}
             allResidents={allResidents}
             setActiveTab={setActiveTab}
             setActiveNoticeTab={setActiveNoticeTab}
@@ -3019,7 +3115,32 @@ const App: React.FC = () => {
           }}
         />;
       case 'visitors': 
-        return <VisitorsView visitorLogs={visitorLogs} visitorSearch={visitorSearch} setVisitorSearch={setVisitorSearch} setIsVisitorModalOpen={setIsVisitorModalOpen} visitorTab={visitorTab} setVisitorTab={setVisitorTab} handleVisitorCheckOut={handleVisitorCheckOut} calculatePermanence={calculatePermanence} role={role} />;
+        return (
+          <VisitorsView
+            visitorLogs={visitorLogs}
+            visitorSearch={visitorSearch}
+            setVisitorSearch={setVisitorSearch}
+            setIsVisitorModalOpen={(val) => {
+              if (!val) {
+                setIsVisitorModalOpen(false);
+                setIsExpectedVisitorModalOpen(false);
+                return;
+              }
+              if (role === 'MORADOR') {
+                setIsExpectedVisitorModalOpen(true);
+              } else {
+                // Novo fluxo: porteiro não cadastra; mantém modal legado fechado.
+                setIsVisitorModalOpen(false);
+              }
+            }}
+            visitorTab={visitorTab}
+            setVisitorTab={setVisitorTab}
+            handleVisitorCheckOut={handleVisitorCheckOut}
+            handleConfirmVisitor={handleConfirmExpectedVisitor}
+            calculatePermanence={calculatePermanence}
+            role={role}
+          />
+        );
       case 'notifications':
         if (role === 'MORADOR' && currentResident) {
           const normUnit = (u: string) => (u ?? '').trim().toUpperCase();
@@ -3054,7 +3175,7 @@ const App: React.FC = () => {
           
           // Filtrar encomendas do morador e ordenar por data (mais recente primeiro)
           const myPackages = allPackages
-            .filter(p => normalizeUnit(p.unit) === residentUnit)
+            .filter(p => p.recipientId === currentResident.id && !p.hiddenForResident)
             .sort((a, b) => {
               const dateA = new Date(a.receivedAt).getTime();
               const dateB = new Date(b.receivedAt).getTime();
@@ -3078,7 +3199,7 @@ const App: React.FC = () => {
               setPackageSearch={setPackageSearch}
               setIsNewPackageModalOpen={() => {}}
               setSelectedPackageForDetail={setSelectedPackageForDetail}
-              onDeletePackage={undefined}
+              onDeletePackage={handleDeletePackage}
               onCameraScan={undefined}
               canRegister={false}
             />
@@ -3122,9 +3243,10 @@ const App: React.FC = () => {
               </div>
             );
           }
-          const myOccurrences = allOccurrences.filter(
-            (occ) => occ.unit === currentResident.unit || occ.residentName === currentResident.name
-          );
+          const myOccurrences = allOccurrences.filter((occ) => {
+            if (occ.residentId && currentResident.id) return occ.residentId === currentResident.id;
+            return occ.unit === currentResident.unit || occ.residentName === currentResident.name;
+          });
           return (
             <OccurrencesView
               allOccurrences={myOccurrences}
@@ -3137,9 +3259,11 @@ const App: React.FC = () => {
             />
           );
         }
+        // Síndico/Portaria: ocultar ocorrências "excluídas" (soft delete)
+        const staffOccurrences = allOccurrences.filter(o => !o.deletedByAdmin);
         return (
           <OccurrencesView
-            allOccurrences={allOccurrences}
+            allOccurrences={staffOccurrences}
             occurrenceSearch={occurrenceSearch}
             setOccurrenceSearch={setOccurrenceSearch}
             setIsOccurrenceModalOpen={setIsOccurrenceModalOpen}
@@ -3237,7 +3361,14 @@ const App: React.FC = () => {
       </Layout>
       <QuickViewModal 
         category={quickViewCategory} data={quickViewData} onClose={() => setQuickViewCategory(null)} onGoToPage={(tab) => setActiveTab(tab)}
-        onAddNew={() => { if (quickViewCategory === 'visitors') { setQuickViewCategory(null); resetVisitorModal(); setIsVisitorModalOpen(true); } }}
+        onAddNew={() => {
+          if (quickViewCategory === 'visitors') {
+            setQuickViewCategory(null);
+            if (role === 'MORADOR') {
+              setIsExpectedVisitorModalOpen(true);
+            }
+          }
+        }}
         onSelectItem={(item) => { 
           if (quickViewCategory === 'packages') { setSelectedPackageForDetail(item); setQuickViewCategory(null); } 
           else if (quickViewCategory === 'visitors') { setSelectedVisitorForDetail(item); setQuickViewCategory(null); } 
@@ -3248,8 +3379,30 @@ const App: React.FC = () => {
       />
       
       {/* MODALS */}
-      <NewReservationModal isOpen={isReservationModalOpen} onClose={() => setIsReservationModalOpen(false)} data={newReservationData} setData={setNewReservationData} areasStatus={areasStatus} searchQuery={reservationSearchQuery} setSearchQuery={setReservationSearchQuery} showSuggestions={showResSuggestions} setShowSuggestions={setShowResSuggestions} filteredResidents={filteredResForReservation} hasConflict={hasTimeConflict} onConfirm={handleCreateReservation} />
+      <NewReservationModal
+        isOpen={isReservationModalOpen}
+        onClose={() => setIsReservationModalOpen(false)}
+        data={newReservationData}
+        setData={setNewReservationData}
+        areasStatus={areasStatus}
+        searchQuery={reservationSearchQuery}
+        setSearchQuery={setReservationSearchQuery}
+        showSuggestions={showResSuggestions}
+        setShowSuggestions={setShowResSuggestions}
+        filteredResidents={filteredResForReservation}
+        hasConflict={hasTimeConflict}
+        onConfirm={handleCreateReservation}
+        currentRole={role}
+        currentResident={currentResident}
+      />
       <NewVisitorModal isOpen={isVisitorModalOpen} onClose={resetVisitorModal} step={newVisitorStep} setStep={setNewVisitorStep} data={newVisitorData} setData={setNewVisitorData} searchResident={searchResident} setSearchResident={setSearchResident} filteredResidents={filteredResidents} accessTypes={visitorAccessTypes} handleRemoveAccessType={handleRemoveAccessType} isAddingAccessType={isAddingAccessType} setIsAddingAccessType={setIsAddingAccessType} newAccessTypeInput={newAccessTypeInput} setNewAccessTypeInput={setNewAccessTypeInput} handleAddAccessType={handleAddAccessType} onConfirm={handleRegisterVisitor} />
+      <NewExpectedVisitorModal
+        isOpen={isExpectedVisitorModalOpen}
+        onClose={() => { setIsExpectedVisitorModalOpen(false); setExpectedVisitorData({ visitorName: '', observation: '' }); }}
+        data={expectedVisitorData}
+        setData={setExpectedVisitorData}
+        onConfirm={handleResidentRegisterExpectedVisitor}
+      />
       <NewPackageModal isOpen={isNewPackageModalOpen} onClose={resetPackageModal} step={packageStep} setStep={setPackageStep} searchResident={searchResident} setSearchResident={setSearchResident} selectedResident={selectedResident} setSelectedResident={setSelectedResident} filteredResidents={filteredResidents} allResidents={allResidents} residentsLoading={residentsLoading} residentsError={residentsError} onRetryResidents={() => fetchResidents(false)} packageSaving={packageSaving} pendingImage={pendingPackageImage} pendingQrData={pendingPackageQrData} packageType={packageType} setPackageType={setPackageType} packageCategories={packageCategories} isAddingPkgCategory={isAddingPkgCategory} setIsAddingPkgCategory={setIsAddingPkgCategory} newPkgCatName={newPkgCatName} setNewPkgCatName={setNewPkgCatName} handleAddPkgCategory={handleAddPkgCategory} numItems={numItems} packageItems={packageItems} handleAddItemRow={handleAddItemRow} handleRemoveItemRow={handleRemoveItemRow} updateItem={updateItem} packageMessage={packageMessage} setPackageMessage={setPackageMessage} onConfirm={handleRegisterPackageFinal} />
       <StaffFormModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)} data={staffFormData} setData={setStaffFormData} onSave={handleSaveStaff} />
       <AdminUserModal

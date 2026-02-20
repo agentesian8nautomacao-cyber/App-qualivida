@@ -101,13 +101,15 @@ export type Database = {
           type: string;
           received_at: string;
           display_time: string | null;
-          status: 'Pendente' | 'Entregue';
+          status: 'pendente' | 'recebida';
           deadline_minutes: number;
           resident_phone: string | null;
           delivered_at: string | null;
           delivered_by: string | null;
           qr_code_data: string | null;
           image_url: string | null;
+          oculta_para_morador?: boolean | null;
+          data_recebimento?: string | null;
           created_at: string;
           updated_at: string;
         };

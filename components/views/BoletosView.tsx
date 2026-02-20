@@ -779,7 +779,7 @@ const BoletosView: React.FC<BoletosViewProps> = ({
 
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="premium-glass rounded-2xl p-4 border border-[var(--border-color)]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-black uppercase tracking-wider opacity-40">Total</span>

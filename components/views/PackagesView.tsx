@@ -38,7 +38,9 @@ const PackagesView: React.FC<PackagesViewProps> = ({
   const [residentsExpanded, setResidentsExpanded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Pendente' | 'Entregue'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pendente' | 'recebida'>('all');
+
+  const statusLabel = (st: Package['status']) => (st === 'pendente' ? 'Pendente' : 'Recebida');
 
   const displayPackages = allPackages.filter((p) => {
     // Aplicar filtro de status
@@ -73,8 +75,8 @@ const PackagesView: React.FC<PackagesViewProps> = ({
     });
   }, [allPackages.length, displayPackages.length, statusFilter, packageSearch]);
 
-  const pendingCount = allPackages.filter(p => p.status === 'Pendente').length;
-  const deliveredCount = allPackages.filter(p => p.status === 'Entregue').length;
+  const pendingCount = allPackages.filter(p => p.status === 'pendente').length;
+  const deliveredCount = allPackages.filter(p => p.status === 'recebida').length;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -106,9 +108,9 @@ const PackagesView: React.FC<PackagesViewProps> = ({
               Todas ({allPackages.length})
             </button>
             <button
-              onClick={() => setStatusFilter('Pendente')}
+              onClick={() => setStatusFilter('pendente')}
               className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase transition-all ${
-                statusFilter === 'Pendente'
+                statusFilter === 'pendente'
                   ? 'bg-blue-500 text-white'
                   : 'bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20'
               }`}
@@ -116,14 +118,14 @@ const PackagesView: React.FC<PackagesViewProps> = ({
               Pendentes ({pendingCount})
             </button>
             <button
-              onClick={() => setStatusFilter('Entregue')}
+              onClick={() => setStatusFilter('recebida')}
               className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase transition-all ${
-                statusFilter === 'Entregue'
+                statusFilter === 'recebida'
                   ? 'bg-green-500 text-white'
                   : 'bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20'
               }`}
             >
-              Entregues ({deliveredCount})
+              Recebidas ({deliveredCount})
             </button>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -287,13 +289,14 @@ const PackagesView: React.FC<PackagesViewProps> = ({
                     onDeletePackage(pkg.id);
                   }}
                   className="p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-[var(--border-color)] bg-[var(--glass-bg)] text-red-500/90 hover:bg-red-500/10 hover:border-red-500/30 transition-all focus:ring-2 focus:ring-red-400/30 focus:outline-none"
-                  aria-label="Excluir encomenda"
+                  aria-label={canRegister ? 'Excluir encomenda' : 'Ocultar encomenda'}
+                  title={canRegister ? 'Excluir encomenda' : 'Ocultar encomenda'}
                 >
                   <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               )}
-              <span className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase ${pkg.status === 'Pendente' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
-                {pkg.status}
+              <span className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[8px] sm:text-[9px] font-black uppercase ${pkg.status === 'pendente' ? 'bg-blue-500/10 text-blue-500' : 'bg-green-500/10 text-green-500'}`}>
+                {statusLabel(pkg.status)}
               </span>
             </div>
           </div>

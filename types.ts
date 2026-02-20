@@ -15,7 +15,8 @@ export interface Package {
   type: string;
   receivedAt: string; // ISO String para cálculos precisos
   displayTime: string; // Hora formatada para exibição
-  status: 'Pendente' | 'Entregue';
+  /** Status normalizado (fonte de verdade no banco): pendente | recebida */
+  status: 'pendente' | 'recebida';
   deadlineMinutes: number; // Prazo estipulado pelo porteiro
   residentPhone?: string;
   items?: PackageItem[]; // Lista de itens detalhados
@@ -27,6 +28,10 @@ export interface Package {
   qrCodeData?: string | null;
   /** Nome do porteiro que recebeu a encomenda */
   receivedByName?: string | null;
+  /** Timestamp de recebimento/baixa pelo morador (data_recebimento no banco). */
+  receiptAt?: string | null;
+  /** Quando true, a encomenda não aparece para o morador (soft-hide). */
+  hiddenForResident?: boolean;
 }
 
 export interface Reservation {
@@ -65,6 +70,8 @@ export interface OccurrenceMessage {
 
 export interface Occurrence {
   id: string;
+  /** ID do morador (public.residents.id) quando disponível. */
+  residentId?: string;
   residentName: string;
   unit: string;
   description: string;
@@ -73,6 +80,8 @@ export interface Occurrence {
   reportedBy: string; // Nome ou cargo de quem reportou
   imageUrl?: string | null; // Foto/anexo opcional da ocorrência
   messages?: OccurrenceMessage[]; // Sistema de chat para comunicação
+  /** Soft delete: removida/arquivada pelo admin sem apagar histórico. */
+  deletedByAdmin?: boolean;
 }
 
 export interface Staff {
@@ -111,18 +120,25 @@ export interface ChatMessage {
 
 export interface VisitorLog {
   id: string;
+  moradorId?: string; // residents.id
   residentName: string;
   unit: string;
-  visitorCount: number;
-  visitorNames?: string;
+  /** Nome do visitante (novo fluxo). */
+  visitorName?: string;
+  /** Observação/motivo (novo fluxo). */
+  observation?: string;
+  visitorCount: number; // legado (mantido para compatibilidade)
+  visitorNames?: string; // legado (mantido para compatibilidade)
   entryTime: string;
   exitTime?: string;
-  status: 'active' | 'completed';
+  status: 'pendente' | 'confirmado' | 'finalizado' | 'active' | 'completed'; // suporta legado
   type?: string;
   doc?: string;
   vehicle?: string;
   plate?: string;
   registeredBy?: string; // ID do usuário que registrou o visitante
+  confirmedAt?: string;
+  doormanId?: string;
 }
 
 // --- CRM TYPES ---
